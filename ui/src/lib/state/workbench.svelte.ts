@@ -18,6 +18,7 @@ import {
   type ListedItem_Serialize,
   type ListOrder,
   type MuteAuthor,
+  type Outcome,
   type PrState,
   type SeenMark_Serialize,
   type Seen_Serialize,
@@ -395,26 +396,42 @@ export class WorkbenchState {
    * item and the action finishes it (#1052): it `settles` what the item waits on, as Archive and Mute put it
    * away, or the core's outcome for it says it takes the item out of the list on show, as into the folded
    * Muted items. The cursor goes to the first line after the item's lines that the list shows, or else to
-   * the last line, which is the item's own while the item stays in the list. With no other line, the cursor
-   * leaves the list. `landed` then hears where the cursor went. Nothing waits on the core, so a sync's answer
-   * or a failed action leaves the cursor where the keypress put it.
+   * the last line, which is the item's own while the item stays in the list. It skips the lines of each item
+   * the action `alsoTakes` out of the list too, as Mute author takes each item the author opened. With no
+   * other line, the cursor leaves the list. `landed` then hears where the cursor went. Nothing waits on the
+   * core, so a sync's answer or a failed action leaves the cursor where the keypress put it.
    */
-  #finish(key: ItemKey | undefined, action: Finisher, settles: boolean) {
+  #finish(
+    key: ItemKey | undefined,
+    action: Finisher,
+    settles: boolean,
+    alsoTakes: (other: ListedItem) => boolean = () => false,
+  ) {
     const was = this.cursor;
     const item = this.#selected;
     const shown = this.#shownItems;
     const at = item ? shown.indexOf(item) : -1;
     if (!was || !item || !key || !sameKey(item.key, key) || at === -1) return;
     const outcome = item.outcomes[action];
-    const out = outcome === "leaves" || (outcome === "folds" && !this.mutedShown);
+    const out = this.#takesOut(outcome);
     if (outcome === "unchanged" || !(settles || out)) return;
     const open = this.#open();
-    const lines = (items: ListedItem[]) => this.#lines(items, (issue) => open?.has(issue) ?? false);
+    const lines = (items: ListedItem[]) =>
+      this.#lines(
+        items.filter((other) => !alsoTakes(other)),
+        (issue) => open?.has(issue) ?? false,
+      );
     const next = lines(shown.slice(at + 1)).at(0)?.stop;
     if (!next && !out) return;
     const to = next ?? lines(shown.filter((other) => other !== item)).at(-1)?.stop;
     this.#put(to);
     this.#landed({ from: item.key, was, to });
+  }
+
+  /** Whether `outcome` takes an item out of the list on show: it leaves, or it folds while the Muted items
+   * are folded. */
+  #takesOut(outcome: Outcome): boolean {
+    return outcome === "leaves" || (outcome === "folds" && !this.mutedShown);
   }
 
   /** The part in Mark Seen of line `stop`: an Issue's covers its tree, and a PR's the PR alone. */
@@ -516,8 +533,11 @@ export class WorkbenchState {
    * wrong, if anything did. */
   async muteAuthor(login: string, stop: Stop | undefined) {
     const item = stop && this.#itemOf(stop, this.#everything);
-    const theirs = item?.mute_author.kind === "mute" && item.mute_author.login === login;
-    this.#finish(theirs ? item.key : undefined, "mute_author", true);
+    const opened = (other: ListedItem) =>
+      other.mute_author.kind === "mute" && other.mute_author.login === login;
+    // The core judges Mute author on each item for the author who opened it, so for `login` on theirs.
+    const alsoTakes = (other: ListedItem) => opened(other) && this.#takesOut(other.outcomes.mute_author);
+    this.#finish(item && opened(item) ? item.key : undefined, "mute_author", true, alsoTakes);
     return problemIn(commands.muteAuthor(this.#repository, login));
   }
 

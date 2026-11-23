@@ -498,7 +498,8 @@
   /**
    * Follows the cursor once the user's own action finished the selected item and moved the cursor on at the
    * keypress, as `landing` says (#1052). The Detail pane opens the line the cursor moved to, as `Enter`
-   * does, whatever it showed, or shows nothing open once the cursor left the list. Focus in the Detail pane
+   * does, whatever it showed and unless it shows that line already, or shows nothing open once the cursor
+   * left the list. Focus in the Detail pane
    * stays there, in the item it opens, or goes to the cursor's row when the pane goes with nothing open.
    *
    * Focus on a row of the list, or on none, goes with the cursor, and once the cursor left the list it
@@ -512,8 +513,10 @@
     const keep = left && keepOnScreen(left.box, left.scroller);
     const follows = followsCursor(focused);
     const inDetail = inDetailPane(focused);
-    if (to) open(to);
-    else swap(undefined);
+    // A pane that shows the line already keeps it, as `open` would take that for a second `Enter`.
+    const shown = detailLine();
+    if (!to) swap(undefined);
+    else if (!shown || !sameStop(shown, to)) open(to);
     if (inDetail) focusDetail();
     void tick().then(() => {
       const moved = cursorRow();

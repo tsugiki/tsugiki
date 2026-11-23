@@ -2425,6 +2425,26 @@ it("opens the next row's item on Q on a row the Detail pane doesn't show, which 
   expect(await screen.findByRole("heading", { name: /PR 8/ })).toBeTruthy();
 });
 
+it("leaves the Detail pane on its tab when Q moves the cursor onto the row it shows (#1052)", async () => {
+  const { marked } = await threeAlone();
+  const shown = screen.getByRole("button", { name: "#6 Next" });
+  await fireEvent.click(shown);
+  await screen.findByRole("heading", { name: /PR 6/ });
+  await screen.findByRole("tab", { name: "Conversation" });
+  const asked = core.pullRequest.mock.calls.length;
+  marked.focus();
+  await fireEvent.keyDown(marked, { key: "ArrowUp" });
+  await rowFocused("#5 Alone");
+
+  await fireEvent.keyDown(marked, { key: "q" });
+
+  await rowFocused("#6 Next");
+  expect(core.markSeen).toHaveBeenCalledOnce();
+  const conversation = screen.getByRole("tab", { name: "Conversation" });
+  expect(conversation.getAttribute("aria-selected")).toBe("true");
+  expect(core.pullRequest).toHaveBeenCalledTimes(asked);
+});
+
 it("opens the next item once Archive takes the item off the list, though a sync answered between the core's reply and its write", async () => {
   const { marked, tookAway, synced } = await threeAlone();
   marked.focus();

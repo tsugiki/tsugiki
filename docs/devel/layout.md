@@ -70,16 +70,17 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
     change that fits neither core row.
 
     The core judges, for each item a view lists, whether each action that can finish it would keep it in
-    that view, fold it into the view's Muted items, or take it out, by the same rule that builds the view,
-    and the window reads that at the keypress. Today, row 1 takes Mark Seen on the item, from its own row or
-    the Detail pane, while the item waits or has something new, By last update too; Archive and Mute; Mute
-    author on an item its author opened; and Unarchive, Mark Unseen of an Archived item, a pin and an unpin
-    where they take the item out, as [workbench.md](workbench.md) says. Mark Seen takes an item out of the
-    Stale reviews, and off the Workbench when only what waited held it there. Archive in a Filter's view,
-    the Review requests or the Pinned issues, which keep the item drawn Archived, moves on but keeps the
-    cursor on the item when it was last, and so does Mute where a Review request keeps the item in place.
-    `E` and `M` on a PR in a tree act on the Issue, so the cursor moves past the Issue and its tree, and `Q`
-    there is row 3.
+    that view, fold it into the view's Muted items, or take it out: it works out what the store would hold
+    once the action is written, and judges the item by the rule that builds the view's list, and the window
+    reads that at the keypress. Today, row 1 takes Mark Seen on the item, from its own row or the Detail
+    pane, while the item waits or has something new, By last update too; Archive and Mute; Mute author on an
+    item its author opened; and Unarchive, Mark Unseen of an Archived item, a pin and an unpin where they
+    take the item out, as [workbench.md](workbench.md) says. Mark Seen takes an item off the Workbench when
+    only what waited held it there. Archive in a Filter's view, the Review requests or the Pinned issues,
+    which keep the item drawn Archived, moves on but keeps the cursor on the item when it was last, and so
+    does Mute where a Review request keeps the item in place. Mute author moves past the author's other
+    items it takes out too. `E` and `M` on a PR in a tree act on the Issue, so the cursor moves past the
+    Issue and its tree, and `Q` there is row 3.
 
     An item that Needs attention is marked the way unread mail is, and keeps that look until nothing on it
     waits on the user or the user marks it seen, which drops the whole look. The preview says why in the

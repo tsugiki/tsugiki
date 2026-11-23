@@ -1288,10 +1288,17 @@ describe("WorkbenchState", () => {
       state.stop();
     });
 
-    it("moves on at Mute author from the item its author opened, and stays on another's", async () => {
+    it("moves on at Mute author from the item its author opened, past the author's other items it takes out, and stays on another's", async () => {
       catchChanged();
       vi.mocked(commands.muteAuthor).mockResolvedValue(done);
-      vi.mocked(commands.workbench).mockResolvedValue(answer(5, 6, 7));
+      // Mute author keeps PR 7, which the same author opened, where a Review request stands, say.
+      const byOther = (number: number) => ({
+        ...item(number),
+        mute_author: { kind: "mute" as const, login: "someone-else" },
+      });
+      const kept = judged(item(7), { mute_author: "stays" });
+      const page = workbenchPage([item(5), item(6), kept, byOther(8)]);
+      vi.mocked(commands.workbench).mockResolvedValue(page);
       const landed = vi.fn();
       const state = new WorkbenchState("python/cpython", { landed });
       await state.load();
@@ -1301,8 +1308,23 @@ describe("WorkbenchState", () => {
       const another = state.cursor;
       await state.muteAuthor("pr-author", at(5));
 
-      expect([another, state.cursor]).toEqual([at(5), at(6)]);
+      expect([another, state.cursor]).toEqual([at(5), at(7)]);
       expect(landed).toHaveBeenCalledOnce();
+      state.stop();
+    });
+
+    it("moves back at Mute author to the last item it keeps when the author opened each one after it", async () => {
+      catchChanged();
+      vi.mocked(commands.muteAuthor).mockResolvedValue(done);
+      const byOther = { ...item(4), mute_author: { kind: "mute" as const, login: "someone-else" } };
+      vi.mocked(commands.workbench).mockResolvedValue(workbenchPage([byOther, item(5), item(6)]));
+      const state = new WorkbenchState("python/cpython");
+      await state.load();
+      state.moveTo(at(5));
+
+      await state.muteAuthor("pr-author", at(5));
+
+      expect(state.cursor).toEqual(at(4));
       state.stop();
     });
 

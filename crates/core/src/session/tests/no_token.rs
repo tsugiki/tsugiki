@@ -85,12 +85,12 @@ fn found_none() -> [(GhAnswer, &'static str); 2] {
 }
 
 /// Whether `status` is the no-token problem, which the status bar offers Try again beside, and its text
-/// holds `words`, names Try again and names `GH_TOKEN` as the way past `gh`.
+/// holds `words`, says where Try again is and names `GH_TOKEN` as the way past `gh`.
 fn says(status: &Status, words: &str) -> bool {
     matches!(status, Status::Problem { problem }
         if problem.kind == ErrorKind::NoToken
             && problem.message.contains(words)
-            && problem.message.contains("click Try again")
+            && problem.message.contains("click Try again in the status bar")
             && problem.message.contains("set `GH_TOKEN`"))
 }
 

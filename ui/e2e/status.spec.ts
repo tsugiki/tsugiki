@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 import { done, loadedSettings, ok, workbenchPage } from "../src/lib/testing/fixtures.ts";
 import { home, issue, issueView } from "./fixtures.ts";
-import { emitFromCore, mockCore } from "./mock-core.ts";
+import { callsOf, emitFromCore, mockCore } from "./mock-core.ts";
 
 const online = { state: "online", login: "octocat" } as const;
 const offline = { state: "offline" } as const;
@@ -143,7 +143,9 @@ test("a read that found no token offers Try again with no Repository open, until
   await mockCore(page, { settings: defaults, status: { state: "problem", problem } });
   await page.goto("/");
   await expect(page.getByRole("status")).toHaveText(problem.message);
+  expect(await callsOf(page, "refresh")).toBe(0);
   await page.getByRole("button", { name: "Try again" }).click();
+  await expect.poll(() => callsOf(page, "refresh")).toBe(1);
   await emitFromCore(page, "status-changed", { state: "connecting" });
   await expect(page.getByRole("status")).toHaveText("Connecting…");
   await expect(page.getByRole("button", { name: "Try again" })).toHaveCount(0);

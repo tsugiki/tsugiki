@@ -12,7 +12,8 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
   the problem in the status bar on every screen, with or without a Repository open. A click while a read is
   out adds no read. Once a read gives a token, Tsugiki connects as it does at start, with no restart, and
   reads the items on screen at once. A click says "Connecting…" until the read ends; the minute's read
-  leaves the problem up until it has a token. The log gives a failed read's cause once, and again when a
+  leaves the problem up until it has a token, and a click while it is out changes nothing on the bar until
+  it ends, as Tsugiki waits on `gh` meanwhile. The log gives a failed read's cause once, and again when a
   read fails another way.
 - Without a token, the status bar says what happened, what Tsugiki does next and what the user can do. With
   no `gh`, or a `gh` that isn't signed in: install `gh` or run `gh auth login`, and Tsugiki asks again. A

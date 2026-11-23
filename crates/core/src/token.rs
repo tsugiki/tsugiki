@@ -10,8 +10,10 @@ use crate::error::{Error, ErrorKind};
 use crate::logfile;
 
 /// What Tsugiki does next, and the way past `gh`, which a restart takes, since Tsugiki reads its own
-/// environment, which a later change in the user's shell doesn't reach.
-const ASKS_AGAIN: &str = "Tsugiki asks again each minute, and at once when you click Try again.";
+/// environment, which a later change in the user's shell doesn't reach. Settings › Account shows these words
+/// too, under a dialog that covers the status bar, so they say where Try again is.
+const ASKS_AGAIN: &str =
+    "Tsugiki asks again each minute, and at once when you click Try again in the status bar.";
 const GH_TOKEN_INSTEAD: &str = "To skip `gh`, set `GH_TOKEN` to a token and restart Tsugiki.";
 
 /// Takes the token from `GH_TOKEN` or asks `gh` for it, as [`TokenReads::read`] says, for a caller that

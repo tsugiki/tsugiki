@@ -4,7 +4,8 @@ use tsugiki_token::testing::{NO_GH, SLOW_GH, gh_alone, gh_prints};
 
 const SIGN_IN: &str = "Tsugiki reads your token from the GitHub CLI, and found none. Install `gh` or run \
                        `gh auth login`. Tsugiki asks again each minute, and at once when you click Try \
-                       again. To skip `gh`, set `GH_TOKEN` to a token and restart Tsugiki.";
+                       again in the status bar. To skip `gh`, set `GH_TOKEN` to a token and restart \
+                       Tsugiki.";
 
 #[test]
 fn the_token_is_what_gh_printed() {
@@ -27,7 +28,8 @@ fn when_gh_doesnt_answer_in_time_tsugiki_says_so_that_it_asks_again_and_how_to_s
         error.message,
         "Tsugiki asked `gh auth token` for your token, and `gh` didn't answer within 30 s. A keychain or \
          credential manager waiting on a prompt is a common cause. Tsugiki asks again each minute, and at \
-         once when you click Try again. To skip `gh`, set `GH_TOKEN` to a token and restart Tsugiki."
+         once when you click Try again in the status bar. To skip `gh`, set `GH_TOKEN` to a token and \
+         restart Tsugiki."
     );
 }
 

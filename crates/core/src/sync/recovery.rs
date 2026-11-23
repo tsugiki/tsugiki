@@ -185,15 +185,20 @@ fn run(
         if syncs.activity().is_some() {
             sync_steps += 1;
         }
-        match syncs.step(&harness.github, store) {
-            Ok(Some(Progress::Changed(change))) => told_the_window.push(change.items),
-            Ok(Some(Progress::Recorded(_))) => told_of_syncs.push(SyncNews::Recorded),
-            Ok(Some(Progress::Finished(_))) => told_of_syncs.push(SyncNews::Finished),
-            Ok(None) => {}
+        // The session tells the window of a sync the queue gives up on as of a step.
+        let progress = match syncs.step(&harness.github, store) {
+            Ok(progress) => progress,
             Err(failure) => {
-                syncs.after_failure(&failure, Instant::now());
+                let given_up = syncs.after_failure(&failure, Instant::now());
                 problems.push(failure.problem.message);
+                given_up
             }
+        };
+        match progress {
+            Some(Progress::Changed(change)) => told_the_window.push(change.items),
+            Some(Progress::Recorded(_)) => told_of_syncs.push(SyncNews::Recorded),
+            Some(Progress::Finished(_)) => told_of_syncs.push(SyncNews::Finished),
+            None => {}
         }
         steps += 1;
     }

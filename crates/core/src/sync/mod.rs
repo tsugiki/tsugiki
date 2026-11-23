@@ -69,7 +69,8 @@ struct UserWorkSync {
     check: ChangeCheck,
     /// A refresh until the store says the Repository never finished a sync, which makes it a first sync.
     kind: Kind,
-    /// A step that worked and whose place couldn't be saved, which the next try reports once it can.
+    /// A step that worked and whose place couldn't be saved, which the next try reports once it can, or the
+    /// queue when it gives up on the sync (#1046).
     unsaved: Option<Step>,
 }
 

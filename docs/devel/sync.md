@@ -41,8 +41,10 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
   Pinned issues), so the Workbench is right in about a minute, then the trees of the user's Issues, Pinned
   issues included, whatever their age, then the rest of the window
   newest first, with the PRs that changed in the window, and for a small one its open items from before the
-  window. The status bar shows its progress. An interrupted sync resumes where it stopped. Widening the window
-  loads only the added days; narrowing it deletes nothing.
+  window. The status bar shows its progress. An interrupted sync resumes where it stopped. A page saved whose
+  place then fails to save reaches the screens on the retry, or, if the sync fails 10 times with no step
+  working in between and leaves the queue, as it leaves (#1046). Failures offline, at the rate limit or on a
+  wrong clock don't count. Widening the window loads only the added days; narrowing it deletes nothing.
 - A first sync and each refresh ask GitHub how many Issues and PRs the Repository has open, and the database
   keeps the latest answer for the Repository's page in Settings ([settings.md](settings.md)). A refresh
   saves it after the Issues the poll changed. An answer that differs from the one kept tells that page

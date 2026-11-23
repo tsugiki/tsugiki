@@ -723,7 +723,7 @@ fn two_threads(intervals: Intervals, mirrors: MirrorRequests) -> (TwoThreads, Fe
 }
 
 impl TwoThreads {
-    /// The GitHub thread's queue, for a stop that has to reach it before its next turn, as a stop the
+    /// The GitHub thread's queue, for a message that has to reach it before its next turn, as a message the
     /// session's thread passes on reaches it a moment later.
     fn github(&self) -> Sender<GitHubMessage> {
         self.keeper.telling.github.clone()
@@ -3439,11 +3439,18 @@ fn a_refresh_while_offline_comes_back_online_before_the_next_status_check() {
         }
         _ => {}
     };
-    // Once the sync saves, the open Issue's read comes round.
+    // Once the sync saves, the open Issue's read comes round. The GitHub thread tells of the save, then takes
+    // the sync's next step unless a message waits, so the read and the stop go straight to its queue: by the
+    // session's thread, they could come after that step.
+    let github = threads.github();
     let on_change = move |changed| {
         if changed == 1 {
-            requests.fetch_issue(gcmon(), 9);
-            requests.stop_session();
+            let issue_9 = Fetched::Issue(Item {
+                repository: gcmon(),
+                number: 9,
+            });
+            github.send(GitHubMessage::Fetch(issue_9)).unwrap();
+            github.send(GitHubMessage::Stop).unwrap();
         }
     };
     let (mut board, heard) = heard_board(on_status, on_change);

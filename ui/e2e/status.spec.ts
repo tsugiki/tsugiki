@@ -1,10 +1,17 @@
 import { expect, test } from "@playwright/test";
-import { done, loadedSettings, ok, workbenchPage } from "../src/lib/testing/fixtures.ts";
+import {
+  done,
+  loadedSettings,
+  OCTOCAT_ONLINE,
+  ok,
+  statusOf,
+  workbenchPage,
+} from "../src/lib/testing/fixtures.ts";
 import { home, issue, issueView } from "./fixtures.ts";
 import { callsOf, emitFromCore, mockCore } from "./mock-core.ts";
 
-const online = { state: "online", login: "octocat" } as const;
-const offline = { state: "offline" } as const;
+const online = OCTOCAT_ONLINE;
+const offline = statusOf({ state: "offline" });
 const defaults = loadedSettings();
 const hidden = loadedSettings({ status_bar: { visible: false } });
 
@@ -21,13 +28,19 @@ test("the status bar shows Offline without the network", async ({ page }) => {
 });
 
 test("the status bar shows the last login before the core has reached GitHub", async ({ page }) => {
-  await mockCore(page, { settings: defaults, status: { state: "connecting_as", last_login: "octocat" } });
+  await mockCore(page, {
+    settings: defaults,
+    status: statusOf({ state: "connecting_as", last_login: "octocat" }),
+  });
   await page.goto("/");
   await expect(page.getByRole("status")).toHaveText("octocat · Connecting…");
 });
 
 test("the status bar shows the last login while offline", async ({ page }) => {
-  await mockCore(page, { settings: defaults, status: { state: "offline_as", last_login: "octocat" } });
+  await mockCore(page, {
+    settings: defaults,
+    status: statusOf({ state: "offline_as", last_login: "octocat" }),
+  });
   await page.goto("/");
   await expect(page.getByRole("status")).toHaveText("octocat · Offline");
 });
@@ -37,7 +50,7 @@ test("a Read-only Repository says so in the status bar and atop its Issue view, 
 }) => {
   await mockCore(page, {
     settings: defaults,
-    status: { state: "offline_as", last_login: "octocat" },
+    status: statusOf({ state: "offline_as", last_login: "octocat" }),
     home,
     workbench: workbenchPage([issue]),
     openIssue: done,
@@ -122,7 +135,7 @@ test("in a narrow window a slow request leaves the status room", async ({ page }
 });
 
 test("the status bar follows the core's status event", async ({ page }) => {
-  await mockCore(page, { settings: defaults, status: { state: "connecting" } });
+  await mockCore(page, { settings: defaults, status: statusOf({ state: "connecting" }) });
   await page.goto("/");
   await expect(page.getByRole("status")).toHaveText("Connecting…");
   await emitFromCore(page, "status-changed", online);
@@ -130,8 +143,8 @@ test("the status bar follows the core's status event", async ({ page }) => {
 });
 
 test("a refused token shows the core's words", async ({ page }) => {
-  const problem = { kind: "unauthorized", message: "GitHub refused the token." } as const;
-  await mockCore(page, { settings: defaults, status: { state: "problem", problem } });
+  const refused = statusOf({ state: "refused", message: "GitHub refused the token." });
+  await mockCore(page, { settings: defaults, status: refused });
   await page.goto("/");
   await expect(page.getByRole("status")).toHaveText("GitHub refused the token.");
 });
@@ -139,14 +152,14 @@ test("a refused token shows the core's words", async ({ page }) => {
 test("a read that found no token offers Try again with no Repository open, until the core reads again", async ({
   page,
 }) => {
-  const problem = { kind: "no_token", message: "Install `gh` or run `gh auth login`." } as const;
-  await mockCore(page, { settings: defaults, status: { state: "problem", problem } });
+  const message = "Install `gh` or run `gh auth login`.";
+  await mockCore(page, { settings: defaults, status: statusOf({ state: "no_token", message }) });
   await page.goto("/");
-  await expect(page.getByRole("status")).toHaveText(problem.message);
+  await expect(page.getByRole("status")).toHaveText(message);
   expect(await callsOf(page, "refresh")).toBe(0);
   await page.getByRole("button", { name: "Try again" }).click();
   await expect.poll(() => callsOf(page, "refresh")).toBe(1);
-  await emitFromCore(page, "status-changed", { state: "connecting" });
+  await emitFromCore(page, "status-changed", statusOf({ state: "connecting" }));
   await expect(page.getByRole("status")).toHaveText("Connecting…");
   await expect(page.getByRole("button", { name: "Try again" })).toHaveCount(0);
   await emitFromCore(page, "status-changed", online);

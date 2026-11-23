@@ -1,6 +1,7 @@
 <script lang="ts">
   import { LinkOpener } from "$lib/state/link-opener.svelte";
   import type {
+    Account,
     Cloning,
     HourPoints,
     InFlight,
@@ -29,6 +30,28 @@
   import { inFlightWords, SLOW_MS } from "./in-flight";
 
   const GIT_DOWNLOADS = "https://git-scm.com/downloads";
+
+  /** What the status bar says of `account`: who is signed in, or why nobody is. */
+  function accountWords(account: Account | undefined): string {
+    switch (account?.state) {
+      case "no_token":
+      case "refused":
+        return account.message;
+      case "offline":
+        return "Offline";
+      case "offline_as":
+        return `${account.last_login} · Offline`;
+      case "online":
+        return account.login;
+      case "connecting_as":
+      case "reconnecting_as":
+        return `${account.last_login} · Connecting…`;
+      case "connecting":
+      case "reconnecting":
+      case undefined:
+        return "Connecting…";
+    }
+  }
 
   let {
     status,
@@ -95,19 +118,41 @@
 
   // The core ends the hour at its reset by GitHub's clock, so the part goes then.
   const points = $derived(visible ? hourPoints : null);
-  const offline = $derived(status?.state === "offline" || status?.state === "offline_as");
+  const account = $derived(status?.account);
+  // An unread status may be out of date, so nothing of it shows beside why it can't be read.
+  const problem = $derived(error ? undefined : status?.problem);
+  const offline = $derived(account?.state === "offline" || account?.state === "offline_as");
   // Asking GitHub again after being offline, which the bar showed, so it goes on showing while it asks.
-  const reconnecting = $derived(status?.state === "reconnecting" || status?.state === "reconnecting_as");
-  // Hiding the bar can't hide these: nothing else would tell the user.
-  const showStatus = $derived(
-    visible || offline || reconnecting || status?.state === "problem" || Boolean(error),
+  const reconnecting = $derived(account?.state === "reconnecting" || account?.state === "reconnecting_as");
+  // Hiding the bar can't hide these: nothing else would tell the user. Without a token, or with one GitHub
+  // refused, Tsugiki reads nothing, so the account shows then too.
+  const showAccount = $derived(
+    visible ||
+      offline ||
+      reconnecting ||
+      account?.state === "no_token" ||
+      account?.state === "refused" ||
+      Boolean(error),
   );
-  // A read of the token that found none can be tried again at once wherever the problem shows, as the sync
-  // status, which a click refreshes too, shows only while a Repository is open. The core's kind says which
-  // problem it is, never its words.
-  const noToken = $derived(!error && status?.state === "problem" && status.problem.kind === "no_token");
-  // A problem or an unread status says nothing of the open Repository, so Read-only waits for a status.
-  const readOnlyShown = $derived(readOnly && showStatus && !error && status?.state !== "problem");
+  // Nor can it hide a problem, which shows alone when the account doesn't.
+  const showStatus = $derived(showAccount || Boolean(problem));
+  // A read of the token that found none can be tried again at once wherever the account says so, as the
+  // sync status, which a click refreshes too, shows only while a Repository is open. A problem beside the
+  // account can't take it away (#1062).
+  const noToken = $derived(!error && account?.state === "no_token");
+  // An unread status says nothing of the open Repository, so Read-only waits for a status.
+  const readOnlyShown = $derived(readOnly && showAccount && !error);
+  // Who is signed in, or why nobody is, then Read-only, as it says more of the open Repository, then the
+  // problem beside the account.
+  const statusWords = $derived(
+    [
+      showAccount ? accountWords(account) : undefined,
+      readOnlyShown ? "Read-only" : undefined,
+      problem?.message,
+    ]
+      .filter((words) => Boolean(words))
+      .join(" · "),
+  );
   // With no sync to pause, the bar still says why nothing asks GitHub, as a read or a fetch points here.
   const paused = $derived(
     pausedWords(syncActivity) ?? (pointsBack === null ? null : pointsBackWords(pointsBack.at)),
@@ -116,11 +161,10 @@
   const mirror = $derived(mirrorWords(mirrorProblem));
   const needsGit = $derived(mirrorProblem?.kind === "no_git" || mirrorProblem?.kind === "old_git");
   const showRelease = $derived(newVersion !== null && visible);
-  // What follows the status: Read-only first, as it says more of the open Repository, then the problems.
-  // The browser's problem goes with the button that met it.
+  // What follows the status: the problems with a file, the wait and the mirror. The browser's problem goes
+  // with the button that met it.
   const listed = $derived(
     [
-      readOnlyShown ? "Read-only" : undefined,
       ...problems,
       paused,
       mirror,
@@ -151,22 +195,10 @@
   <!-- Always in the page, because screen readers only announce changes in a live region that already
        exists. -->
   <footer role="status" class:offline class:empty={!showStatus && !listed && mirrorQuestion === null}>
-    {#if showStatus}
-      {#if error}
-        Tsugiki can't read its status: {error}
-      {:else if status?.state === "problem"}
-        {status.problem.message}
-      {:else if status?.state === "offline"}
-        Offline
-      {:else if status?.state === "offline_as"}
-        {`${status.last_login} · Offline`}
-      {:else if status?.state === "online"}
-        {status.login}
-      {:else if status?.state === "connecting_as" || status?.state === "reconnecting_as"}
-        {`${status.last_login} · Connecting…`}
-      {:else}
-        Connecting…
-      {/if}
+    {#if error}
+      Tsugiki can't read its status: {error}
+    {:else}
+      {statusWords}
     {/if}
     <span>{showStatus && listed ? `· ${listed}` : listed}</span>
     <!-- Hiding the bar can't hide the question the Files tab waits for. -->
@@ -182,9 +214,9 @@
     {/if}
   </footer>
   <!-- A Refresh reads the token, and the core says "Connecting…" until the read ends, which takes the button
-       away. The minute's read leaves the problem up, and the GitHub thread, which waits on gh meanwhile,
-       hears no click until it ends: such a click adds no read, and on a bar the settings show, from the
-       read's third second, the part on the right says Tsugiki waits for gh. -->
+       away. The minute's read leaves the account saying there is no token, and the GitHub thread, which
+       waits on gh meanwhile, hears no click until it ends: such a click adds no read, and on a bar the
+       settings show, from the read's third second, the part on the right says Tsugiki waits for gh. -->
   {#if noToken}
     <button onclick={onrefresh}>Try again</button>
   {/if}

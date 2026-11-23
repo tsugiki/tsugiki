@@ -8,6 +8,7 @@ use crate::github::testing::{
     reply_ok,
 };
 use crate::github::{Reply, Unreachable};
+use crate::status::Status;
 use crate::status::testing::{announced, quiet_board, watched_board};
 use crate::testing::gcmon;
 
@@ -102,7 +103,13 @@ fn an_item_the_store_cant_save_is_another_failure_that_the_status_bar_shows() {
 
     assert_eq!(fetched.unwrap(), Err(ItemUnfetched::Other));
     assert!(
-        matches!(announced(&seen).last(), Some(Status::Problem { .. })),
+        matches!(
+            announced(&seen).last(),
+            Some(Status {
+                problem: Some(_),
+                ..
+            })
+        ),
         "the status bar says why"
     );
     assert_eq!(store.issues(&gcmon()).unwrap(), []);

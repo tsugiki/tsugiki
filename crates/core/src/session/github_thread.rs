@@ -25,7 +25,9 @@ use crate::latest::{self, LatestReader, LatestWriter};
 use crate::repository::RepositoryName;
 use crate::repository_settings::RepositoryCheck;
 use crate::settings::SettingsView;
-use crate::status::{Change, FailedRead, ItemUnread, LastSync, ReadFailure, Status, StatusBoard};
+use crate::status::{
+    Account, Change, FailedRead, ItemUnread, LastSync, ReadFailure, Status, StatusBoard,
+};
 use crate::store::{ConversationSaved, HeadKept, Store};
 use crate::sync::{Progress, Syncs};
 use crate::token::TokenReads;
@@ -121,7 +123,7 @@ impl Unconnected<'_> {
     ) -> Result<GitHub, Self> {
         let refreshes = self.refreshes;
         match read {
-            TokenRead::Start | TokenRead::Clicked => board.set(connecting(store)),
+            TokenRead::Start | TokenRead::Clicked => board.account(connecting(store)),
             // The status bar keeps saying why there is no token, so it doesn't change each minute.
             TokenRead::Due => {}
         }
@@ -143,21 +145,24 @@ impl Unconnected<'_> {
                 refresh(board, store, &github);
                 Ok(github)
             }
+            // A finished read, so it takes away the problem beside the account, as a status check does.
             Err(problem) => {
-                board.set(Status::Problem { problem });
+                board.set(Status::from(Account::NoToken {
+                    message: problem.message,
+                }));
                 Err(self)
             }
         }
     }
 }
 
-/// What the status bar says while Tsugiki connects: who was signed in last time, if the store says. The last
+/// What the account says while Tsugiki connects: who was signed in last time, if the store says. The last
 /// login only fills the status bar for a moment, so a failed read doesn't stop Tsugiki connecting. `refresh`
 /// uses the store next, and shows the problem if the store is still failing.
-fn connecting(store: &Store) -> Status {
+fn connecting(store: &Store) -> Account {
     match store.last_login() {
-        Ok(Some(last_login)) => Status::ConnectingAs { last_login },
-        Ok(None) | Err(_) => Status::Connecting,
+        Ok(Some(last_login)) => Account::ConnectingAs { last_login },
+        Ok(None) | Err(_) => Account::Connecting,
     }
 }
 
@@ -339,7 +344,8 @@ impl Refreshes {
                 Ok(GitHubMessage::Fetch(fetched)) => {
                     self.read_failed(board, &fetched, ItemUnread::NoToken);
                 }
-                Ok(GitHubMessage::Problem(problem)) => board.set(Status::Problem { problem }),
+                // The account goes on saying there is no token, with Try again (#1062).
+                Ok(GitHubMessage::Problem(problem)) => board.problem(problem),
                 Ok(GitHubMessage::Sync { repository }) => {
                     syncs.add(repository.clone());
                     show_last_sync(board, store, repository);
@@ -473,9 +479,7 @@ pub(super) fn run_thread(
         watch(&mut board, store, access, refreshes)
     }));
     if ran.is_err() {
-        board.set(Status::Problem {
-            problem: stopped_checking(),
-        });
+        board.problem(stopped_checking());
     }
 }
 
@@ -547,10 +551,10 @@ pub(super) fn watch(
             // keep waiting for the next status check. While the rate limit's gate holds, it asks nothing.
             Turn::RefreshNow => {
                 let asked = (github.points_back().is_none() && board.asking_again())
-                    .then(|| asked_who(store, &github));
+                    .then(|| asked_who(store, &github, &board.status().account));
                 let offline = asked
                     .as_ref()
-                    .map_or_else(|| board.is_offline(), Status::is_offline);
+                    .map_or_else(|| board.is_offline(), |asked| asked.account.is_offline());
                 if asked.is_some() && !offline {
                     due.status = Instant::now() + intervals.status;
                 }
@@ -568,7 +572,7 @@ pub(super) fn watch(
                 }
             }
             Turn::Opened(repository) => show_last_sync(board, store, repository),
-            Turn::Problem(problem) => board.set(Status::Problem { problem }),
+            Turn::Problem(problem) => board.problem(problem),
             // The board hears of it below, as after each turn.
             Turn::CheckHour | Turn::Asked => {}
             Turn::Fetch(fetched) => {
@@ -858,7 +862,7 @@ fn keep_conversation(
     match kept {
         Ok(kept) => Some(kept),
         Err(problem) => {
-            board.set(Status::Problem { problem });
+            board.problem(problem);
             None
         }
     }
@@ -871,56 +875,90 @@ pub(super) fn show_last_sync(board: &mut StatusBoard, store: &Store, repository:
             repository,
             at: state.map(|state| state.finished_at),
         }),
-        Err(problem) => board.set(Status::Problem { problem }),
+        Err(problem) => board.problem(problem),
     }
 }
 
 /// Asks GitHub again, so `board` follows the network going and coming back. While the rate limit's gate
-/// holds, it asks nothing and the status stays as it is.
+/// holds, it asks nothing and the status stays as it is. A finished check sets the account and replaces the
+/// problem beside it, or takes it away.
 pub(super) fn refresh(board: &mut StatusBoard, store: &Store, github: &GitHub) {
     if github.points_back().is_none() {
-        board.set(asked_who(store, github));
+        let asked = asked_who(store, github, &board.status().account);
+        board.set(asked);
     }
 }
 
-/// Asks GitHub who is signed in, and says what the status bar says after its answer.
-fn asked_who(store: &Store, github: &GitHub) -> Status {
+/// Asks GitHub who is signed in, and says what the status bar says after its answer, from the `account` it
+/// says now.
+fn asked_who(store: &Store, github: &GitHub, account: &Account) -> Status {
     match github.asking(Asking::Status, || github.viewer()) {
-        Ok(viewer) => match store.remember_login(&viewer.login) {
-            Ok(()) => Status::Online {
+        Ok(viewer) => {
+            let problem = store.remember_login(&viewer.login).err();
+            let account = Account::Online {
                 login: viewer.login,
-            },
-            Err(problem) => Status::Problem { problem },
-        },
-        Err(problem) => status_after(problem, store),
+            };
+            Status { account, problem }
+        }
+        Err(problem) => status_after(problem, store, account),
     }
 }
 
 /// Sets the status bar's words after a job's request failed. The rate limit leaves them as they are: the
 /// gate holds every request until the reset, and the status bar says when the sync goes on. Only the
-/// question of who is signed in shows GitHub's refusal, as it asks nothing while the gate holds.
+/// question of who is signed in shows GitHub's refusal, as it asks nothing while the gate holds. A job isn't
+/// a status check, so a failure that only changes the account keeps the problem beside it.
 fn tell_problem(board: &mut StatusBoard, problem: Error, store: &Store) {
     if !matches!(problem.kind, ErrorKind::RateLimited { .. }) {
-        board.set(status_after(problem, store));
+        let Status { account, problem } = status_after(problem, store, &board.status().account);
+        let problem = problem.or_else(|| board.status().problem.clone());
+        board.set(Status { account, problem });
     }
 }
 
-/// The status bar's words after GitHub didn't answer as it should.
-fn status_after(problem: Error, store: &Store) -> Status {
+/// The status bar's words after GitHub didn't answer as it should, from the `account` it says now. Being
+/// offline and the token's problems are the account's, and any other failure is a problem beside it.
+fn status_after(problem: Error, store: &Store, account: &Account) -> Status {
     match problem.kind {
         ErrorKind::Offline => match store.last_login() {
-            Ok(Some(last_login)) => Status::OfflineAs { last_login },
-            Ok(None) => Status::Offline,
-            Err(problem) => Status::Problem { problem },
+            Ok(Some(last_login)) => Status::from(Account::OfflineAs { last_login }),
+            Ok(None) => Status::from(Account::Offline),
+            Err(problem) => Status {
+                account: Account::Offline,
+                problem: Some(problem),
+            },
         },
+        ErrorKind::NoToken => Status::from(Account::NoToken {
+            message: problem.message,
+        }),
+        ErrorKind::Unauthorized => Status::from(Account::Refused {
+            message: problem.message,
+        }),
         ErrorKind::CertificateDates
-        | ErrorKind::NoToken
-        | ErrorKind::Unauthorized
         | ErrorKind::WriteRefused
         | ErrorKind::RateLimited { .. }
         | ErrorKind::NotFound
         | ErrorKind::Conflict
         | ErrorKind::QueryRefused
-        | ErrorKind::Internal => Status::Problem { problem },
+        | ErrorKind::Internal => Status {
+            account: unconfirmed(account, store),
+            problem: Some(problem),
+        },
+    }
+}
+
+/// The account after GitHub answered without saying who is signed in: it isn't offline any more, nor
+/// refused the token, but who is signed in waits for the next status check. A login GitHub confirmed stays.
+fn unconfirmed(account: &Account, store: &Store) -> Account {
+    match account {
+        Account::Connecting | Account::ConnectingAs { .. } | Account::Online { .. } => {
+            account.clone()
+        }
+        Account::Offline
+        | Account::OfflineAs { .. }
+        | Account::Reconnecting
+        | Account::ReconnectingAs { .. }
+        | Account::NoToken { .. }
+        | Account::Refused { .. } => connecting(store),
     }
 }

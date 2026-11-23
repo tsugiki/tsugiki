@@ -27,7 +27,7 @@ use crate::mirror_queue::{self, Next, Pace, Problem, Queue, Queued, Waiting};
 use crate::mirror_source::{MirrorSource, MirrorSources};
 use crate::patch_ids::PatchReads;
 use crate::repository::RepositoryName;
-use crate::status::Status;
+use crate::status::Account;
 
 mod heads;
 mod lookup;
@@ -542,10 +542,10 @@ impl MirrorRequests {
         self.send(Message::CheckAgain);
     }
 
-    /// Holds back the next git while `status` says GitHub can't be reached, or hasn't answered since it
+    /// Holds back the next git while `account` says GitHub can't be reached, or hasn't answered since it
     /// couldn't be. A rate limit is the API's, and git doesn't use the API, so it holds back nothing.
-    pub fn follow(&self, status: &Status) {
-        self.send(Message::Hold(status.is_offline()));
+    pub fn follow(&self, account: &Account) {
+        self.send(Message::Hold(account.is_offline()));
     }
 
     fn send(&self, message: Message) {

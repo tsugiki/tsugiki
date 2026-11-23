@@ -14,7 +14,7 @@ use crate::facts::CommitSha;
 use crate::facts::patch_ids::PatchId;
 use crate::facts::pull_requests::{PrHead, ReviewedCommit};
 use crate::login::Login;
-use crate::status::Status;
+use crate::status::Account;
 use crate::testing::TempPath;
 
 /// Longer than any of these tests should wait on a working git.
@@ -1060,8 +1060,8 @@ fn a_failed_fetch_tries_again_when_github_is_back() {
 
     requests.fetch_heads(cpython.clone(), vec![head(1)]);
     starts.recv_timeout(PLENTY).unwrap().fail();
-    requests.follow(&Status::Offline);
-    requests.follow(&Status::Online {
+    requests.follow(&Account::Offline);
+    requests.follow(&Account::Online {
         login: Login::new("octocat"),
     });
     let again = starts.recv_timeout(PLENTY).unwrap();
@@ -1764,7 +1764,7 @@ fn offline_holds_the_worker() {
     let (mirrors, starts) = place.start_faked();
     let requests = mirrors.requests();
 
-    requests.follow(&Status::Offline);
+    requests.follow(&Account::Offline);
     requests.fetch_heads(cpython.clone(), vec![head(1)]);
     requests.clone_mirror(named("octo-org/hello"), download());
     mirrors.stop_cleanly(PLENTY);
@@ -1783,12 +1783,12 @@ fn the_window_hears_when_the_worker_holds_back_git_and_when_it_goes_on() {
     let (mirrors, _starts) = place.start_faked_announcing(PLENTY, announce);
     let requests = mirrors.requests();
 
-    requests.follow(&Status::Offline);
-    requests.follow(&Status::Offline);
-    requests.follow(&Status::Online {
+    requests.follow(&Account::Offline);
+    requests.follow(&Account::Offline);
+    requests.follow(&Account::Online {
         login: Login::new("octocat"),
     });
-    requests.follow(&Status::Connecting);
+    requests.follow(&Account::Connecting);
     mirrors.stop_cleanly(PLENTY);
 
     assert_eq!(told.try_iter().collect::<Vec<_>>(), [true, false]);
@@ -1802,9 +1802,9 @@ fn back_online_the_worker_fetches_the_heads_it_held_back() {
     let (mirrors, starts) = place.start_faked();
     let requests = mirrors.requests();
 
-    requests.follow(&Status::Offline);
+    requests.follow(&Account::Offline);
     requests.fetch_heads(cpython.clone(), vec![head(1)]);
-    requests.follow(&Status::Online {
+    requests.follow(&Account::Online {
         login: Login::new("octocat"),
     });
     let fetch = starts.recv_timeout(PLENTY).unwrap();
@@ -1827,20 +1827,20 @@ fn asking_github_again_keeps_the_worker_held_until_it_answers() {
     let (mirrors, starts) = place.start_faked_announcing(PLENTY, announce);
     let requests = mirrors.requests();
 
-    requests.follow(&Status::Offline);
+    requests.follow(&Account::Offline);
     requests.fetch_heads(cpython.clone(), vec![head(1)]);
-    requests.follow(&Status::Reconnecting);
-    requests.follow(&Status::ReconnectingAs {
+    requests.follow(&Account::Reconnecting);
+    requests.follow(&Account::ReconnectingAs {
         last_login: Login::new("octocat"),
     });
     // Back to Offline, so a hold let go while asking again would show as a second hold.
-    requests.follow(&Status::Offline);
+    requests.follow(&Account::Offline);
     if let Ok(early) = starts.try_recv() {
         early.succeed();
         mirrors.stop_cleanly(PLENTY);
         panic!("a fetch started while Tsugiki asked again");
     }
-    requests.follow(&Status::Online {
+    requests.follow(&Account::Online {
         login: Login::new("octocat"),
     });
     let fetch = starts.recv_timeout(PLENTY).unwrap();
@@ -1858,15 +1858,14 @@ fn a_rate_limit_doesnt_hold_the_worker() {
     let (mirrors, starts) = place.start_faked();
     let requests = mirrors.requests();
 
-    requests.follow(&Status::OfflineAs {
+    requests.follow(&Account::OfflineAs {
         last_login: Login::new("octocat"),
     });
     requests.fetch_heads(cpython.clone(), vec![head(1)]);
-    requests.follow(&Status::Problem {
-        problem: Error::new(
-            ErrorKind::RateLimited { resets_at: None },
-            "GitHub's rate limit",
-        ),
+    // A status check that GitHub refused for its rate limit leaves who is signed in unconfirmed, and the
+    // limit beside it as a problem, which the worker doesn't hear.
+    requests.follow(&Account::ConnectingAs {
+        last_login: Login::new("octocat"),
     });
     let fetch = starts.recv_timeout(PLENTY).unwrap();
 

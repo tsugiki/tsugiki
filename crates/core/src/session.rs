@@ -33,7 +33,7 @@ use crate::patch_ids::PatchReads;
 use crate::repository::RepositoryName;
 use crate::repository_settings::{RepositorySettings, SavedBy, SettingsSave};
 use crate::settings::SettingsView;
-use crate::status::{Change, Changes, Shown, Status, StatusBoard};
+use crate::status::{Change, Changes, Shown, StatusBoard};
 use crate::store::{
     self, Archiving, AuthorMuting, Flagging, Muting, OpenReader, ReaderToOpen, Seeing, Store,
     StoreReader,
@@ -197,7 +197,7 @@ impl Drop for Session {
 /// would only keep the worker waiting for its failure, behind the request the GitHub thread waits on.
 fn sizes_through(github: Sender<GitHubMessage>, shown: LatestReader<Shown>) -> SizeOf {
     Box::new(move |repository| {
-        if shown.read(|shown| shown.status.is_offline()) {
+        if shown.read(|shown| shown.account.is_offline()) {
             let words =
                 format!("GitHub can't be reached, so Tsugiki can't ask how big {repository} is.");
             return Err(Error::new(ErrorKind::Offline, &words));
@@ -562,7 +562,7 @@ fn run(database: Database, threads: Threads, keeper: &Keeper) {
     let opened = catch_unwind(AssertUnwindSafe(|| match database.open() {
         Ok(opened) => Some(opened),
         Err(problem) => {
-            board.set(Status::Problem { problem });
+            board.problem(problem);
             None
         }
     }));
@@ -570,9 +570,7 @@ fn run(database: Database, threads: Threads, keeper: &Keeper) {
         Ok(Some(opened)) => opened,
         Ok(None) => return,
         Err(_) => {
-            board.set(Status::Problem {
-                problem: stopped_checking(),
-            });
+            board.problem(stopped_checking());
             return;
         }
     };

@@ -84,14 +84,13 @@ fn found_none() -> [(GhAnswer, &'static str); 2] {
     ]
 }
 
-/// Whether `status` is the no-token problem, which the status bar offers Try again beside, and its text
-/// holds `words`, says where Try again is and names `GH_TOKEN` as the way past `gh`.
+/// Whether `status`'s account says a read of the token found none, which the status bar offers Try again
+/// beside, and its text holds `words`, says where Try again is and names `GH_TOKEN` as the way past `gh`.
 fn says(status: &Status, words: &str) -> bool {
-    matches!(status, Status::Problem { problem }
-        if problem.kind == ErrorKind::NoToken
-            && problem.message.contains(words)
-            && problem.message.contains("click Try again in the status bar")
-            && problem.message.contains("set `GH_TOKEN`"))
+    matches!(&status.account, Account::NoToken { message }
+        if message.contains(words)
+            && message.contains("click Try again in the status bar")
+            && message.contains("set `GH_TOKEN`"))
 }
 
 static ON_THE_INTERVAL: ScriptedGh = ScriptedGh::new();
@@ -148,7 +147,10 @@ fn with_no_repository_open_a_refresh_after_no_token_reads_it_at_once_and_connect
         session.stop(PLENTY);
 
         assert!(says(&problem, words), "{problem:?}");
-        assert_eq!((connecting, online), (Status::Connecting, octocat()));
+        assert_eq!(
+            (connecting, online),
+            (Account::Connecting.into(), octocat())
+        );
         assert_eq!(asked.try_iter().count(), 2);
     }
 }
@@ -208,7 +210,7 @@ fn clicks_while_a_read_of_the_token_is_out_add_no_read() {
 
     assert!(says(&at_start, "didn't answer"), "{at_start:?}");
     assert_eq!(after_start, 0);
-    assert_eq!(connecting, Status::Connecting);
+    assert_eq!(connecting, Account::Connecting.into());
     assert!(says(&on_click, "didn't answer"), "{on_click:?}");
     assert_eq!(asked.try_iter().count(), 0);
 }
@@ -246,6 +248,37 @@ fn a_read_of_the_token_is_in_flight_until_gh_answers_and_github_hears_the_rest()
         rest,
         [Some(Asking::Token), None, Some(Asking::Status), None]
     );
+}
+
+/// A store write that fails while Tsugiki waits for a token shows after the account, which goes on saying
+/// there is no token, with Try again, until the next read takes the problem away (#1062).
+#[test]
+fn a_problem_while_tsugiki_waits_for_a_token_shows_after_the_account() {
+    let access = GitHubAccess {
+        transport: Box::new(Canned(Err(Unreachable::Offline))),
+        token_from: NO_GH,
+    };
+
+    // A read covers each click that came while it was out, so the click waits for the problem to show. The
+    // Stop waits behind the click's read, so the watching ends whatever the board makes of them.
+    let heard = watched_through(access, HOURLY.status, |shown| match shown {
+        1 => vec![GitHubMessage::Problem(database_problem())],
+        2 => vec![GitHubMessage::Refresh, GitHubMessage::Stop],
+        _ => vec![],
+    });
+
+    let [found_none, troubled, clicked, read_again] = &heard[..] else {
+        panic!("{heard:?}");
+    };
+    let beside = |account: &Account| Status {
+        account: account.clone(),
+        problem: Some(database_problem()),
+    };
+    assert!(says(found_none, "Install `gh`"), "{found_none:?}");
+    assert_eq!(found_none.problem, None);
+    assert_eq!(troubled, &beside(&found_none.account));
+    assert_eq!(clicked, &beside(&Account::Connecting));
+    assert_eq!(read_again, found_none);
 }
 
 static ON_SCREEN: ScriptedGh = ScriptedGh::new();

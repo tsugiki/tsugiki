@@ -2,6 +2,7 @@
 import {
   commands,
   events,
+  type Account,
   type Cloning,
   type HourPoints_Serialize as HourPoints,
   type InFlight_Serialize as InFlight,
@@ -16,6 +17,7 @@ import {
 } from "$lib/data/bindings";
 
 export type {
+  Account,
   Cloning,
   HourPoints,
   InFlight,
@@ -29,11 +31,11 @@ export type {
   SyncActivity,
 };
 
-/** Whether `status` says GitHub can't be reached, while Refresh asks it again too, as the core judges it:
- * a fetch then fails, so the window offers none (#981). The rate limit's gate does the same while it holds,
- * which `StatusState.pointsBack` says. */
+/** Whether `status`'s account says GitHub can't be reached, while Refresh asks it again too, as the core
+ * judges it: a fetch then fails, so the window offers none (#981). The rate limit's gate does the same while
+ * it holds, which `StatusState.pointsBack` says. */
 export function isOffline(status: Status | undefined): boolean {
-  switch (status?.state) {
+  switch (status?.account.state) {
     case "offline":
     case "offline_as":
     case "reconnecting":
@@ -42,7 +44,8 @@ export function isOffline(status: Status | undefined): boolean {
     case "online":
     case "connecting":
     case "connecting_as":
-    case "problem":
+    case "no_token":
+    case "refused":
     case undefined:
       return false;
   }

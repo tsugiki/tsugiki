@@ -8,27 +8,24 @@ import type { Status } from "./status.svelte";
  * last time's or there is none. */
 export type SignedIn = { login: Login; note?: string } | { login?: undefined; note: string };
 
-/** Who the status says is signed in. A problem names nobody, and says what it is only when it is the
- * token's: a refused token or none found is the Account page's business, and a failed read of the disk
- * isn't. */
+/** Who the status's account says is signed in. A refused token or none found names nobody, and says what
+ * happened, as it is the Account page's business. A problem beside the account, such as a failed read of
+ * the disk, isn't, so it changes nothing here. */
 export function signedIn(status: Status | undefined): SignedIn {
-  switch (status?.state) {
+  const account = status?.account;
+  switch (account?.state) {
     case "online":
-      return { login: status.login };
+      return { login: account.login };
     case "connecting_as":
     case "reconnecting_as":
-      return { login: status.last_login, note: "Signed in last time. GitHub hasn't answered yet." };
+      return { login: account.last_login, note: "Signed in last time. GitHub hasn't answered yet." };
     case "offline_as":
-      return { login: status.last_login, note: "Signed in last time. GitHub can't be reached now." };
+      return { login: account.last_login, note: "Signed in last time. GitHub can't be reached now." };
     case "offline":
       return { note: "Not known: GitHub can't be reached." };
-    case "problem":
-      return {
-        note:
-          status.problem.kind === "unauthorized" || status.problem.kind === "no_token"
-            ? status.problem.message
-            : "Not known: GitHub hasn't said who is signed in.",
-      };
+    case "no_token":
+    case "refused":
+      return { note: account.message };
     case "connecting":
     case "reconnecting":
     case undefined:

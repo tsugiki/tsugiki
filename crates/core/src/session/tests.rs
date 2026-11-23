@@ -31,7 +31,7 @@ use crate::settings::{ListOrder, SettingsFiles, SettingsOwner};
 use crate::status::testing::{
     announced, changes_board, failed_reads_board, quiet_board, showing, watched_board,
 };
-use crate::status::{Change, FailedRead, ItemUnread, LastSync, ReadFailure};
+use crate::status::{Account, Change, FailedRead, ItemUnread, LastSync, ReadFailure, Status};
 use crate::store::testing::{OpenStore, kept_fixes, store_with_old_links};
 use crate::store::{ChangeCheck, SyncState};
 use crate::sync::Syncs;
@@ -96,9 +96,9 @@ fn replying(replies: Vec<Result<Reply, Unreachable>>) -> GitHubAccess {
 }
 
 fn octocat() -> Status {
-    Status::Online {
+    Status::from(Account::Online {
         login: Login::new("octocat"),
-    }
+    })
 }
 
 /// Connects through `access` at the GitHub thread's start, with nothing else asking it, and gives the client
@@ -155,9 +155,9 @@ fn the_last_login_shows_before_github_answers() {
     assert_eq!(
         announced(&seen),
         [
-            Status::ConnectingAs {
+            Status::from(Account::ConnectingAs {
                 last_login: Login::new("hubot")
-            },
+            }),
             octocat()
         ]
     );
@@ -174,7 +174,7 @@ fn nobody_is_shown_before_the_first_answer() {
 fn without_the_network_or_a_last_login_the_status_is_offline() {
     let (mut board, seen) = watched_board();
     assert!(connect_alone(&mut board, &empty_store(), offline()).is_some());
-    assert_eq!(showing(&seen), Status::Offline);
+    assert_eq!(showing(&seen), Account::Offline.into());
 }
 
 #[test]
@@ -184,30 +184,44 @@ fn without_the_network_the_last_login_still_shows() {
     assert!(connect_alone(&mut board, &store, offline()).is_some());
     assert_eq!(
         showing(&seen),
-        Status::OfflineAs {
+        Account::OfflineAs {
             last_login: Login::new("hubot")
         }
+        .into()
     );
 }
 
 fn problem_of(status: Status) -> Option<Error> {
-    if let Status::Problem { problem } = status {
-        Some(problem)
-    } else {
-        None
-    }
+    status.problem
 }
 
 fn problem_kind(status: Status) -> Option<ErrorKind> {
     problem_of(status).map(|problem| problem.kind)
 }
 
+/// Whether `status` says a read of the token found none, with no problem beside it.
+fn says_no_token(status: &Status) -> bool {
+    matches!(
+        status,
+        Status {
+            account: Account::NoToken { .. },
+            problem: None,
+        }
+    )
+}
+
 #[test]
-fn a_refused_token_is_a_problem_and_keeps_the_last_login_stored() {
+fn a_refused_token_is_the_accounts_and_keeps_the_last_login_stored() {
     let (mut board, seen) = watched_board();
     let store = store_remembering("hubot");
     assert!(connect_alone(&mut board, &store, answering(401, "")).is_some());
-    assert_eq!(problem_kind(showing(&seen)), Some(ErrorKind::Unauthorized));
+    assert!(matches!(
+        showing(&seen),
+        Status {
+            account: Account::Refused { .. },
+            problem: None,
+        }
+    ));
     assert_eq!(store.last_login().unwrap(), Some(Login::new("hubot")));
 }
 
@@ -219,7 +233,7 @@ fn without_gh_nothing_is_asked_and_the_problem_shows() {
         token_from: NO_GH,
     };
     assert!(connect_alone(&mut board, &empty_store(), access).is_none());
-    assert_eq!(problem_kind(showing(&seen)), Some(ErrorKind::NoToken));
+    assert!(says_no_token(&showing(&seen)));
 }
 
 #[test]
@@ -230,11 +244,13 @@ fn a_last_login_that_cant_be_read_doesnt_stop_tsugiki_connecting() {
 }
 
 #[test]
-fn a_login_that_cant_be_stored_is_a_problem() {
+fn a_login_that_cant_be_stored_is_a_problem_beside_the_login() {
     let (mut board, seen) = watched_board();
     let github = connect_alone(&mut quiet_board(), &empty_store(), octocat_answers()).unwrap();
     refresh(&mut board, &Store::stopped(), &github);
-    assert_eq!(problem_kind(showing(&seen)), Some(ErrorKind::Internal));
+    let shown = showing(&seen);
+    assert_eq!(shown.account, octocat().account);
+    assert_eq!(problem_kind(shown), Some(ErrorKind::Internal));
 }
 
 #[test]
@@ -242,7 +258,9 @@ fn a_last_login_that_cant_be_read_offline_is_a_problem() {
     let (mut board, seen) = watched_board();
     let github = connect_alone(&mut quiet_board(), &empty_store(), offline()).unwrap();
     refresh(&mut board, &Store::stopped(), &github);
-    assert_eq!(problem_kind(showing(&seen)), Some(ErrorKind::Internal));
+    let shown = showing(&seen);
+    assert_eq!(shown.account, Account::Offline);
+    assert_eq!(problem_kind(shown), Some(ErrorKind::Internal));
 }
 
 /// Answers with each reply in turn.
@@ -268,8 +286,9 @@ fn a_certificate_outside_its_dates_asks_for_the_clock_until_github_answers() {
         "GitHub's certificate isn't valid by this computer's clock. Check the date and time.";
     assert_eq!(
         showing(&seen),
-        Status::Problem {
-            problem: Error::new(ErrorKind::CertificateDates, words)
+        Status {
+            account: Account::Connecting,
+            problem: Some(Error::new(ErrorKind::CertificateDates, words)),
         }
     );
 
@@ -350,31 +369,88 @@ fn unheard_refreshes() -> Refreshes {
 fn watching_follows_github_until_told_to_stop() {
     // `Replies` panics if it is asked a fourth time, so the third status has to stop the watching.
     let access = replying(vec![signed_in(), Err(Unreachable::Offline), signed_in()]);
-    let (stop, incoming) = mpsc::channel();
+
+    let heard = watched_through(access, Duration::ZERO, |shown| match shown {
+        3 => vec![GitHubMessage::Stop],
+        _ => vec![],
+    });
+
+    let offline_as = Status::from(Account::OfflineAs {
+        last_login: Login::new("octocat"),
+    });
+    assert_eq!(heard, [octocat(), offline_as, octocat()]);
+}
+
+/// A store write that failed, which the session tells the GitHub thread to show.
+fn database_problem() -> Error {
+    Error::new(ErrorKind::Internal, "Tsugiki can't write to its database.")
+}
+
+/// Watches GitHub through `access`, with a status check each `status`, and tells the GitHub thread the
+/// messages `after` gives for each status the board announces, by its count from 1. Gives what the board
+/// announced.
+fn watched_through(
+    access: GitHubAccess,
+    status: Duration,
+    after: fn(usize) -> Vec<GitHubMessage>,
+) -> Vec<Status> {
+    let (to_github, incoming) = mpsc::channel();
     let (passed, seen) = mpsc::channel();
     let mut shown = 0;
     let mut board = StatusBoard::new(Box::new(move |status: &Status| {
         passed.send(status.clone()).unwrap();
         shown += 1;
-        if shown == 3 {
-            stop.send(GitHubMessage::Stop).unwrap();
+        for message in after(shown) {
+            to_github.send(message).unwrap();
         }
     }));
     let refreshes = Refreshes {
-        intervals: Intervals {
-            status: Duration::ZERO,
-            ..HOURLY
-        },
+        intervals: Intervals { status, ..HOURLY },
         incoming,
         ..unheard_refreshes()
     };
 
     watch(&mut board, &empty_store(), access, &refreshes);
 
-    let offline_as = Status::OfflineAs {
-        last_login: Login::new("octocat"),
+    announced(&seen)
+}
+
+#[test]
+fn with_a_token_a_problem_leaves_the_login_and_the_next_status_check_takes_it_away() {
+    let heard = watched_through(octocat_answers(), Duration::ZERO, |shown| match shown {
+        1 => vec![GitHubMessage::Problem(database_problem())],
+        3 => vec![GitHubMessage::Stop],
+        _ => vec![],
+    });
+
+    let beside = Status {
+        account: octocat().account,
+        problem: Some(database_problem()),
     };
-    assert_eq!(announced(&seen), [octocat(), offline_as, octocat()]);
+    assert_eq!(heard, [octocat(), beside, octocat()]);
+}
+
+#[test]
+fn a_refused_token_stays_in_the_account_when_a_problem_comes() {
+    // The Stop waits behind the problem, so the watching ends whatever the board makes of it.
+    let heard = watched_through(answering(401, ""), HOURLY.status, |shown| match shown {
+        1 => vec![
+            GitHubMessage::Problem(database_problem()),
+            GitHubMessage::Stop,
+        ],
+        _ => vec![],
+    });
+
+    let [refused, troubled] = &heard[..] else {
+        panic!("{heard:?}");
+    };
+    assert!(
+        matches!(refused.account, Account::Refused { .. }),
+        "{refused:?}"
+    );
+    assert_eq!(refused.problem, None);
+    assert_eq!(troubled.account, refused.account);
+    assert_eq!(troubled.problem, Some(database_problem()));
 }
 
 /// The answer to `FetchIssueContent`.
@@ -1497,9 +1573,9 @@ fn losing_the_network_while_reading_an_issue_shows_on_the_status_bar() {
     });
 
     assert_eq!(content, None);
-    let offline_as = Status::OfflineAs {
+    let offline_as = Status::from(Account::OfflineAs {
         last_login: Login::new("octocat"),
-    };
+    });
     assert_eq!(shown.last(), Some(&offline_as));
 }
 
@@ -3217,9 +3293,9 @@ fn an_unstored_item_offline_is_unfetched_shows_offline_and_asks_nothing_after() 
         .try_iter()
         .filter(|(operation, _)| operation == "FetchItem");
     assert_eq!(fetches.count(), 1);
-    let offline_as = Status::OfflineAs {
+    let offline_as = Status::from(Account::OfflineAs {
         last_login: Login::new("octocat"),
-    };
+    });
     assert_eq!(announced(&seen).last(), Some(&offline_as));
 }
 
@@ -3306,9 +3382,9 @@ fn a_sync_github_cant_answer_shows_offline_and_waits_for_the_next_refresh() {
 
     threads.watch(&mut board, &empty_store(), access);
 
-    let offline_as = Status::OfflineAs {
+    let offline_as = Status::from(Account::OfflineAs {
         last_login: Login::new("octocat"),
-    };
+    });
     assert_eq!(announced(&seen), [octocat(), offline_as, octocat()]);
 }
 
@@ -3457,12 +3533,12 @@ fn a_refresh_while_offline_comes_back_online_before_the_next_status_check() {
 
     threads.watch(&mut board, &empty_store(), access);
 
-    let offline_as = Status::OfflineAs {
+    let offline_as = Status::from(Account::OfflineAs {
         last_login: Login::new("octocat"),
-    };
-    let reconnecting_as = Status::ReconnectingAs {
+    });
+    let reconnecting_as = Status::from(Account::ReconnectingAs {
         last_login: Login::new("octocat"),
-    };
+    });
     assert_eq!(
         heard.try_iter().collect::<Vec<_>>(),
         [
@@ -3499,9 +3575,9 @@ fn a_refresh_offline_from_the_start_says_connecting_until_github_fails_again() {
     assert_eq!(
         heard.try_iter().collect::<Vec<_>>(),
         [
-            Heard::Status(Status::Offline),
-            Heard::Status(Status::Reconnecting),
-            Heard::Status(Status::Offline),
+            Heard::Status(Account::Offline.into()),
+            Heard::Status(Account::Reconnecting.into()),
+            Heard::Status(Account::Offline.into()),
         ]
     );
 }
@@ -3523,12 +3599,12 @@ fn a_refresh_while_github_is_still_away_says_connecting_then_offline_and_runs_no
 
     threads.watch(&mut board, &empty_store(), access);
 
-    let offline_as = Status::OfflineAs {
+    let offline_as = Status::from(Account::OfflineAs {
         last_login: Login::new("octocat"),
-    };
-    let reconnecting_as = Status::ReconnectingAs {
+    });
+    let reconnecting_as = Status::from(Account::ReconnectingAs {
         last_login: Login::new("octocat"),
-    };
+    });
     assert_eq!(
         heard.try_iter().collect::<Vec<_>>(),
         [
@@ -3829,7 +3905,7 @@ fn a_store_that_cant_say_when_it_last_synced_shows_the_problem() {
 
     show_last_sync(&mut board, &Store::stopped(), gcmon());
 
-    assert!(matches!(showing(&seen), Status::Problem { .. }));
+    assert!(showing(&seen).problem.is_some());
 }
 
 #[test]
@@ -4126,15 +4202,13 @@ fn a_panic_in_the_sessions_thread_with_no_token_still_says_tsugiki_stopped_check
         token_from: NO_GH,
     };
     let session = Session::start(board, Ok(folders), reaching(access), HOURLY);
-    assert_eq!(
-        problem_kind(seen.recv_timeout(PLENTY).unwrap()),
-        Some(ErrorKind::NoToken)
-    );
+    assert!(says_no_token(&seen.recv_timeout(PLENTY).unwrap()));
 
     session.fetching().mark_unseen(gcmon(), 7, None);
     let stopped = seen.recv_timeout(PLENTY).unwrap();
     session.stop(PLENTY);
 
+    assert!(matches!(stopped.account, Account::NoToken { .. }));
     assert_eq!(
         problem_of(stopped).unwrap().message,
         stopped_checking().message
@@ -4152,7 +4226,7 @@ fn starting_without_gh_keeps_the_problem_that_says_how_to_sign_in() {
 
     run_stopped(board, database(Ok(folders.clone())), access);
 
-    assert_eq!(problem_kind(showing(&seen)), Some(ErrorKind::NoToken));
+    assert!(says_no_token(&showing(&seen)));
     assert!(folders.database().exists());
 }
 

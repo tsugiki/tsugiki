@@ -184,7 +184,7 @@ impl Calls {
     /// for it in the settings, or the store marks it as one the token can't write to (#914).
     pub fn repository_state(&self, repository: &RepositoryName) -> Result<RepositoryState, Error> {
         let reasons = read_only_reasons(&self.repository(repository.clone()), &self.reader)?;
-        let connection = if self.shown.read(|shown| shown.status.is_offline()) {
+        let connection = if self.shown.read(|shown| shown.account.is_offline()) {
             Connection::Offline
         } else {
             Connection::Online

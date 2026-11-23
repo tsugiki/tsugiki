@@ -235,10 +235,10 @@ fn offline_a_clone_waits_for_the_network_and_starts_once_tsugiki_is_back_online(
     let (mirrors, starts, told) = place.start_hearing();
     let requests = mirrors.requests();
 
-    requests.follow(&Status::Offline);
+    requests.follow(&Account::Offline);
     requests.clone_mirror(hello.clone(), download());
     wait_for(&told, &[mirror(&hello, MirrorState::Offline)]);
-    requests.follow(&Status::Online {
+    requests.follow(&Account::Online {
         login: Login::new("octocat"),
     });
     let clone = starts.recv_timeout(PLENTY).unwrap();
@@ -283,7 +283,7 @@ fn offline_a_clone_behind_the_clone_under_way_still_waits_for_it() {
 
     requests.clone_mirror(first.clone(), download());
     let clone = starts.recv_timeout(PLENTY).unwrap();
-    requests.follow(&Status::Offline);
+    requests.follow(&Account::Offline);
     requests.clone_mirror(second.clone(), download());
     wait_for(
         &told,

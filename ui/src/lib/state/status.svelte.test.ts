@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { commands, events } from "$lib/data/bindings";
-import { HOUR_POINTS } from "$lib/testing/fixtures";
+import { HOUR_POINTS, OCTOCAT_ONLINE, statusOf } from "$lib/testing/fixtures";
 import { isOffline, StatusState, type RepositoryMirror, type Status } from "./status.svelte";
 
 vi.mock("$lib/data/bindings", () => ({
@@ -34,8 +34,8 @@ vi.mock("$lib/data/bindings", () => ({
   },
 }));
 
-const online: Status = { state: "online", login: "octocat" };
-const offline: Status = { state: "offline" };
+const online: Status = OCTOCAT_ONLINE;
+const offline: Status = statusOf({ state: "offline" });
 
 /** Catches the listener StatusState registers, so a test can send it events as the core would. */
 const catchListener = () => {
@@ -624,20 +624,23 @@ describe("StatusState", () => {
   });
 });
 
-it("says GitHub can't be reached while the status says offline, and while Refresh asks it again", () => {
+it("says GitHub can't be reached while the account says offline, and while Refresh asks it again", () => {
   const login = "octocat";
+  const broken = { kind: "internal", message: "Broken." } as const;
   const statuses: Status[] = [
-    { state: "offline" },
-    { state: "offline_as", last_login: login },
-    { state: "reconnecting" },
-    { state: "reconnecting_as", last_login: login },
-    { state: "online", login },
-    { state: "connecting" },
-    { state: "connecting_as", last_login: login },
-    { state: "problem", problem: { kind: "internal", message: "Broken." } },
+    statusOf({ state: "offline" }),
+    statusOf({ state: "offline_as", last_login: login }),
+    statusOf({ state: "reconnecting" }),
+    statusOf({ state: "reconnecting_as", last_login: login }, broken),
+    statusOf({ state: "online", login }),
+    statusOf({ state: "connecting" }),
+    statusOf({ state: "connecting_as", last_login: login }),
+    statusOf({ state: "no_token", message: "Install gh." }),
+    statusOf({ state: "refused", message: "Sign in." }),
+    statusOf({ state: "online", login }, broken),
   ];
 
   const offline = [...statuses.map(isOffline), isOffline(undefined)];
 
-  expect(offline).toEqual([true, true, true, true, false, false, false, false, false]);
+  expect(offline).toEqual([true, true, true, true, false, false, false, false, false, false, false]);
 });

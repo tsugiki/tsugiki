@@ -118,7 +118,7 @@ fn status_board<R: Runtime>(app: &AppHandle<R>, following: MirrorRequests) -> St
     let failed_reads_handle = app.clone();
     let repository_syncs_handle = app.clone();
     StatusBoard::new(Box::new(move |status| {
-        following.follow(status);
+        following.follow(&status.account);
         status_state.set(status.clone(), StatusChanged);
     }))
     .with_changes(Box::new(move |change| {

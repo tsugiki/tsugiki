@@ -47,10 +47,10 @@ fn a_hand_over_of_the_commit_the_rules_fetch_brought_leaves_the_commit_the_user_
     let wanted = starts.recv_timeout(PLENTY).unwrap();
     requests.fetch_first(cpython.clone(), newer(5));
     // Offline, nothing starts once the fetch has brought `head(5)`, until after the hand-over below.
-    requests.follow(&Status::Offline);
+    requests.follow(&Account::Offline);
     wanted.succeed();
     requests.fetch_heads(cpython, vec![head(5)]);
-    requests.follow(&Status::Online {
+    requests.follow(&Account::Online {
         login: Login::new("octocat"),
     });
     let asked = next_start(&mirrors, &starts);

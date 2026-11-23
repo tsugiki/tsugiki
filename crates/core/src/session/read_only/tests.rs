@@ -10,8 +10,8 @@ use crate::github::testing::{
     RATE_LIMIT, Scripted, answer, github, not_found, replied, signed_in_as, token,
 };
 use crate::github::{Grant, Reply, Unreachable};
-use crate::status::Status;
 use crate::status::testing::changes_board;
+use crate::status::{Account, Status};
 use crate::store::testing::{OpenStore, refuse_read_only_marks};
 use crate::testing::{cpython, gcmon};
 use crate::token::{GhOutput, Token, read_token};
@@ -308,10 +308,10 @@ fn offline_no_visibility_is_asked_until_github_is_back() {
     );
     let mut judge = WriteJudge::new(AN_HOUR);
 
-    board.set(Status::Offline);
+    board.account(Account::Offline);
     judge.follow(parts(&mut board, &db, &github), &[cpython()]);
     let offline = asked.try_iter().count();
-    board.set(Status::Connecting);
+    board.account(Account::Connecting);
     judge.follow(parts(&mut board, &db, &github), &[cpython()]);
 
     assert_eq!(offline, 0);
@@ -331,7 +331,7 @@ fn another_token_clears_the_marks_before_github_can_say_anything_else() {
     // answer.
     let renewed = OffsetDateTime::from_unix_timestamp(2_100_000_000).ok();
     let (github, asked) = after_answer(granted(Some(WriteScope::Public), renewed), vec![]);
-    board.set(Status::Offline);
+    board.account(Account::Offline);
     WriteJudge::new(AN_HOUR).follow(parts(&mut board, &db, &github), &both());
 
     assert_eq!(db.read_only_marks(), (false, false));

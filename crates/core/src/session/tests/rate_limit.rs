@@ -238,7 +238,7 @@ fn below_the_floor_the_mirrors_size_check_asks_nothing_and_says_when_the_points_
 fn offline_the_mirrors_size_check_asks_nothing_and_says_github_cant_be_reached() {
     let offline = Err(Unreachable::Offline);
     let paused = Paused::signed_in_with("size-offline", offline, Vec::new(), HOURLY);
-    while paused.heard.statuses.recv_timeout(PLENTY).unwrap() != Status::Offline {}
+    while paused.heard.statuses.recv_timeout(PLENTY).unwrap() != Account::Offline.into() {}
 
     let mut size_of = paused.mirrors.sizes();
     let problem = size_of(&gcmon()).unwrap_err();

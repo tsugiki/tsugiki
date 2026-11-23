@@ -1,7 +1,7 @@
 import { fireEvent, render, screen } from "@testing-library/svelte";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { openLink } from "$lib/state/browser";
-import { HOUR_POINTS } from "$lib/testing/fixtures";
+import { HOUR_POINTS, OCTOCAT_ONLINE, statusOf } from "$lib/testing/fixtures";
 import StatusBar from "./StatusBar.svelte";
 
 vi.mock("$lib/state/browser", () => ({ openLink: vi.fn() }));
@@ -9,7 +9,7 @@ vi.mock("$lib/state/browser", () => ({ openLink: vi.fn() }));
 const bar = () => screen.getByRole("status");
 
 describe("StatusBar's last sync", () => {
-  const online = { state: "online", login: "octocat" } as const;
+  const online = OCTOCAT_ONLINE;
   const repository = "python/cpython";
 
   afterEach(() => {
@@ -64,67 +64,78 @@ describe("StatusBar's last sync", () => {
   });
 
   it("stays beside Offline, tinted like the bar", () => {
-    render(StatusBar, { status: { state: "offline" }, lastSync: { repository, at: null } });
+    render(StatusBar, { status: statusOf({ state: "offline" }), lastSync: { repository, at: null } });
     expect(screen.getByRole("button").classList.contains("offline")).toBe(true);
   });
 });
 
 describe("StatusBar", () => {
   it("shows who is signed in", () => {
-    render(StatusBar, { status: { state: "online", login: "octocat" } });
+    render(StatusBar, { status: OCTOCAT_ONLINE });
     expect(bar().textContent).toContain("octocat");
     expect(bar().classList.contains("offline")).toBe(false);
   });
 
   it("says offline and tints the bar", () => {
-    render(StatusBar, { status: { state: "offline" } });
+    render(StatusBar, { status: statusOf({ state: "offline" }) });
     expect(bar().textContent?.trim()).toBe("Offline");
     expect(bar().classList.contains("offline")).toBe(true);
   });
 
   it("says the open Repository is Read-only after who is signed in", () => {
-    render(StatusBar, { status: { state: "online", login: "octocat" }, readOnly: true });
+    render(StatusBar, { status: OCTOCAT_ONLINE, readOnly: true });
     expect(bar().textContent?.trim()).toBe("octocat · Read-only");
     expect(bar().classList.contains("offline")).toBe(false);
   });
 
   it("says Read-only apart from Offline", () => {
-    render(StatusBar, { status: { state: "offline_as", last_login: "octocat" }, readOnly: true });
+    render(StatusBar, { status: statusOf({ state: "offline_as", last_login: "octocat" }), readOnly: true });
     expect(bar().textContent?.trim()).toBe("octocat · Offline · Read-only");
   });
 
-  it("leaves Read-only out of a problem's words, and out of a hidden bar", () => {
-    const problem = { kind: "unauthorized", message: "Run `gh auth login`." } as const;
-    const { unmount } = render(StatusBar, { status: { state: "problem", problem }, readOnly: true });
-    expect(bar().textContent?.trim()).toBe("Run `gh auth login`.");
+  it("says Read-only after the account and before a problem, but not on an unread status or a hidden bar", () => {
+    const problem = { kind: "internal", message: "Tsugiki can't write to its database." } as const;
+    const { unmount } = render(StatusBar, { status: { ...OCTOCAT_ONLINE, problem }, readOnly: true });
+    expect(bar().textContent?.trim()).toBe("octocat · Read-only · Tsugiki can't write to its database.");
     unmount();
     const unread = render(StatusBar, { status: undefined, error: "no core", readOnly: true });
     expect(bar().textContent?.trim()).toBe("Tsugiki can't read its status: no core");
     unread.unmount();
-    render(StatusBar, { status: { state: "online", login: "octocat" }, readOnly: true, visible: false });
+    render(StatusBar, { status: OCTOCAT_ONLINE, readOnly: true, visible: false });
     expect(bar().textContent?.trim()).toBe("");
   });
 
   it("shows who it was last time while it connects", () => {
-    render(StatusBar, { status: { state: "connecting_as", last_login: "octocat" } });
+    render(StatusBar, { status: statusOf({ state: "connecting_as", last_login: "octocat" }) });
     expect(bar().textContent?.trim()).toBe("octocat · Connecting…");
     expect(bar().classList.contains("offline")).toBe(false);
   });
 
   it("shows who it was last time while offline, and tints the bar", () => {
-    render(StatusBar, { status: { state: "offline_as", last_login: "octocat" } });
+    render(StatusBar, { status: statusOf({ state: "offline_as", last_login: "octocat" }) });
     expect(bar().textContent?.trim()).toBe("octocat · Offline");
     expect(bar().classList.contains("offline")).toBe(true);
   });
 
-  it("shows what stops Tsugiki reading, in the core's words", () => {
-    const problem = { kind: "unauthorized", message: "Run `gh auth login`." } as const;
-    render(StatusBar, { status: { state: "problem", problem } });
-    expect(bar().textContent).toContain("Run `gh auth login`.");
+  it("shows a refused token in the core's words, in place of who is signed in", () => {
+    render(StatusBar, { status: statusOf({ state: "refused", message: "Run `gh auth login`." }) });
+    expect(bar().textContent?.trim()).toBe("Run `gh auth login`.");
+  });
+
+  it("shows a problem after who is signed in, in the core's words", () => {
+    const problem = { kind: "internal", message: "Tsugiki can't write to its database." } as const;
+    render(StatusBar, { status: { ...OCTOCAT_ONLINE, problem } });
+    expect(bar().textContent?.trim()).toBe("octocat · Tsugiki can't write to its database.");
+  });
+
+  it("leaves out a problem it can't know is current when it can't read the status", () => {
+    const problem = { kind: "internal", message: "Tsugiki can't write to its database." } as const;
+    render(StatusBar, { status: { ...OCTOCAT_ONLINE, problem }, error: "Error: no IPC" });
+    expect(bar().textContent?.trim()).toBe("Tsugiki can't read its status: Error: no IPC");
   });
 
   it("waits while the core is connecting", () => {
-    render(StatusBar, { status: { state: "connecting" } });
+    render(StatusBar, { status: statusOf({ state: "connecting" }) });
     expect(bar().textContent).toContain("Connecting…");
   });
 
@@ -139,7 +150,7 @@ describe("StatusBar", () => {
   });
 
   describe("when the settings hide it", () => {
-    const online = { state: "online", login: "octocat" } as const;
+    const online = OCTOCAT_ONLINE;
 
     // It stays in the page, empty: screen readers only announce changes in a live region that already exists.
     const expectEmpty = () => {
@@ -153,40 +164,51 @@ describe("StatusBar", () => {
     });
 
     it("stays empty while connecting", () => {
-      render(StatusBar, { status: { state: "connecting" }, visible: false });
+      render(StatusBar, { status: statusOf({ state: "connecting" }), visible: false });
       expectEmpty();
     });
 
     it("isn't empty when it has something to say", () => {
-      render(StatusBar, { status: { state: "offline" }, visible: false });
+      render(StatusBar, { status: statusOf({ state: "offline" }), visible: false });
       expect(bar().classList.contains("empty")).toBe(false);
     });
 
     it("comes back to say Tsugiki is offline", () => {
-      render(StatusBar, { status: { state: "offline" }, visible: false });
+      render(StatusBar, { status: statusOf({ state: "offline" }), visible: false });
       expect(bar().textContent?.trim()).toBe("Offline");
     });
 
     it("comes back to say who it was last time while offline", () => {
-      render(StatusBar, { status: { state: "offline_as", last_login: "octocat" }, visible: false });
+      render(StatusBar, { status: statusOf({ state: "offline_as", last_login: "octocat" }), visible: false });
       expect(bar().textContent?.trim()).toBe("octocat · Offline");
     });
 
     // A Refresh while offline would otherwise empty the bar until GitHub answers or the ask fails.
     it("stays while it asks GitHub again after being offline", () => {
-      render(StatusBar, { status: { state: "reconnecting" }, visible: false });
+      render(StatusBar, { status: statusOf({ state: "reconnecting" }), visible: false });
       expect(bar().textContent?.trim()).toBe("Connecting…");
     });
 
     it("stays with who it was last time while it asks again after being offline", () => {
-      render(StatusBar, { status: { state: "reconnecting_as", last_login: "octocat" }, visible: false });
+      render(StatusBar, {
+        status: statusOf({ state: "reconnecting_as", last_login: "octocat" }),
+        visible: false,
+      });
       expect(bar().textContent?.trim()).toBe("octocat · Connecting…");
       expect(bar().classList.contains("offline")).toBe(false);
     });
 
-    it("comes back for a problem", () => {
-      const problem = { kind: "unauthorized", message: "Run `gh auth login`." } as const;
-      render(StatusBar, { status: { state: "problem", problem }, visible: false });
+    it("comes back for a problem alone, as who is signed in tells nothing new", () => {
+      const problem = { kind: "internal", message: "Tsugiki can't write to its database." } as const;
+      render(StatusBar, { status: { ...OCTOCAT_ONLINE, problem }, readOnly: true, visible: false });
+      expect(bar().textContent?.trim()).toBe("Tsugiki can't write to its database.");
+    });
+
+    it.each([
+      ["a refused token", statusOf({ state: "refused", message: "Run `gh auth login`." })],
+      ["no token", statusOf({ state: "no_token", message: "Run `gh auth login`." })],
+    ])("comes back for %s, which stops Tsugiki reading", (_, status) => {
+      render(StatusBar, { status, visible: false });
       expect(bar().textContent?.trim()).toBe("Run `gh auth login`.");
     });
 
@@ -203,13 +225,13 @@ describe("StatusBar", () => {
 
   describe("what is wrong with the settings files", () => {
     it("shows beside the status", () => {
-      const status = { state: "online", login: "octocat" } as const;
+      const status = OCTOCAT_ONLINE;
       render(StatusBar, { status, problems: ["settings.toml, line 3: bad"] });
       expect(bar().textContent?.trim()).toBe("octocat · settings.toml, line 3: bad");
     });
 
     it("lists each file's problem", () => {
-      const status = { state: "offline" } as const;
+      const status = statusOf({ state: "offline" });
       render(StatusBar, { status, problems: ["machine.toml, line 1: bad", "settings.toml, line 3: bad"] });
       expect(bar().textContent?.trim()).toBe(
         "Offline · machine.toml, line 1: bad · settings.toml, line 3: bad",
@@ -219,7 +241,7 @@ describe("StatusBar", () => {
 });
 
 describe("StatusBar's line for a mirror that waits for an answer", () => {
-  const online = { state: "online", login: "octocat" } as const;
+  const online = OCTOCAT_ONLINE;
   const line = () => screen.getByRole("button", { name: "python/cpython's mirror waits for your answer" });
 
   it("says so in the live region, even when the settings hide the bar, and offers no answers", async () => {
@@ -257,13 +279,11 @@ describe("StatusBar's line for a mirror that waits for an answer", () => {
 });
 
 describe("StatusBar's Try again after a read that found no token", () => {
-  const noToken = {
-    state: "problem",
-    problem: { kind: "no_token", message: "Install `gh` or run `gh auth login`." },
-  } as const;
+  const noToken = statusOf({ state: "no_token", message: "Install `gh` or run `gh auth login`." });
+  const internal = { kind: "internal", message: "Tsugiki can't write to its database." } as const;
   const tryAgain = () => screen.queryByRole("button", { name: "Try again" });
 
-  it("sits after the problem, outside the live region, and sends a Refresh at a click", async () => {
+  it("sits after the status, outside the live region, and sends a Refresh at a click", async () => {
     const onrefresh = vi.fn();
     render(StatusBar, { status: noToken, onrefresh });
     expect(bar().textContent?.trim()).toBe("Install `gh` or run `gh auth login`.");
@@ -273,23 +293,31 @@ describe("StatusBar's Try again after a read that found no token", () => {
     expect(onrefresh).toHaveBeenCalledOnce();
   });
 
-  it("shows with no Repository open, and when the settings hide the bar, as the problem does", () => {
+  it("shows with no Repository open, and when the settings hide the bar, as the account does", () => {
     render(StatusBar, { status: noToken, lastSync: null, visible: false });
     expect(screen.getAllByRole("button")).toEqual([tryAgain()]);
   });
 
-  it("shows beside no other problem, a refused token included", () => {
-    const refused = { kind: "unauthorized", message: "GitHub refused the token." } as const;
-    const { unmount } = render(StatusBar, { status: { state: "problem", problem: refused } });
+  // A failed store write while Tsugiki waits for a token hid the account, and Try again with it (#1062).
+  it("stays when a problem shows after the account", () => {
+    render(StatusBar, { status: { ...noToken, problem: internal }, readOnly: true });
+    expect(bar().textContent?.trim()).toBe(
+      "Install `gh` or run `gh auth login`. · Read-only · Tsugiki can't write to its database.",
+    );
+    expect(bar().nextElementSibling).toBe(screen.getByRole("button", { name: "Try again" }));
+  });
+
+  it("shows beside no other account or problem, a refused token included", () => {
+    const refused = statusOf({ state: "refused", message: "GitHub refused the token." });
+    const { unmount } = render(StatusBar, { status: refused });
     expect(tryAgain()).toBeNull();
     unmount();
-    const internal = { kind: "internal", message: "Tsugiki can't read its database." } as const;
-    render(StatusBar, { status: { state: "problem", problem: internal } });
+    render(StatusBar, { status: { ...OCTOCAT_ONLINE, problem: internal } });
     expect(tryAgain()).toBeNull();
   });
 
   it("goes while the read is out, as the core then says Connecting…", () => {
-    render(StatusBar, { status: { state: "connecting" } });
+    render(StatusBar, { status: statusOf({ state: "connecting" }) });
     expect(tryAgain()).toBeNull();
   });
 
@@ -300,7 +328,7 @@ describe("StatusBar's Try again after a read that found no token", () => {
 });
 
 describe("StatusBar's word on the mirror", () => {
-  const online = { state: "online", login: "octocat" } as const;
+  const online = OCTOCAT_ONLINE;
   const short = {
     kind: "disk_short",
     repository: "python/cpython",
@@ -368,7 +396,7 @@ describe("StatusBar's word on the mirror", () => {
 });
 
 describe("StatusBar's new version", () => {
-  const online = { state: "online", login: "octocat" } as const;
+  const online = OCTOCAT_ONLINE;
   const newVersion = {
     version: "0.3.0",
     page: "https://github.com/tsugiki/tsugiki/releases/tag/v0.3.0",
@@ -410,7 +438,7 @@ describe("StatusBar's new version", () => {
 });
 
 describe("StatusBar's sync under way", () => {
-  const online = { state: "online", login: "octocat" } as const;
+  const online = OCTOCAT_ONLINE;
   const repository = "python/cpython";
   const lastSync = { repository, at: null };
   type Load = { issues_read: number; issues_total: number | null; prs_fetched: number; prs_known: number };
@@ -525,7 +553,7 @@ describe("StatusBar's sync under way", () => {
   });
 
   it("says a clone waits for the network while none is under way", () => {
-    const offline = { state: "offline" } as const;
+    const offline = statusOf({ state: "offline" });
     const mirrorStates = [
       { repository: "python/peps", state: { state: "ready" } },
       { repository, state: { state: "offline" } },
@@ -547,7 +575,7 @@ describe("StatusBar's sync under way", () => {
 });
 
 describe("StatusBar's chord", () => {
-  const online = { state: "online", login: "octocat" } as const;
+  const online = OCTOCAT_ONLINE;
 
   afterEach(() => {
     vi.restoreAllMocks();
@@ -575,7 +603,7 @@ describe("StatusBar's chord", () => {
 });
 
 describe("StatusBar's points", () => {
-  const online = { state: "online", login: "octocat" } as const;
+  const online = OCTOCAT_ONLINE;
   const hourPoints = HOUR_POINTS;
   const time = (at: string) => new Date(at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
   const words = `1,240 points left · resets ${time(hourPoints.resets_at)}`;
@@ -636,7 +664,7 @@ describe("StatusBar's points", () => {
 });
 
 describe("StatusBar's request in flight", () => {
-  const online = { state: "online", login: "octocat" } as const;
+  const online = OCTOCAT_ONLINE;
   const went = "2026-11-22T10:00:00Z";
   const refresh = { asked: { kind: "refresh", repository: "some-maintainer/gcmon" }, since: went } as const;
   const waiting = () => screen.queryByTitle(/^Waiting for GitHub/);
@@ -698,7 +726,7 @@ describe("StatusBar's request in flight", () => {
   it("says when Tsugiki waits for gh to give the token", () => {
     vi.useFakeTimers({ now: new Date("2026-11-22T10:00:04Z") });
     render(StatusBar, {
-      status: { state: "connecting" },
+      status: statusOf({ state: "connecting" }),
       inFlight: { asked: { kind: "token" }, since: went },
     });
     expect(screen.queryByTitle(/^Waiting for gh/)?.textContent).toBe("Waiting for gh to give the token, 4 s");
@@ -713,7 +741,7 @@ describe("StatusBar's request in flight", () => {
   it("goes once the request answers or fails", async () => {
     vi.useFakeTimers({ now: new Date("2026-11-22T10:00:04Z") });
     const { rerender } = render(StatusBar, { status: online, inFlight: refresh });
-    await rerender({ status: { state: "offline" }, inFlight: null });
+    await rerender({ status: statusOf({ state: "offline" }), inFlight: null });
     expect(waiting()).toBeNull();
     expect(bar().textContent).toContain("Offline");
   });

@@ -75,67 +75,160 @@ fn a_last_sync_reaches_the_ui_as_a_time_or_as_nothing() {
 #[test]
 fn nothing_is_known_before_tsugiki_connects() {
     let (mut board, seen) = watched_board();
-    board.set(Status::Connecting);
+    board.account(Account::Connecting);
     assert!(announced(&seen).is_empty(), "it was connecting already");
 }
 
 #[test]
 fn every_change_is_announced() {
     let (mut board, seen) = watched_board();
-    board.set(Status::Offline);
-    board.set(Status::Connecting);
-    assert_eq!(announced(&seen), [Status::Offline, Status::Connecting]);
+    board.account(Account::Offline);
+    board.account(Account::Connecting);
+    assert_eq!(
+        announced(&seen),
+        [
+            Status::from(Account::Offline),
+            Status::from(Account::Connecting)
+        ]
+    );
+}
+
+fn octocat() -> Account {
+    Account::Online {
+        login: Login::new("octocat"),
+    }
+}
+
+fn database_problem() -> Error {
+    Error::new(ErrorKind::Internal, "Tsugiki can't write to its database.")
 }
 
 #[test]
-fn the_status_reaches_the_ui_tagged_by_its_state() {
+fn a_problem_shows_beside_the_account_and_a_change_of_account_keeps_it() {
+    let (mut board, seen) = watched_board();
+    board.account(octocat());
+
+    board.problem(database_problem());
+    board.account(Account::Offline);
+
+    let beside = |account| Status {
+        account,
+        problem: Some(database_problem()),
+    };
+    assert_eq!(
+        announced(&seen),
+        [
+            octocat().into(),
+            beside(octocat()),
+            beside(Account::Offline)
+        ]
+    );
+}
+
+#[test]
+fn a_whole_status_replaces_the_problem_or_takes_it_away() {
+    let (mut board, seen) = watched_board();
+    board.problem(database_problem());
+
+    board.set(octocat().into());
+
+    assert_eq!(announced(&seen).last(), Some(&octocat().into()));
+}
+
+#[test]
+fn only_the_account_says_whether_github_can_be_reached() {
+    let mut board = super::testing::quiet_board();
+    board.problem(database_problem());
+    assert!(!board.is_offline());
+
+    board.account(Account::OfflineAs {
+        last_login: Login::new("hubot"),
+    });
+
+    assert!(board.is_offline());
+    assert!(board.asking_again());
+    assert_eq!(
+        board.status(),
+        &Status {
+            account: Account::ReconnectingAs {
+                last_login: Login::new("hubot")
+            },
+            problem: Some(database_problem()),
+        }
+    );
+}
+
+#[test]
+fn the_account_reaches_the_ui_tagged_by_its_state() {
     let hubot = || Login::new("hubot");
-    let problem = Error::new(ErrorKind::Unauthorized, "Sign in.");
     let cases = [
-        (Status::Offline, serde_json::json!({ "state": "offline" })),
+        (Account::Offline, serde_json::json!({ "state": "offline" })),
         (
-            Status::Connecting,
+            Account::Connecting,
             serde_json::json!({ "state": "connecting" }),
         ),
         (
-            Status::Online {
-                login: Login::new("octocat"),
-            },
+            octocat(),
             serde_json::json!({ "state": "online", "login": "octocat" }),
         ),
         (
-            Status::ConnectingAs {
+            Account::ConnectingAs {
                 last_login: hubot(),
             },
             serde_json::json!({ "state": "connecting_as", "last_login": "hubot" }),
         ),
         (
-            Status::OfflineAs {
+            Account::OfflineAs {
                 last_login: hubot(),
             },
             serde_json::json!({ "state": "offline_as", "last_login": "hubot" }),
         ),
         (
-            Status::Reconnecting,
+            Account::Reconnecting,
             serde_json::json!({ "state": "reconnecting" }),
         ),
         (
-            Status::ReconnectingAs {
+            Account::ReconnectingAs {
                 last_login: hubot(),
             },
             serde_json::json!({ "state": "reconnecting_as", "last_login": "hubot" }),
         ),
         (
-            Status::Problem { problem },
-            serde_json::json!({
-                "state": "problem",
-                "problem": { "kind": "unauthorized", "message": "Sign in." },
-            }),
+            Account::NoToken {
+                message: "Install gh.".to_owned(),
+            },
+            serde_json::json!({ "state": "no_token", "message": "Install gh." }),
+        ),
+        (
+            Account::Refused {
+                message: "Sign in.".to_owned(),
+            },
+            serde_json::json!({ "state": "refused", "message": "Sign in." }),
         ),
     ];
-    for (status, expected) in cases {
-        assert_eq!(serde_json::to_value(status).unwrap(), expected);
+    for (account, expected) in cases {
+        assert_eq!(serde_json::to_value(account).unwrap(), expected);
     }
+}
+
+#[test]
+fn the_status_reaches_the_ui_as_the_account_and_a_problem_or_nothing() {
+    let troubled = Status {
+        account: Account::Offline,
+        problem: Some(Error::new(ErrorKind::Internal, "Disk full.")),
+    };
+
+    assert_eq!(
+        serde_json::to_value(Status::from(Account::Offline)).unwrap(),
+        serde_json::json!({ "account": { "state": "offline" }, "problem": null })
+    );
+    assert_eq!(
+        serde_json::to_value(troubled).unwrap(),
+        serde_json::json!({
+            "account": { "state": "offline" },
+            "problem": { "kind": "internal", "message": "Disk full." },
+        })
+    );
 }
 
 #[test]

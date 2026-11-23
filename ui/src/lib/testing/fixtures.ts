@@ -2,7 +2,9 @@
 // e2e specs share it, and it imports nothing at run time from the app, which Playwright can't resolve.
 // They build the `_Serialize` shapes, which fill every field and so fit the `_Deserialize` ones too.
 import type {
+  Account,
   DiffFile_Serialize as DiffFile,
+  Error_Serialize as CoreError,
   DiffThread_Serialize as DiffThread,
   Home_Serialize as Home,
   HourPoints_Serialize as HourPoints,
@@ -16,11 +18,21 @@ import type {
   RepositorySettings_Serialize as RepositorySettings,
   Settings_Serialize as Settings,
   ShowMuted,
+  Status_Serialize as Status,
   Themes,
   ThemeView,
   TreeRow,
   WorkbenchRow_Serialize as WorkbenchRow,
 } from "../data/bindings";
+
+/** The app-wide status that says `account`, with `problem` beside it, or nothing. */
+export const statusOf = (account: Account, problem: CoreError | null = null): Status => ({
+  account,
+  problem,
+});
+
+/** The status while octocat is signed in, with no problem. */
+export const OCTOCAT_ONLINE = statusOf({ state: "online", login: "octocat" });
 
 /** A command's answer of `data`. */
 export const ok = <T>(data: T) => ({ status: "ok" as const, data });

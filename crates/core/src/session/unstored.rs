@@ -7,7 +7,7 @@ use crate::fetching::{Item, ItemFetch, ItemUnfetched};
 use crate::github::GitHub;
 use crate::github::in_flight::Asking;
 use crate::github::item::Numbered;
-use crate::status::{Change, Status, StatusBoard};
+use crate::status::{Change, StatusBoard};
 use crate::store::Store;
 
 /// What a fetch saved: which kind the item was, and the change the window hears.
@@ -59,7 +59,7 @@ pub(super) fn fetch(
         Numbered::Hidden => return Ok(Err(ItemUnfetched::Hidden)),
     };
     if let Err(problem) = saved {
-        board.set(Status::Problem { problem });
+        board.problem(problem);
         return Ok(Err(ItemUnfetched::Other));
     }
     let change = Change {

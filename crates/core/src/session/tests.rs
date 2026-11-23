@@ -466,6 +466,7 @@ fn a_job_failure_of_the_accounts_keeps_the_earlier_problem_and_any_other_replace
 
     let offline = after_a_job_failed(octocat().account, earlier(), ErrorKind::Offline);
     let refused_now = after_a_job_failed(octocat().account, earlier(), ErrorKind::Unauthorized);
+    let no_token = after_a_job_failed(octocat().account, earlier(), ErrorKind::NoToken);
     let other = after_a_job_failed(octocat().account, earlier(), ErrorKind::Internal);
 
     let offline_as = Account::OfflineAs {
@@ -474,6 +475,13 @@ fn a_job_failure_of_the_accounts_keeps_the_earlier_problem_and_any_other_replace
     assert_eq!((offline.account, offline.problem), (offline_as, earlier()));
     assert!(matches!(refused_now.account, Account::Refused { .. }));
     assert_eq!(refused_now.problem, earlier());
+    let says_no_token = Account::NoToken {
+        message: "It failed.".to_owned(),
+    };
+    assert_eq!(
+        (no_token.account, no_token.problem),
+        (says_no_token, earlier())
+    );
     assert_eq!(
         other.problem,
         Some(Error::new(ErrorKind::Internal, "It failed."))

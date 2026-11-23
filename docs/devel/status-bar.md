@@ -14,8 +14,14 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
       whole bar.
     - In place of a login, the token's problems in the core's words: a read that found none, or a token
       GitHub refused, each opening the Settings page that fixes it.
+    - The login of the last run alone, or nothing, once GitHub answered without saying who is signed in,
+      such as with a 5xx. Nothing is still connecting, and the problem says what went wrong. A request
+      that never reached GitHub, refused by `tsugiki-token` or by this computer's clock, leaves the account
+      as it was.
+    - Nothing, once Tsugiki asks GitHub nothing more this run: its database didn't open, or a thread
+      stopped. The problem says why, and stands alone.
   - **Read-only**, after the account, while the open Repository is Read-only, for the token or by the
-    user's choice ([token.md](token.md)).
+    user's choice ([token.md](token.md)). A hidden bar leaves it out.
   - After Read-only, a problem that stops Tsugiki reading, such as a store write that failed, in the
     core's words. Each finished status check or read of the token takes it away or puts a new one in its
     place.

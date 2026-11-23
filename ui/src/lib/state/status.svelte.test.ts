@@ -638,9 +638,12 @@ it("says GitHub can't be reached while the account says offline, and while Refre
     statusOf({ state: "no_token", message: "Install gh." }),
     statusOf({ state: "refused", message: "Sign in." }),
     statusOf({ state: "online", login }, broken),
+    statusOf({ state: "unconfirmed" }, broken),
+    statusOf({ state: "unconfirmed_as", last_login: login }, broken),
+    statusOf({ state: "stopped" }, broken),
   ];
 
   const offline = [...statuses.map(isOffline), isOffline(undefined)];
 
-  expect(offline).toEqual([true, true, true, true, false, false, false, false, false, false, false]);
+  expect(offline).toEqual([true, true, true, true, ...Array<boolean>(10).fill(false)]);
 });

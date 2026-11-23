@@ -105,6 +105,27 @@ describe("StatusBar", () => {
     expect(bar().textContent?.trim()).toBe("");
   });
 
+  // GitHub answered, so nothing is still connecting, though the answer didn't say who is signed in.
+  it("shows who it was last time, or nobody, when GitHub's answer didn't say who is signed in", () => {
+    const problem = { kind: "internal", message: "GitHub's answer can't be read." } as const;
+    const { unmount } = render(StatusBar, {
+      status: statusOf({ state: "unconfirmed_as", last_login: "octocat" }, problem),
+    });
+    expect(bar().textContent?.trim()).toBe("octocat · GitHub's answer can't be read.");
+    unmount();
+    render(StatusBar, { status: statusOf({ state: "unconfirmed" }, problem) });
+    expect(bar().textContent?.trim()).toBe("GitHub's answer can't be read.");
+  });
+
+  // Nothing will connect, so the problem says why alone, as it did before the account had a part (#1070).
+  it("shows only the problem once Tsugiki stops asking GitHub, and no Try again", () => {
+    const problem = { kind: "internal", message: "Tsugiki stopped checking GitHub." } as const;
+    render(StatusBar, { status: statusOf({ state: "stopped" }, problem) });
+    expect(bar().textContent?.trim()).toBe("Tsugiki stopped checking GitHub.");
+    expect(screen.queryByRole("button", { name: "Try again" })).toBeNull();
+    expect(bar().classList.contains("offline")).toBe(false);
+  });
+
   it("shows who it was last time while it connects", () => {
     render(StatusBar, { status: statusOf({ state: "connecting_as", last_login: "octocat" }) });
     expect(bar().textContent?.trim()).toBe("octocat · Connecting…");
@@ -209,6 +230,12 @@ describe("StatusBar", () => {
       ["no token", statusOf({ state: "no_token", message: "Run `gh auth login`." })],
     ])("comes back for %s, which stops Tsugiki reading", (_, status) => {
       render(StatusBar, { status, visible: false });
+      expect(bar().textContent?.trim()).toBe("Run `gh auth login`.");
+    });
+
+    it("comes back for a token's problem alone, with no Read-only after it", () => {
+      const status = statusOf({ state: "no_token", message: "Run `gh auth login`." });
+      render(StatusBar, { status, readOnly: true, visible: false });
       expect(bar().textContent?.trim()).toBe("Run `gh auth login`.");
     });
 

@@ -135,8 +135,8 @@ fn a_second_session_on_the_same_folder_says_why_it_stopped() {
     first.stop(PLENTY);
     assert!(problem_of(first_status).is_none());
     assert_eq!(
-        problem_of(showing(&seen)),
-        Some(Error::new(ErrorKind::Internal, crate::store::IN_USE))
+        stopped_by(showing(&seen)).as_deref(),
+        Some(crate::store::IN_USE)
     );
 }
 
@@ -294,6 +294,100 @@ fn a_certificate_outside_its_dates_asks_for_the_clock_until_github_answers() {
 
     refresh(&mut board, &store, &github);
     assert_eq!(showing(&seen), octocat());
+}
+
+#[test]
+fn a_status_check_github_answers_without_a_login_shows_the_last_login_alone() {
+    let (mut board, seen) = watched_board();
+    let store = store_remembering("hubot");
+
+    assert!(connect_alone(&mut board, &store, answering(200, "{}")).is_some());
+
+    let shown = showing(&seen);
+    let hubot = Account::UnconfirmedAs {
+        last_login: Login::new("hubot"),
+    };
+    assert_eq!(shown.account, hubot);
+    assert_eq!(problem_kind(shown), Some(ErrorKind::Internal));
+}
+
+/// What the status bar says after a job's request failed with `kind`, from `account` with `earlier` beside
+/// it, when octocat signed in last time.
+fn after_a_job_failed(account: Account, earlier: Option<Error>, kind: ErrorKind) -> Status {
+    let mut board = quiet_board();
+    board.set(Status {
+        account,
+        problem: earlier,
+    });
+    tell_problem(
+        &mut board,
+        Error::new(kind, "It failed."),
+        &store_remembering("octocat"),
+    );
+    board.status().clone()
+}
+
+fn refused() -> Account {
+    Account::Refused {
+        message: "GitHub refused the token.".to_owned(),
+    }
+}
+
+#[test]
+fn a_failure_github_answered_leaves_the_last_login_unconfirmed_and_no_longer_offline() {
+    let octocat_last_time = Account::OfflineAs {
+        last_login: Login::new("octocat"),
+    };
+    for account in [Account::Offline, octocat_last_time, refused()] {
+        let after = after_a_job_failed(account, None, ErrorKind::NotFound);
+
+        let unconfirmed = Account::UnconfirmedAs {
+            last_login: Login::new("octocat"),
+        };
+        assert_eq!(after.account, unconfirmed);
+        assert!(!after.account.is_offline());
+        assert_eq!(problem_kind(after), Some(ErrorKind::NotFound));
+    }
+}
+
+#[test]
+fn a_login_github_confirmed_stays_beside_a_failure_github_answered() {
+    let after = after_a_job_failed(octocat().account, None, ErrorKind::Internal);
+
+    assert_eq!(after.account, octocat().account);
+    assert_eq!(problem_kind(after), Some(ErrorKind::Internal));
+}
+
+#[test]
+fn a_request_that_never_reached_github_leaves_the_account_as_it_was() {
+    for kind in [ErrorKind::QueryRefused, ErrorKind::CertificateDates] {
+        for account in [Account::Offline, refused(), octocat().account] {
+            let after = after_a_job_failed(account.clone(), None, kind);
+
+            assert_eq!(after.account, account);
+            assert_eq!(problem_kind(after), Some(kind));
+        }
+    }
+}
+
+#[test]
+fn a_job_failure_of_the_accounts_keeps_the_earlier_problem_and_any_other_replaces_it() {
+    let earlier = || Some(database_problem());
+
+    let offline = after_a_job_failed(octocat().account, earlier(), ErrorKind::Offline);
+    let refused_now = after_a_job_failed(octocat().account, earlier(), ErrorKind::Unauthorized);
+    let other = after_a_job_failed(octocat().account, earlier(), ErrorKind::Internal);
+
+    let offline_as = Account::OfflineAs {
+        last_login: Login::new("octocat"),
+    };
+    assert_eq!((offline.account, offline.problem), (offline_as, earlier()));
+    assert!(matches!(refused_now.account, Account::Refused { .. }));
+    assert_eq!(refused_now.problem, earlier());
+    assert_eq!(
+        other.problem,
+        Some(Error::new(ErrorKind::Internal, "It failed."))
+    );
 }
 
 /// The `Database` for `run`, with no reader waiting for it.
@@ -1271,7 +1365,9 @@ fn named_for_github(message: GitHubMessage) -> String {
         GitHubMessage::FetchUnstored { item, reply } => {
             SessionMessage::FetchUnstored { item, reply }
         }
-        GitHubMessage::Size { .. } | GitHubMessage::Problem(_) => return "other".to_owned(),
+        GitHubMessage::Size { .. } | GitHubMessage::Problem(_) | GitHubMessage::Stopped(_) => {
+            return "other".to_owned();
+        }
     };
     crate::fetching::testing::named(passed)
 }
@@ -4138,10 +4234,19 @@ fn a_panic_before_the_github_thread_starts_says_tsugiki_stopped_checking() {
 
     run_stopped(board, database(Err(lost)), octocat_answers());
 
-    assert_eq!(
-        problem_of(showing(&seen)).unwrap().message,
-        stopped_checking().message
-    );
+    assert_eq!(stopped_by(showing(&seen)), Some(stopped_checking().message));
+}
+
+/// Why `status` says Tsugiki asks GitHub nothing more this run, with no account part, or nothing when it
+/// says anything else (#1070).
+fn stopped_by(status: Status) -> Option<String> {
+    match status {
+        Status {
+            account: Account::Stopped,
+            problem: Some(problem),
+        } => Some(problem.message),
+        _ => None,
+    }
 }
 
 /// A board whose first announcement of a status panics, and where it sends the others.
@@ -4164,10 +4269,7 @@ fn a_panic_in_the_github_thread_says_tsugiki_stopped_checking() {
 
     run_stopped(board, database(Ok(folders)), octocat_answers());
 
-    assert_eq!(
-        problem_of(showing(&seen)).unwrap().message,
-        stopped_checking().message
-    );
+    assert_eq!(stopped_by(showing(&seen)), Some(stopped_checking().message));
 }
 
 #[test]
@@ -4184,12 +4286,10 @@ fn a_panic_in_the_sessions_thread_has_the_github_thread_say_tsugiki_stopped_chec
     let stopped = seen.recv_timeout(PLENTY).unwrap();
     session.stop(PLENTY);
 
-    assert_eq!(
-        problem_of(stopped).unwrap().message,
-        stopped_checking().message
-    );
+    assert_eq!(stopped_by(stopped), Some(stopped_checking().message));
 }
 
+/// The account said no token, which Try again would read again, but nothing hears the click any more.
 #[test]
 fn a_panic_in_the_sessions_thread_with_no_token_still_says_tsugiki_stopped_checking() {
     let (folders, _folder) = temp_folders("session-panic-no-token");
@@ -4208,11 +4308,7 @@ fn a_panic_in_the_sessions_thread_with_no_token_still_says_tsugiki_stopped_check
     let stopped = seen.recv_timeout(PLENTY).unwrap();
     session.stop(PLENTY);
 
-    assert!(matches!(stopped.account, Account::NoToken { .. }));
-    assert_eq!(
-        problem_of(stopped).unwrap().message,
-        stopped_checking().message
-    );
+    assert_eq!(stopped_by(stopped), Some(stopped_checking().message));
 }
 
 #[test]
@@ -4238,8 +4334,8 @@ fn folders_that_cant_be_found_show_as_a_problem() {
     run_stopped(board, database(Err(lost)), octocat_answers());
 
     assert_eq!(
-        problem_of(showing(&seen)).unwrap().message,
-        "HOME isn't a full path."
+        stopped_by(showing(&seen)).as_deref(),
+        Some("HOME isn't a full path.")
     );
 }
 
@@ -4259,7 +4355,7 @@ fn a_newer_database_shows_as_a_problem_and_github_isnt_asked() {
     run_stopped(board, database(Ok(folders.clone())), octocat_answers());
 
     let [only]: [Status; 1] = announced(&seen).try_into().unwrap();
-    assert!(problem_of(only).unwrap().message.contains("newer"));
+    assert!(stopped_by(only).unwrap().contains("newer"));
     assert_eq!(fs::read(folders.database()).unwrap(), before);
 }
 

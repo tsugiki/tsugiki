@@ -31,7 +31,9 @@
 
   const GIT_DOWNLOADS = "https://git-scm.com/downloads";
 
-  /** What the status bar says of `account`: who is signed in, or why nobody is. */
+  /** What the status bar says of `account`: who is signed in, or why nobody is. Nothing, when GitHub answered
+   * without a login and none is known, or when Tsugiki asks GitHub nothing more, as the problem beside it
+   * then stands alone (#1070). */
   function accountWords(account: Account | undefined): string {
     switch (account?.state) {
       case "no_token":
@@ -43,6 +45,11 @@
         return `${account.last_login} · Offline`;
       case "online":
         return account.login;
+      case "unconfirmed_as":
+        return account.last_login;
+      case "unconfirmed":
+      case "stopped":
+        return "";
       case "connecting_as":
       case "reconnecting_as":
         return `${account.last_login} · Connecting…`;
@@ -140,8 +147,9 @@
   // sync status, which a click refreshes too, shows only while a Repository is open. A problem beside the
   // account can't take it away (#1062).
   const noToken = $derived(!error && account?.state === "no_token");
-  // An unread status says nothing of the open Repository, so Read-only waits for a status.
-  const readOnlyShown = $derived(readOnly && showAccount && !error);
+  // An unread status says nothing of the open Repository, so Read-only waits for a status. A hidden bar shows
+  // a token's problem alone, as Read-only matters only once Tsugiki reads.
+  const readOnlyShown = $derived(readOnly && (visible || offline || reconnecting) && !error);
   // Who is signed in, or why nobody is, then Read-only, as it says more of the open Repository, then the
   // problem beside the account.
   const statusWords = $derived(

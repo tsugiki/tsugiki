@@ -1864,7 +1864,7 @@ fn a_rate_limit_doesnt_hold_the_worker() {
     requests.fetch_heads(cpython.clone(), vec![head(1)]);
     // A status check that GitHub refused for its rate limit leaves who is signed in unconfirmed, and the
     // limit beside it as a problem, which the worker doesn't hear.
-    requests.follow(&Account::ConnectingAs {
+    requests.follow(&Account::UnconfirmedAs {
         last_login: Login::new("octocat"),
     });
     let fetch = starts.recv_timeout(PLENTY).unwrap();

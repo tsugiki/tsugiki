@@ -46,6 +46,9 @@ export function isOffline(status: Status | undefined): boolean {
     case "connecting_as":
     case "no_token":
     case "refused":
+    case "unconfirmed":
+    case "unconfirmed_as":
+    case "stopped":
     case undefined:
       return false;
   }

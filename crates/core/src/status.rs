@@ -41,6 +41,14 @@ pub enum Account {
     NoToken { message: String },
     /// GitHub refused the token, in `message`'s words.
     Refused { message: String },
+    /// Nobody is known, and GitHub answered without saying who is signed in, such as with an answer Tsugiki
+    /// couldn't parse. The problem beside it says what went wrong, and the next status check asks again.
+    Unconfirmed,
+    /// GitHub answered without saying who is signed in, and this is who was signed in last time.
+    UnconfirmedAs { last_login: Login },
+    /// Tsugiki asks GitHub nothing more this run: its database didn't open, or a thread of the session
+    /// stopped. The problem beside it says why, and the status bar shows it alone (#1070).
+    Stopped,
 }
 
 impl Account {
@@ -56,7 +64,10 @@ impl Account {
             | Self::ConnectingAs { .. }
             | Self::Online { .. }
             | Self::NoToken { .. }
-            | Self::Refused { .. } => false,
+            | Self::Refused { .. }
+            | Self::Unconfirmed
+            | Self::UnconfirmedAs { .. }
+            | Self::Stopped => false,
         }
     }
 
@@ -74,7 +85,10 @@ impl Account {
             | Self::ReconnectingAs { .. }
             | Self::Online { .. }
             | Self::NoToken { .. }
-            | Self::Refused { .. } => None,
+            | Self::Refused { .. }
+            | Self::Unconfirmed
+            | Self::UnconfirmedAs { .. }
+            | Self::Stopped => None,
         }
     }
 }
@@ -478,6 +492,15 @@ impl StatusBoard {
     pub(crate) fn problem(&mut self, problem: Error) {
         self.set(Status {
             account: self.current.account.clone(),
+            problem: Some(problem),
+        });
+    }
+
+    /// Says Tsugiki asks GitHub nothing more this run, and `problem` why, after a start that failed for good
+    /// or a thread that stopped (#1070).
+    pub(crate) fn stopped(&mut self, problem: Error) {
+        self.set(Status {
+            account: Account::Stopped,
             problem: Some(problem),
         });
     }

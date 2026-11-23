@@ -441,7 +441,19 @@ export type Account =
  */
 { state: "no_token"; message: string } | 
 /**  GitHub refused the token, in `message`'s words. */
-{ state: "refused"; message: string };
+{ state: "refused"; message: string } | 
+/**
+ *  Nobody is known, and GitHub answered without saying who is signed in, such as with an answer Tsugiki
+ *  couldn't parse. The problem beside it says what went wrong, and the next status check asks again.
+ */
+{ state: "unconfirmed" } | 
+/**  GitHub answered without saying who is signed in, and this is who was signed in last time. */
+{ state: "unconfirmed_as"; last_login: Login } | 
+/**
+ *  Tsugiki asks GitHub nothing more this run: its database didn't open, or a thread of the session
+ *  stopped. The problem beside it says why, and the status bar shows it alone (#1070).
+ */
+{ state: "stopped" };
 
 /**
  *  An action the user can bind a key to, named in `[keys]` as serde names it: `archive`,

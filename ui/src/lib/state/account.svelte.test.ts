@@ -31,6 +31,19 @@ describe("signedIn", () => {
     expect(signedIn(statusOf({ state: "connecting" }))).toEqual(notYet);
     expect(signedIn(statusOf({ state: "reconnecting" }))).toEqual(notYet);
     expect(signedIn(statusOf({ state: "offline" }))).toEqual({ note: "Not known: GitHub can't be reached." });
+    expect(signedIn(statusOf({ state: "unconfirmed" }))).toEqual({
+      note: "Not known: GitHub's last answer didn't say.",
+    });
+    expect(signedIn(statusOf({ state: "stopped" }))).toEqual({
+      note: "Not known: Tsugiki stopped asking GitHub. The status bar says why.",
+    });
+  });
+
+  it("names who was signed in last time when GitHub's last answer didn't say who is now", () => {
+    expect(signedIn(statusOf({ state: "unconfirmed_as", last_login: "octocat" }))).toEqual({
+      login: "octocat",
+      note: "Signed in last time. GitHub's last answer didn't say who is now.",
+    });
   });
 
   it("says what is wrong with the token in the core's words", () => {

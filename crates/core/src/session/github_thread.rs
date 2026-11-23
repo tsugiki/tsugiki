@@ -41,6 +41,9 @@ use super::{Intervals, stopped_checking, unstored};
 /// tiers.
 pub(super) enum GitHubMessage {
     Stop,
+    /// The session's thread stopped for good, for this reason, so the GitHub thread says Tsugiki asks GitHub
+    /// nothing more, and stops too (#1070).
+    Stopped(Error),
     /// Add repository's check.
     Check {
         name: RepositoryName,
@@ -237,6 +240,8 @@ pub(super) enum Turn {
     Asked,
     SyncStep,
     Stop,
+    /// The session's thread stopped for good, for this reason, so the thread stops too.
+    Stopped(Error),
 }
 
 impl Refreshes {
@@ -339,6 +344,10 @@ impl Refreshes {
         loop {
             match self.next_message(due.saturating_duration_since(Instant::now())) {
                 Ok(GitHubMessage::Stop) | Err(RecvTimeoutError::Disconnected) => return None,
+                Ok(GitHubMessage::Stopped(problem)) => {
+                    board.stopped(problem);
+                    return None;
+                }
                 Err(RecvTimeoutError::Timeout) => return Some(TokenRead::Due),
                 Ok(GitHubMessage::Refresh) => return Some(TokenRead::Clicked),
                 Ok(GitHubMessage::Fetch(fetched)) => {
@@ -410,6 +419,7 @@ impl Refreshes {
                 Ok(GitHubMessage::Stop) | Err(RecvTimeoutError::Disconnected) => {
                     return Turn::Stop;
                 }
+                Ok(GitHubMessage::Stopped(problem)) => return Turn::Stopped(problem),
                 Err(RecvTimeoutError::Timeout) => return self.timed_turn(due, hour_check),
             }
         }
@@ -468,7 +478,8 @@ pub(super) fn hour_check(github: &GitHub) -> Option<Instant> {
 }
 
 /// Runs the GitHub thread until the session stops it. Nothing else would show a panic in here: the last
-/// status would stay up and look current, so this replaces it with a problem.
+/// status would stay up and look current, so this replaces it with a problem, and the account says Tsugiki
+/// asks GitHub nothing more (#1070).
 pub(super) fn run_thread(
     mut board: StatusBoard,
     store: &Store,
@@ -479,7 +490,7 @@ pub(super) fn run_thread(
         watch(&mut board, store, access, refreshes)
     }));
     if ran.is_err() {
-        board.problem(stopped_checking());
+        board.stopped(stopped_checking());
     }
 }
 
@@ -538,6 +549,10 @@ pub(super) fn watch(
     loop {
         match refreshes.next_turn(&github, &mut syncs, due) {
             Turn::Stop => return,
+            Turn::Stopped(problem) => {
+                board.stopped(problem);
+                return;
+            }
             Turn::Refresh => {
                 refresh(board, store, &github);
                 due.status = Instant::now() + intervals.status;
@@ -920,7 +935,7 @@ fn asked_who(store: &Store, github: &GitHub, account: &Account) -> Status {
 /// gate holds every request until the reset, and the status bar says when the sync goes on. Only the
 /// question of who is signed in shows GitHub's refusal, as it asks nothing while the gate holds. A job isn't
 /// a status check, so a failure that only changes the account keeps the problem beside it.
-fn tell_problem(board: &mut StatusBoard, problem: Error, store: &Store) {
+pub(super) fn tell_problem(board: &mut StatusBoard, problem: Error, store: &Store) {
     if !matches!(problem.kind, ErrorKind::RateLimited { .. }) {
         let Status { account, problem } = status_after(problem, store, &board.status().account);
         let problem = problem.or_else(|| board.status().problem.clone());
@@ -929,7 +944,10 @@ fn tell_problem(board: &mut StatusBoard, problem: Error, store: &Store) {
 }
 
 /// The status bar's words after GitHub didn't answer as it should, from the `account` it says now. Being
-/// offline and the token's problems are the account's, and any other failure is a problem beside it.
+/// offline and the token's problems are the account's, and any other failure is a problem beside it. A
+/// failure GitHub answered also leaves who is signed in unconfirmed. A request that never reached GitHub,
+/// one `tsugiki-token` refused to send or one whose certificate this computer's clock doesn't accept, says
+/// nothing of the account, so it stays.
 fn status_after(problem: Error, store: &Store, account: &Account) -> Status {
     match problem.kind {
         ErrorKind::Offline => match store.last_login() {
@@ -946,12 +964,14 @@ fn status_after(problem: Error, store: &Store, account: &Account) -> Status {
         ErrorKind::Unauthorized => Status::from(Account::Refused {
             message: problem.message,
         }),
-        ErrorKind::CertificateDates
-        | ErrorKind::WriteRefused
+        ErrorKind::CertificateDates | ErrorKind::QueryRefused => Status {
+            account: account.clone(),
+            problem: Some(problem),
+        },
+        ErrorKind::WriteRefused
         | ErrorKind::RateLimited { .. }
         | ErrorKind::NotFound
         | ErrorKind::Conflict
-        | ErrorKind::QueryRefused
         | ErrorKind::Internal => Status {
             account: unconfirmed(account, store),
             problem: Some(problem),
@@ -959,18 +979,25 @@ fn status_after(problem: Error, store: &Store, account: &Account) -> Status {
     }
 }
 
-/// The account after GitHub answered without saying who is signed in: it isn't offline any more, nor
-/// refused the token, but who is signed in waits for the next status check. A login GitHub confirmed stays.
+/// The account after GitHub answered without saying who is signed in: it isn't offline, nor did it refuse
+/// the token, but who is signed in waits for the next status check, so the status bar shows the last login,
+/// if the store says, without "Connecting…". A login GitHub confirmed stays, and so does a session that
+/// stopped.
 fn unconfirmed(account: &Account, store: &Store) -> Account {
     match account {
-        Account::Connecting | Account::ConnectingAs { .. } | Account::Online { .. } => {
-            account.clone()
-        }
-        Account::Offline
+        Account::Online { .. } | Account::Stopped => account.clone(),
+        Account::Connecting
+        | Account::ConnectingAs { .. }
+        | Account::Offline
         | Account::OfflineAs { .. }
         | Account::Reconnecting
         | Account::ReconnectingAs { .. }
         | Account::NoToken { .. }
-        | Account::Refused { .. } => connecting(store),
+        | Account::Refused { .. }
+        | Account::Unconfirmed
+        | Account::UnconfirmedAs { .. } => match store.last_login() {
+            Ok(Some(last_login)) => Account::UnconfirmedAs { last_login },
+            Ok(None) | Err(_) => Account::Unconfirmed,
+        },
     }
 }

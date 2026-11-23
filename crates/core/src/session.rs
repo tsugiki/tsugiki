@@ -551,8 +551,9 @@ impl Database {
 /// stays as it is (ADR 0010).
 ///
 /// Nothing else would show a panic in here: the last status would stay up and look current, so this replaces
-/// it with a problem. A panic in the session's thread has the GitHub thread say so and stop. It relies on
-/// panics unwinding, so `panic = "abort"` would end the app instead (#57).
+/// it with a problem, and the account says Tsugiki asks GitHub nothing more (#1070). A panic in the session's
+/// thread has the GitHub thread say so and stop. It relies on panics unwinding, so `panic = "abort"` would
+/// end the app instead (#57).
 fn run(database: Database, threads: Threads, keeper: &Keeper) {
     let Threads {
         mut board,
@@ -562,7 +563,7 @@ fn run(database: Database, threads: Threads, keeper: &Keeper) {
     let opened = catch_unwind(AssertUnwindSafe(|| match database.open() {
         Ok(opened) => Some(opened),
         Err(problem) => {
-            board.problem(problem);
+            board.stopped(problem);
             None
         }
     }));
@@ -570,7 +571,7 @@ fn run(database: Database, threads: Threads, keeper: &Keeper) {
         Ok(Some(opened)) => opened,
         Ok(None) => return,
         Err(_) => {
-            board.problem(stopped_checking());
+            board.stopped(stopped_checking());
             return;
         }
     };
@@ -582,10 +583,11 @@ fn run(database: Database, threads: Threads, keeper: &Keeper) {
         )]
         scope.spawn(move || github_thread::run_thread(board, shared, access, &refreshes));
         let kept = catch_unwind(AssertUnwindSafe(|| keeper.run(&store)));
-        if kept.is_err() {
-            keeper.telling.problem(stopped_checking());
-        }
-        keeper.telling.to_github(GitHubMessage::Stop);
+        let stop = match kept {
+            Ok(()) => GitHubMessage::Stop,
+            Err(_) => GitHubMessage::Stopped(stopped_checking()),
+        };
+        keeper.telling.to_github(stop);
     });
     reader.close();
     store.close();

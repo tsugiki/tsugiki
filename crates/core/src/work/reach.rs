@@ -43,19 +43,20 @@ pub(crate) fn in_own_right(
     repository: &RepositorySettings,
     causes: &Causes,
 ) -> BTreeSet<u32> {
-    let mut own = unpinned_in_own_right(facts, repository, causes);
+    let mut own = held_in_own_right(facts, repository);
     if facts.viewer.is_some() {
+        own.extend(causes.waiting());
         own.extend(&facts.activity.pinned);
     }
     own
 }
 
-/// The Issues and PRs `in_own_right` finds, but for the pins: those a Pinned issue's unpin leaves on the
-/// Workbench (#1052).
-pub(crate) fn unpinned_in_own_right(
+/// The Issues and PRs `in_own_right` finds, but for what waits and the pins: those a Filter found, and each
+/// open PR the user wrote or reviewed. No action of the user's on an item takes it out of these, so the
+/// Workbench judges what each action does to an item from them (#1052).
+pub(crate) fn held_in_own_right(
     facts: &WorkFacts,
     repository: &RepositorySettings,
-    causes: &Causes,
 ) -> BTreeSet<u32> {
     let Some(viewer) = facts.viewer.as_ref() else {
         return BTreeSet::new();
@@ -66,7 +67,6 @@ pub(crate) fn unpinned_in_own_right(
         .map(|pr| pr.number);
     let mut own = matched(&repository.filters, &facts.filters);
     own.extend(reasoned);
-    own.extend(causes.waiting());
     own
 }
 

@@ -2040,8 +2040,8 @@ export type ListedItem_Deserialize = {
 	key: ItemKey,
 	/**  Whether the user's state hides the item, which only some lists show, as `Hidden` says. */
 	hidden?: Hidden | null,
-	/**  The unpin's effect on the item. The Inbox lists no Pinned issue, so it says `Stays` of each item. */
-	unpin: Unpin,
+	/**  The outcome of each user action that can finish the item, in the view that lists it (#1052). */
+	outcomes: Outcomes,
 } & WorkbenchItem_Deserialize;
 
 /**  A top-level entry of the list, with why it Needs attention, if it does. */
@@ -2051,8 +2051,8 @@ export type ListedItem_Serialize = {
 	key: ItemKey,
 	/**  Whether the user's state hides the item, which only some lists show, as `Hidden` says. */
 	hidden: Hidden | null,
-	/**  The unpin's effect on the item. The Inbox lists no Pinned issue, so it says `Stays` of each item. */
-	unpin: Unpin,
+	/**  The outcome of each user action that can finish the item, in the view that lists it (#1052). */
+	outcomes: Outcomes,
 } & WorkbenchItem_Serialize;
 
 /**  A first sync's progress through its queue. It learns of more PRs as it reads, so `prs_known` grows. */
@@ -2532,6 +2532,32 @@ export type Opened_Serialize = {
 
 /**  The start of a thread's line: the first words of its first comment, or the reason that comment is hidden. */
 export type Opening = { kind: "words"; words: string } | { kind: "hidden"; reason: HiddenReason };
+
+/**
+ *  A user action's effect on a listed item in the view that lists it, which the window reads at the
+ *  keypress to move the cursor on (#1052).
+ */
+export type Outcome = 
+/**  The action does nothing to the item, as Archive does to a Muted one. */
+"unchanged" | 
+/**  The view keeps listing the item, in its place or another. */
+"stays" | 
+/**  The view moves the item into its fold of Muted items at the list's end (#824). */
+"folds" | 
+/**  The view leaves the item out. */
+"leaves";
+
+/**  The `Outcome` of each user action that can finish an item, in the view that lists it. */
+export type Outcomes = {
+	mark_seen: Outcome,
+	archive: Outcome,
+	unarchive: Outcome,
+	mute: Outcome,
+	/**  Mute author on the author of the item's own Issue or PR (#494). */
+	mute_author: Outcome,
+	pin: Outcome,
+	unpin: Outcome,
+};
 
 /**
  *  Removed rows and the added rows right after them: the lines a change replaced, and what replaced them.
@@ -4131,21 +4157,6 @@ export type Unfetched =
 { kind: "behind" } | 
 /**  GitHub has no ref for the PR. */
 { kind: "not_on_github" };
-
-/**
- *  An unpin's effect on a listed item on the Workbench (#488), which the window reads to move the cursor on
- *  at the keypress (#1052).
- */
-export type Unpin = 
-/**
- *  The item stays where it is: it has no pin, something besides the pin keeps it on the Workbench, or
- *  the Workbench doesn't list it.
- */
-"stays" | 
-/**  Nothing but its pin keeps the Issue on the Workbench, which the unpin takes it off. */
-"leaves" | 
-/**  The Issue closed while pinned, so the unpin archives it. */
-"archives";
 
 /**  What a lookup waits for, which the Definition peek says while it waits. */
 export type Waiting = 

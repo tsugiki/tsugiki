@@ -1143,3 +1143,60 @@ fn the_window_sends_a_page_and_gets_the_next_one_s_start_as_text() {
     );
     assert_eq!(sent["show_muted"], "on");
 }
+
+#[test]
+fn each_item_says_what_each_action_does_to_it_in_the_inbox_and_mute_author_with_show_muted_on_keeps_it()
+ {
+    let world = ViewWorld::new("inbox-outcomes");
+    let opened = |number, at| IssueFacts {
+        author: Some(Login::new("issue-author")),
+        ..issue_at(number, at)
+    };
+    world.has(
+        vec![pr_at(10, Some(1), ago(1)), pr_at(20, None, ago(3))],
+        vec![opened(1, ago(10)), opened(2, ago(2))],
+    );
+    let outcomes = |inbox: &Inbox| {
+        let items = inbox.items.iter();
+        let each = items.map(|listed| (listed.key.number(), listed.outcomes));
+        each.collect::<BTreeMap<u32, Outcomes>>()
+    };
+
+    let off = outcomes(&read(&world, InboxPage::Latest));
+    world.show_muted(ShowMuted::On);
+    let on = outcomes(&read(&world, InboxPage::Latest));
+    world.finish();
+
+    let issue = Outcomes {
+        mark_seen: Outcome::Stays,
+        archive: Outcome::Leaves,
+        unarchive: Outcome::Unchanged,
+        mute: Outcome::Leaves,
+        mute_author: Outcome::Leaves,
+        pin: Outcome::Leaves,
+        unpin: Outcome::Unchanged,
+    };
+    // Issue 1 stays as the header of PR 10, which someone else wrote. Only an Issue takes a pin.
+    let expected = BTreeMap::from([
+        (
+            1,
+            Outcomes {
+                mute_author: Outcome::Stays,
+                ..issue
+            },
+        ),
+        (2, issue),
+        (
+            20,
+            Outcomes {
+                pin: Outcome::Unchanged,
+                ..issue
+            },
+        ),
+    ]);
+    assert_eq!(off, expected);
+    assert!(
+        on.values()
+            .all(|outcomes| outcomes.mute_author == Outcome::Stays)
+    );
+}

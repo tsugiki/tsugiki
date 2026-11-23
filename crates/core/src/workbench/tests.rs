@@ -50,15 +50,40 @@ fn a_pinned_issue_no_filter_reaches_is_on_the_workbench_marked_pinned_until_unpi
     // first saw the Issue closed, so the unpin takes it off without archiving it.
     assert_eq!(outline(&pinned), [("issue", 1, vec![10])]);
     assert!(first_issue(&pinned).pinned);
-    assert_eq!(pinned.items[0].unpin, Unpin::Leaves);
+    assert_eq!(pinned.items[0].outcomes.unpin, Outcome::Leaves);
     let sent = serde_json::to_value(&pinned).unwrap();
     assert_eq!(sent["items"][0]["pinned"], true);
-    assert_eq!(sent["items"][0]["unpin"], "leaves");
+    assert_eq!(sent["items"][0]["outcomes"]["unpin"], "leaves");
     assert_eq!(outline(&unpinned), []);
 }
 
 #[test]
-fn each_pin_says_what_its_unpin_does_to_the_issue_on_the_workbench() {
+fn mark_seen_takes_an_item_off_the_workbench_that_only_its_waiting_held_and_keeps_the_users_own_pr()
+{
+    let world = ViewWorld::new("workbench-mark-seen-outcome");
+    world.has(vec![mine(10)], vec![issue(1)]);
+    let flagging = crate::store::Flagging::on(1);
+    let now = time::OffsetDateTime::now_utc();
+    world
+        .db
+        .store
+        .mark_unseen(&cpython(), flagging, now)
+        .unwrap();
+    let (view, order) = (&WorkbenchView::Whole, ListOrder::Attention);
+    let read = Workbench::read(&world.db.reader, &world.settings(), view, order).unwrap();
+
+    world.finish();
+    let seen: BTreeMap<u32, Outcome> = (read.items.iter())
+        .map(|listed| (listed.key.number(), listed.outcomes.mark_seen))
+        .collect();
+    assert_eq!(
+        seen,
+        BTreeMap::from([(1, Outcome::Leaves), (10, Outcome::Stays)])
+    );
+}
+
+#[test]
+fn each_pin_says_what_an_unpin_and_archive_do_to_the_issue_in_the_view_that_lists_it() {
     let world = ViewWorld::new("workbench-unpin-judged");
     let closed = |number| crate::facts::issues::IssueFacts {
         state: Some(crate::facts::issues::IssueState::Closed),
@@ -81,53 +106,50 @@ fn each_pin_says_what_its_unpin_does_to_the_issue_on_the_workbench() {
         findings: vec![],
     };
     store.archive(&cpython(), archiving, now).unwrap();
-    let (view, order) = (&WorkbenchView::Pinned, ListOrder::Attention);
-    let pinned = Workbench::read(&world.db.reader, &world.settings(), view, order).unwrap();
-
-    world.finish();
-    let unpins: BTreeMap<u32, Unpin> = (pinned.items.iter())
-        .map(|listed| (listed.key.number(), listed.unpin))
-        .collect();
-    // Only the pin keeps Issue 1 on the Workbench, while Issue 2 Needs attention. Issue 3 closed while
-    // pinned, so the unpin archives it. An unpin leaves the Archived pin Archived.
-    let judged = [
-        (1, Unpin::Leaves),
-        (2, Unpin::Stays),
-        (3, Unpin::Archives),
-        (4, Unpin::Stays),
-    ];
-    assert_eq!(unpins, BTreeMap::from(judged));
-}
-
-#[test]
-fn an_unpin_leaves_a_muted_pin_muted_though_it_closed_and_nothing_else_keeps_it() {
-    let world = ViewWorld::new("workbench-unpin-muted");
-    world.has(vec![], vec![issue(1)]);
-    let store = &world.db.store;
-    store.pin(&cpython(), 1).unwrap();
-    let closed = crate::facts::issues::IssueFacts {
-        state: Some(crate::facts::issues::IssueState::Closed),
-        ..issue(1)
+    let read = |view: &WorkbenchView| {
+        let read = Workbench::read(
+            &world.db.reader,
+            &world.settings(),
+            view,
+            ListOrder::Attention,
+        );
+        let items = read.unwrap().items.into_iter();
+        let outcomes = items.map(|listed| (listed.key.number(), listed.outcomes));
+        outcomes.collect::<BTreeMap<u32, Outcomes>>()
     };
-    world.has(vec![], vec![closed]);
-    world.mute_issue(1, vec![1]);
-    let facts = world.db.reader.work_facts(&cpython()).unwrap();
-    let causes = Causes::of(&facts, world.settings().conventions);
-    let unpinned = unpinned_in_own_right(&facts, &world.settings(), &causes);
-    let held_closings = facts.activity.held_closings.clone();
-    let items = candidates_of(facts, &world.settings(), &BTreeSet::new(), &causes);
+    let (whole, pinned) = (read(&WorkbenchView::Whole), read(&WorkbenchView::Pinned));
 
     world.finish();
-    let judged: Vec<Unpin> = (items.into_iter())
-        .map(|item| {
-            ListedItem::of(&causes, item)
-                .unpin_judged(&unpinned, &held_closings)
-                .unpin
-        })
-        .collect();
-    // Muted hides more than the archive the unpin would make, and only a fresh ask brings it back.
-    assert_eq!(held_closings, BTreeSet::from([1]));
-    assert_eq!(judged, [Unpin::Stays]);
+    let of = |outcomes: &BTreeMap<u32, Outcomes>, take: fn(&Outcomes) -> Outcome| {
+        outcomes
+            .iter()
+            .map(|(number, outcomes)| (*number, take(outcomes)))
+            .collect::<Vec<_>>()
+    };
+    // Only the pin keeps Issue 1 on the Workbench, while Issue 2 Needs attention. Issue 3 closed while
+    // pinned, so the unpin archives it. Issue 4 is Archived, which the Workbench leaves out.
+    let unpin = |outcomes: &Outcomes| outcomes.unpin;
+    let judged = [
+        (1, Outcome::Leaves),
+        (2, Outcome::Stays),
+        (3, Outcome::Leaves),
+    ];
+    assert_eq!(of(&whole, unpin), judged);
+    // The Pinned issues list each pin, an Archived one too, so an unpin takes out each one and Archive none.
+    assert_eq!(
+        of(&pinned, unpin),
+        (1..=4)
+            .map(|number| (number, Outcome::Leaves))
+            .collect::<Vec<_>>()
+    );
+    let archive = |outcomes: &Outcomes| outcomes.archive;
+    let kept = [
+        (1, Outcome::Stays),
+        (2, Outcome::Stays),
+        (3, Outcome::Stays),
+        (4, Outcome::Unchanged),
+    ];
+    assert_eq!(of(&pinned, archive), kept);
 }
 
 #[test]

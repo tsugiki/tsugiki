@@ -23,6 +23,12 @@ use crate::work::{Causes, WorkReason, reasons};
 
 pub(crate) use crate::testing::me;
 
+impl ListedItem {
+    pub(crate) fn is_archived(&self) -> bool {
+        self.hidden == Some(super::Hidden::Archived)
+    }
+}
+
 pub(crate) fn someone() -> Login {
     Login::new("some-author")
 }

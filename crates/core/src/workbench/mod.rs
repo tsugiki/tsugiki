@@ -9,6 +9,7 @@ pub mod issue_view;
 mod issues;
 mod links;
 mod mute_author;
+mod outcomes;
 pub mod pr_files;
 pub mod pr_view;
 pub mod quick_open;
@@ -20,6 +21,7 @@ pub use filters::FilterLine;
 pub use issues::IssueItem;
 pub use mute_author::MuteAuthor;
 pub(crate) use mute_author::{Authored, authored_by};
+pub use outcomes::{Outcome, Outcomes};
 pub use rows::WorkbenchRow;
 
 use std::cmp::Reverse;
@@ -39,12 +41,13 @@ use crate::links::BackportKind;
 use crate::repository_settings::RepositorySettings;
 use crate::settings::ListOrder;
 use crate::store::StoreReader;
-use crate::work::{Causes, SeenMark, in_own_right, unpinned_in_own_right};
+use crate::work::{Causes, SeenMark, held_in_own_right};
 use attention::{attention_of, summed};
 use backports::{plant, standalone};
 use filters::FilterFacts;
 use issues::issue_item;
 use links::{link, links_of};
+use outcomes::{Place, Reach, Standing, outcomes_of, place};
 use rows::row;
 
 /// A Backport's line of the list.
@@ -200,8 +203,8 @@ pub struct ListedItem {
     pub key: ItemKey,
     /// Whether the user's state hides the item, which only some lists show, as `Hidden` says.
     pub hidden: Option<Hidden>,
-    /// The unpin's effect on the item. The Inbox lists no Pinned issue, so it says `Stays` of each item.
-    pub unpin: Unpin,
+    /// The outcome of each user action that can finish the item, in the view that lists it (#1052).
+    pub outcomes: Outcomes,
 }
 
 /// The user's own state that hides an item. A Muted item that is Archived too is Muted, which hides more.
@@ -243,7 +246,7 @@ impl Hidden {
 
 impl ListedItem {
     /// `item` with what `causes` judge of its tree. A Muted item Needs attention only for what
-    /// `Causes::fresh_asks` finds. An unpin leaves it as it is until `unpin_judged` says otherwise.
+    /// `Causes::fresh_asks` finds. The view that lists it then judges its `outcomes`.
     fn of(causes: &Causes, item: WorkbenchItem) -> Self {
         let key = item.key();
         let numbers = item.numbers();
@@ -257,46 +260,9 @@ impl ListedItem {
             hidden,
             key,
             item,
-            unpin: Unpin::Stays,
+            outcomes: Outcomes::UNJUDGED,
         }
     }
-
-    fn is_archived(&self) -> bool {
-        self.hidden == Some(Hidden::Archived)
-    }
-
-    /// The item with what an unpin does to it, if it is a Pinned issue (#1052): `unpinned` holds what keeps
-    /// an item on the Workbench but the pins, and `held_closings` the pins that closed while pinned.
-    fn unpin_judged(self, unpinned: &BTreeSet<u32>, held_closings: &BTreeSet<u32>) -> Self {
-        let unpin = match (&self.item, self.hidden) {
-            (WorkbenchItem::Issue(issue), None | Some(Hidden::Archived)) if issue.pinned => {
-                if held_closings.contains(&issue.number) {
-                    Unpin::Archives
-                } else if self.hidden.is_none() && !self.item.is_reached_by(unpinned) {
-                    Unpin::Leaves
-                } else {
-                    Unpin::Stays
-                }
-            }
-            // A Muted pin stays as Muted as it was, which hides more than Archived.
-            _ => Unpin::Stays,
-        };
-        Self { unpin, ..self }
-    }
-}
-
-/// An unpin's effect on a listed item on the Workbench (#488), which the window reads to move the cursor on
-/// at the keypress (#1052).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Type)]
-#[serde(rename_all = "snake_case")]
-pub enum Unpin {
-    /// The item stays where it is: it has no pin, something besides the pin keeps it on the Workbench, or
-    /// the Workbench doesn't list it.
-    Stays,
-    /// Nothing but its pin keeps the Issue on the Workbench, which the unpin takes it off.
-    Leaves,
-    /// The Issue closed while pinned, so the unpin archives it.
-    Archives,
 }
 
 /// The list the window asks for.
@@ -377,60 +343,49 @@ impl Workbench {
         view: &WorkbenchView,
     ) -> Self {
         let causes = Causes::of(&facts, repository.conventions);
-        let own_right = in_own_right(&facts, repository, &causes);
-        let unpinned = unpinned_in_own_right(&facts, repository, &causes);
+        let held = held_in_own_right(&facts, repository);
+        let waiting: BTreeSet<u32> = causes.waiting().collect();
         let held_closings = std::mem::take(&mut facts.activity.held_closings);
         let filters = FilterFacts::new(repository, std::mem::take(&mut facts.filters));
         let matched = filters.matched();
-        let selected = match view {
-            WorkbenchView::Whole | WorkbenchView::Archived | WorkbenchView::Pinned => None,
+        let found = match view {
             WorkbenchView::Filter { query } => Some(filters.numbers_of(query)),
+            WorkbenchView::Whole
+            | WorkbenchView::ReviewRequests
+            | WorkbenchView::StaleReviews
+            | WorkbenchView::Archived
+            | WorkbenchView::Pinned => None,
+        };
+        let first = match view {
+            WorkbenchView::Whole | WorkbenchView::Archived | WorkbenchView::Pinned => None,
+            WorkbenchView::Filter { .. } => found,
             WorkbenchView::ReviewRequests => Some(&causes.review_requests),
             WorkbenchView::StaleReviews => Some(&causes.stale_reviews),
         };
         let listed: Vec<ListedItem> =
-            candidates_of(facts, repository, selected.unwrap_or(&matched), &causes)
+            candidates_of(facts, repository, first.unwrap_or(&matched), &causes)
                 .into_iter()
-                .map(|item| ListedItem::of(&causes, item).unpin_judged(&unpinned, &held_closings))
+                .map(|item| ListedItem::of(&causes, item))
                 .collect();
         let requested = |listed: &ListedItem| listed.item.is_reached_by(&causes.review_requests);
         let asked = causes.asked();
+        let reach = Reach {
+            causes: &causes,
+            held: &held,
+            waiting: &waiting,
+            found,
+            asked: &asked,
+            held_closings: &held_closings,
+        };
+        let standings: Vec<(&ListedItem, Standing)> = (listed.iter())
+            .map(|listed| (listed, reach.standing_of(listed)))
+            .collect();
         let unhidden: Vec<&ListedItem> = (listed.iter())
             .filter(|listed| listed.hidden.is_none())
             .collect();
-        // The Review requests view keeps a PR whose Review request stood at the archive (#490), and a Muted
-        // PR while its request stands (#492), each marked as hidden.
-        let in_review_requests: Vec<&ListedItem> = (listed.iter())
-            .filter(|listed| match listed.hidden {
-                None => true,
-                Some(Hidden::Archived) => requested(listed),
-                Some(Hidden::Muted | Hidden::MutedAuthor) => listed.item.is_reached_by(&asked),
-            })
-            .collect();
-        // A Filter's view lists all its search found, as a search finds archived mail too (#824). An
-        // Archived item stays in place, and so does a Muted one while a Review request or an assignment to
-        // the user stands in its tree. The other Muted items go in a fold at the end.
-        let (folded, in_place): (Vec<&ListedItem>, Vec<&ListedItem>) =
-            listed.iter().partition(|listed| {
-                listed.hidden.is_some_and(Hidden::is_muted) && !listed.item.is_reached_by(&asked)
-            });
-        // The Workbench shows a Muted item while one that started after the mute stands, which is then all
-        // it Needs attention for.
-        let on_workbench: Vec<&ListedItem> = (listed.iter())
-            .filter(|listed| match listed.hidden {
-                None => true,
-                Some(Hidden::Archived) => false,
-                Some(Hidden::Muted | Hidden::MutedAuthor) => listed.attention.is_some(),
-            })
-            .collect();
-        // The Pinned issues' view lists each one the Workbench shows, and an Archived one in its place,
-        // marked Archived as a Filter's view marks it, so the user finds every pin there to unpin (#489).
-        let in_pinned: Vec<&ListedItem> = (listed.iter())
-            .filter(|listed| listed.item.is_pinned())
-            .filter(|listed| match listed.hidden {
-                None | Some(Hidden::Archived) => true,
-                Some(Hidden::Muted | Hidden::MutedAuthor) => listed.attention.is_some(),
-            })
+        let on_workbench: Vec<&ListedItem> = (standings.iter())
+            .filter(|(_, standing)| standing.shown_on_workbench())
+            .map(|(listed, _)| *listed)
             .collect();
         // A Filter's count leaves out what it found that the user put away (#824). One switched on counts
         // what Needs attention as the Workbench does, a Muted item asked about after the mute included.
@@ -446,23 +401,28 @@ impl Workbench {
         );
         let review_requests = count_of(listed.iter().filter(|listed| requested(listed)));
         let stale_reviews = prs_of(&unhidden, &causes.stale_reviews);
-        let shown_of = |from: &[&ListedItem]| {
-            let shown = from.iter().filter(|listed| match selected {
-                Some(numbers) => listed.item.is_reached_by(numbers),
-                // The item is on the Workbench when anything in its tree is, in its own right, or when it
-                // is a Muted item `on_workbench` holds.
-                None => listed.hidden.is_some() || listed.item.is_reached_by(&own_right),
+        let (mut items, mut muted) = (Vec::new(), Vec::new());
+        for (listed, standing) in &standings {
+            let into = match place(view, standing) {
+                Some(Place::Listed) => &mut items,
+                Some(Place::Folded) => &mut muted,
+                None => continue,
+            };
+            let outcomes = outcomes_of(view, standing);
+            into.push(ListedItem {
+                outcomes,
+                ..(*listed).clone()
             });
-            by_attention(shown.map(|listed| (*listed).clone()).collect())
+        }
+        let items = match view {
+            WorkbenchView::Archived => last_archived_first(items, &causes),
+            WorkbenchView::Whole
+            | WorkbenchView::Filter { .. }
+            | WorkbenchView::ReviewRequests
+            | WorkbenchView::StaleReviews
+            | WorkbenchView::Pinned => by_attention(items),
         };
-        let (items, muted) = match view {
-            WorkbenchView::Filter { .. } => (shown_of(&in_place), shown_of(&folded)),
-            WorkbenchView::ReviewRequests => (shown_of(&in_review_requests), Vec::new()),
-            WorkbenchView::Whole => (shown_of(&on_workbench), Vec::new()),
-            WorkbenchView::StaleReviews => (shown_of(&unhidden), Vec::new()),
-            WorkbenchView::Archived => (last_archived_first(&listed, &causes), Vec::new()),
-            WorkbenchView::Pinned => (shown_of(&in_pinned), Vec::new()),
-        };
+        let muted = by_attention(muted);
         Self {
             items,
             muted,
@@ -475,13 +435,9 @@ impl Workbench {
     }
 }
 
-/// The Archived items of `listed`, the last archived first as `causes` say, and the higher number first of
-/// two archived at once.
-fn last_archived_first(listed: &[ListedItem], causes: &Causes) -> Vec<ListedItem> {
-    let mut items: Vec<ListedItem> = (listed.iter())
-        .filter(|listed| listed.is_archived())
-        .cloned()
-        .collect();
+/// The Archived items `items`, the last archived first as `causes` say, and the higher number first of two
+/// archived at once.
+fn last_archived_first(mut items: Vec<ListedItem>, causes: &Causes) -> Vec<ListedItem> {
     items.sort_by_key(|listed| Reverse((causes.archived_at(listed.key), listed.key.number())));
     items
 }

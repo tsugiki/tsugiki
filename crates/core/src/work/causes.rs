@@ -317,6 +317,12 @@ impl Causes {
         })
     }
 
+    /// Whether the item `key` names is closed and has an archive, so it goes back to Archived once nothing
+    /// in its tree Needs attention, as `is_archived` says.
+    pub(crate) fn rests_archived(&self, key: ItemKey) -> bool {
+        self.archived.contains_key(&key) && self.closed.contains(&key.number())
+    }
+
     /// When the user last put away the item `key` names, if they archived it, which orders the Archived view
     /// (#491).
     pub(crate) fn archived_at(&self, key: ItemKey) -> Option<OffsetDateTime> {

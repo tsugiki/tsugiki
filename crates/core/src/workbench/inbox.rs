@@ -37,7 +37,8 @@ use super::backports::plant;
 use super::links::placed;
 use super::trees::Trees;
 use super::{
-    Hidden, ListedItem, PrTree, TreeEntry, Unpin, WorkbenchItem, WorkbenchRow, candidates,
+    Hidden, ListedItem, Outcome, Outcomes, PrTree, TreeEntry, WorkbenchItem, WorkbenchRow,
+    candidates,
 };
 use crate::conventions::Conventions;
 use crate::error::Error;
@@ -157,6 +158,11 @@ impl Inbox {
     /// wrote as `show` says.
     fn listed(read: PageRead, repository: &RepositorySettings, show: ShowMuted) -> Self {
         let causes = Causes::of(&read.facts, repository.conventions);
+        let issue_authors = (read.facts.issues.iter())
+            .filter_map(|issue| Some((issue.number, issue.author.clone()?)));
+        let pr_authors = (read.facts.pull_requests.iter())
+            .filter_map(|pr| Some((pr.number, pr.author.clone()?)));
+        let authors: BTreeMap<u32, Login> = issue_authors.chain(pr_authors).collect();
         let grouped = candidates(
             (read.facts, &read.links),
             repository,
@@ -181,6 +187,7 @@ impl Inbox {
                         && !causes.is_archived(key, &listed.item.numbers())
                 }
             })
+            .map(|listed| listed.judged_in_inbox(&causes, show, &authors))
             .collect();
         let place_of =
             |listed: &ListedItem| read.places.get(&listed.item.updated_at_and_number().1);
@@ -223,8 +230,52 @@ impl ListedItem {
             hidden: Hidden::of(causes, key, &item.numbers()),
             key,
             item,
-            unpin: Unpin::Stays,
+            outcomes: Outcomes::UNJUDGED,
         })
+    }
+
+    /// The item with the outcome in the Inbox of each action (#1052), which lists an item that no state of
+    /// the user's hides, or with "Show muted" on as `show` says, a Muted author's (#825). `authors` holds the
+    /// author of each Issue and PR. Mark Seen keeps an item there; Archive, Mute and a pin take it out; and
+    /// Mute author takes out an item whose rows that author all wrote, with "Show muted" off.
+    fn judged_in_inbox(
+        self,
+        causes: &Causes,
+        show: ShowMuted,
+        authors: &BTreeMap<u32, Login>,
+    ) -> Self {
+        let muted = self.hidden.is_some_and(Hidden::is_muted);
+        let unless_muted = |outcome| if muted { Outcome::Unchanged } else { outcome };
+        let mute_author = match (&self.item.mute_author_offered(), show) {
+            (None, _) => Outcome::Unchanged,
+            (Some(_), _) if self.hidden == Some(Hidden::MutedAuthor) => Outcome::Unchanged,
+            (Some(_), ShowMuted::On) => Outcome::Stays,
+            (Some(login), ShowMuted::Off) => {
+                let hides = |key: ItemKey| {
+                    causes.is_by_muted_author(key) || authors.get(&key.number()) == Some(login)
+                };
+                match self.item.clone().without(&hides) {
+                    Some(_) => Outcome::Stays,
+                    None => Outcome::Leaves,
+                }
+            }
+        };
+        let outcomes = Outcomes {
+            mark_seen: unless_muted(Outcome::Stays),
+            archive: unless_muted(Outcome::Leaves),
+            mute: unless_muted(Outcome::Leaves),
+            mute_author,
+            pin: match self.item {
+                WorkbenchItem::Issue(_) => Outcome::Leaves,
+                WorkbenchItem::StandalonePr(_) | WorkbenchItem::StandaloneBackport(_) => {
+                    Outcome::Unchanged
+                }
+            },
+            // The Inbox lists no Archived item and no Pinned issue.
+            unarchive: Outcome::Unchanged,
+            unpin: Outcome::Unchanged,
+        };
+        Self { outcomes, ..self }
     }
 }
 

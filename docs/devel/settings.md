@@ -69,11 +69,11 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
   part waits for the core's answer, and the line shows once one has come. The page's first row, under the
   header, is the "Read-only" switch, which shows the Repository's `read_only` as the files hold it. Apply
   saves it with the page's other rows, and Cancel puts it back. Nothing else shows the switch until Apply
-  has saved it. Then a Repository opened since launch hears of it: its Issue and PR views and the status
-  bar follow, and so does its header on a dialog Apply keeps open. A Repository not opened since launch
-  keeps the old word in that header until the page shows again (#1057). The switch waits for the files and
-  is off while Apply saves. The page's groups follow in this order: Conventions, First sync, Filters, Muted
-  authors, On this machine, then Reset cache and Remove repository. Only Filters is built so far.
+  has saved it. Then the window hears of it, whether it opened the Repository since launch or not: the
+  Repository's Issue and PR views and the status bar follow, and so does its header on a dialog Apply keeps
+  open. The switch waits for the files and is off while Apply saves. The page's groups follow in this order:
+  Conventions, First sync, Filters, Muted authors, On this machine, then Reset cache and Remove repository.
+  Only Filters is built so far.
 - A Repository's Filters group lists each Filter on a line of its own, in the order `settings.toml` gives
   and the Sidebar shows: its name and its search, each edited in place, ↑ and ↓, off at either end, and
   Delete. Add filter adds a Filter with a blank name and search at the end and puts the focus in its name. A

@@ -83,14 +83,17 @@ check: lint doc-width dupes svelte-check vitest rust-gates release-check
 # The fastest gates go first. The Vitest and Rust tests run in full: their coverage gates count every file,
 # so a change can fail them in a file it never touched.
 # Like `check`, it skips Clippy and `rust-coverage` on a branch that changes only `ui/` and docs. It leaves
-# out the rest of `check`: ESLint, token-deps, pre-commit, deny, machete, release-check and e2e.
+# out the rest of `check`: ESLint, token-deps, deny, machete, release-check, e2e and pre-commit's hooks
+# besides typos: zizmor, actionlint and the workflow and Dependabot schema checks. Those read only
+# `.github/`: a PR that changes its workflows ships with `just ship --check`, and CI checks the rest.
 # Run the gates a first push most often fails on, one at a time, and stop at the first that fails
 preflight: quick svelte-check vitest
     node scripts/gates.ts clippy rust-coverage
 
 # `just ship` runs it before each push. Each of these failed CI on its own often enough to be worth seconds.
-# Run the gates that take seconds: Rust and Prettier formatting, line width and copied code
-quick: rustfmt prettier doc-width dupes
+# typos runs through pre-commit, which CONTRIBUTING.md says how to install. Its first run downloads the hook.
+# Run the gates that take seconds: Rust and Prettier formatting, line width, copied code and spelling
+quick: rustfmt prettier doc-width dupes typos
 
 # Check the formatting, lint with ESLint, and run the pre-commit hooks on the workflows and the spelling
 lint:
@@ -111,6 +114,12 @@ doc-width:
 # Fail when two files hold the same block of code, unless scripts/copies.ts lets the repeat stay
 dupes:
     npm run dupes
+
+# It goes through pre-commit, as CI's `pre-commit` job does, so both run the typos that
+# `.pre-commit-config.yaml` pins, with `_typos.toml`.
+# Check the spelling with typos
+typos:
+    npm run typos
 
 # List the prose this branch adds that's worth rereading, or that of the files you name. It never fails.
 prose-check *files:

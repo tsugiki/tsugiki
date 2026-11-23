@@ -102,6 +102,16 @@ with the change to ask for, and the rule in AGENTS.md it follows where there is 
 - A ticket that only moves code, with bugs main has too: keep main's behaviour and file a ticket for them.
 - Code working around an answer it didn't read in full: read it where it enters (parse at the boundary).
 
+Two kinds of finding would grow a fix past its ticket, so hold each back from the builder:
+
+- File a finding that asks for behaviour the ticket doesn't name as a ticket in the milestone being built,
+  without asking the user, since a fix for behaviour no ticket specified brings findings of its own. Send the
+  builder what the build gets wrong, or leaves out of what the ticket asks.
+- Take a bug of the ticket's own whose cause lies in behaviour other features share to the user first, since
+  they may want one rule for that behaviour, built in a ticket of its own. Then either the builder fixes only
+  what the ticket adds, the way the code already works, and that ticket takes the cause, or the user widens
+  the ticket.
+
 Then tell it to run its pre-push gates, `just preflight`. Let one agent run them at a time, since they run
 the full Vitest and Rust suites. `just preflight` runs no Playwright, so the builder also runs the e2e specs
 that drive what it changed, as [builder.md](builder.md) says. Once they pass, write into the entry the

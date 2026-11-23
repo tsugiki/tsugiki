@@ -15,6 +15,7 @@ fn the_kinds_are_the_ones_adr_0008_names() {
     let kinds = [
         (ErrorKind::Offline, "offline"),
         (ErrorKind::CertificateDates, "certificate_dates"),
+        (ErrorKind::NoToken, "no_token"),
         (ErrorKind::Unauthorized, "unauthorized"),
         (ErrorKind::WriteRefused, "write_refused"),
         (ErrorKind::RateLimited { resets_at: None }, "rate_limited"),

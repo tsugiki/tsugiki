@@ -219,7 +219,7 @@ fn without_gh_nothing_is_asked_and_the_problem_shows() {
         token_from: NO_GH,
     };
     assert!(connect_alone(&mut board, &empty_store(), access).is_none());
-    assert_eq!(problem_kind(showing(&seen)), Some(ErrorKind::Unauthorized));
+    assert_eq!(problem_kind(showing(&seen)), Some(ErrorKind::NoToken));
 }
 
 #[test]
@@ -4121,7 +4121,7 @@ fn a_panic_in_the_sessions_thread_with_no_token_still_says_tsugiki_stopped_check
     let session = Session::start(board, Ok(folders), reaching(access), HOURLY);
     assert_eq!(
         problem_kind(seen.recv_timeout(PLENTY).unwrap()),
-        Some(ErrorKind::Unauthorized)
+        Some(ErrorKind::NoToken)
     );
 
     session.fetching().mark_unseen(gcmon(), 7, None);
@@ -4145,7 +4145,7 @@ fn starting_without_gh_keeps_the_problem_that_says_how_to_sign_in() {
 
     run_stopped(board, database(Ok(folders.clone())), access);
 
-    assert_eq!(problem_kind(showing(&seen)), Some(ErrorKind::Unauthorized));
+    assert_eq!(problem_kind(showing(&seen)), Some(ErrorKind::NoToken));
     assert!(folders.database().exists());
 }
 

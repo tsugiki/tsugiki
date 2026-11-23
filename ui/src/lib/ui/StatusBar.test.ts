@@ -256,6 +256,49 @@ describe("StatusBar's line for a mirror that waits for an answer", () => {
   });
 });
 
+describe("StatusBar's Try again after a read that found no token", () => {
+  const noToken = {
+    state: "problem",
+    problem: { kind: "no_token", message: "Install `gh` or run `gh auth login`." },
+  } as const;
+  const tryAgain = () => screen.queryByRole("button", { name: "Try again" });
+
+  it("sits after the problem, outside the live region, and sends a Refresh at a click", async () => {
+    const onrefresh = vi.fn();
+    render(StatusBar, { status: noToken, onrefresh });
+    expect(bar().textContent?.trim()).toBe("Install `gh` or run `gh auth login`.");
+    const button = screen.getByRole("button", { name: "Try again" });
+    expect(bar().nextElementSibling).toBe(button);
+    await fireEvent.click(button);
+    expect(onrefresh).toHaveBeenCalledOnce();
+  });
+
+  it("shows with no Repository open, and when the settings hide the bar, as the problem does", () => {
+    render(StatusBar, { status: noToken, lastSync: null, visible: false });
+    expect(screen.getAllByRole("button")).toEqual([tryAgain()]);
+  });
+
+  it("shows beside no other problem, a refused token included", () => {
+    const refused = { kind: "unauthorized", message: "GitHub refused the token." } as const;
+    const { unmount } = render(StatusBar, { status: { state: "problem", problem: refused } });
+    expect(tryAgain()).toBeNull();
+    unmount();
+    const internal = { kind: "internal", message: "Tsugiki can't read its database." } as const;
+    render(StatusBar, { status: { state: "problem", problem: internal } });
+    expect(tryAgain()).toBeNull();
+  });
+
+  it("goes while the read is out, as the core then says Connecting…", () => {
+    render(StatusBar, { status: { state: "connecting" } });
+    expect(tryAgain()).toBeNull();
+  });
+
+  it("goes with the problem when the status can't be read", () => {
+    render(StatusBar, { status: noToken, error: "Error: no IPC" });
+    expect(tryAgain()).toBeNull();
+  });
+});
+
 describe("StatusBar's word on the mirror", () => {
   const online = { state: "online", login: "octocat" } as const;
   const short = {

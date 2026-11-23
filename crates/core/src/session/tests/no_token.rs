@@ -84,10 +84,14 @@ fn found_none() -> [(GhAnswer, &'static str); 2] {
     ]
 }
 
-/// Whether `status` is a problem whose text holds `words` and names `GH_TOKEN` as the way past `gh`.
+/// Whether `status` is the no-token problem, which the status bar offers Try again beside, and its text
+/// holds `words`, names Try again and names `GH_TOKEN` as the way past `gh`.
 fn says(status: &Status, words: &str) -> bool {
     matches!(status, Status::Problem { problem }
-        if problem.message.contains(words) && problem.message.contains("set `GH_TOKEN`"))
+        if problem.kind == ErrorKind::NoToken
+            && problem.message.contains(words)
+            && problem.message.contains("click Try again")
+            && problem.message.contains("set `GH_TOKEN`"))
 }
 
 static ON_THE_INTERVAL: ScriptedGh = ScriptedGh::new();
@@ -125,8 +129,11 @@ fn gh_on_refresh() -> io::Result<GhOutput> {
     ON_REFRESH.answer()
 }
 
+/// Try again sends a Refresh, which takes no Repository, so it reads the token at once on the Workbench, the
+/// Home page or a first run with none added (#1011). The status check's interval is an hour, so only the
+/// Refresh can read again.
 #[test]
-fn after_a_read_that_found_no_token_a_refresh_reads_it_again_and_connects() {
+fn with_no_repository_open_a_refresh_after_no_token_reads_it_at_once_and_connects() {
     for (none, words) in found_none() {
         let asked = ON_REFRESH.script(vec![none, GhAnswer::Token]);
         let (folders, _folder) = temp_folders("no-token-refresh");

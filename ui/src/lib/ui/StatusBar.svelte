@@ -74,6 +74,7 @@
     readOnly?: boolean;
     /** The first key of the chord whose second key Tsugiki waits for. */
     chord?: string | null;
+    /** Asks the core for a Refresh, which the sync status and Try again send. */
     onrefresh?: () => void;
     oncheckagain?: () => void;
     /** Asks where `repository`'s mirror gets its objects. */
@@ -101,6 +102,10 @@
   const showStatus = $derived(
     visible || offline || reconnecting || status?.state === "problem" || Boolean(error),
   );
+  // A read of the token that found none can be tried again at once wherever the problem shows, as the sync
+  // status, which a click refreshes too, shows only while a Repository is open. The core's kind says which
+  // problem it is, never its words.
+  const noToken = $derived(!error && status?.state === "problem" && status.problem.kind === "no_token");
   // A problem or an unread status says nothing of the open Repository, so Read-only waits for a status.
   const readOnlyShown = $derived(readOnly && showStatus && !error && status?.state !== "problem");
   // With no sync to pause, the bar still says why nothing asks GitHub, as a read or a fetch points here.
@@ -176,6 +181,11 @@
       >
     {/if}
   </footer>
+  <!-- A Refresh reads the token, and the core says "Connecting…" until the read ends, which takes the button
+       away. A click that reaches it while the read is out adds no read. -->
+  {#if noToken}
+    <button onclick={onrefresh}>Try again</button>
+  {/if}
   {#if needsGit}
     <button onclick={() => void gitPage.openLink(GIT_DOWNLOADS)}>Get git</button>
   {/if}

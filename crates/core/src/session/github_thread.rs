@@ -914,6 +914,7 @@ fn status_after(problem: Error, store: &Store) -> Status {
             Err(problem) => Status::Problem { problem },
         },
         ErrorKind::CertificateDates
+        | ErrorKind::NoToken
         | ErrorKind::Unauthorized
         | ErrorKind::WriteRefused
         | ErrorKind::RateLimited { .. }

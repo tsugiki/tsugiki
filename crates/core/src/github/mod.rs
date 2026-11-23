@@ -558,6 +558,7 @@ impl GitHub {
             ),
             ErrorKind::Offline
             | ErrorKind::CertificateDates
+            | ErrorKind::NoToken
             | ErrorKind::Unauthorized
             | ErrorKind::WriteRefused
             | ErrorKind::RateLimited { .. }

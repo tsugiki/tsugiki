@@ -13,7 +13,9 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
   - **Read-only**, after the rest of the status, while the open Repository is Read-only, for the token or
     by the user's choice ([token.md](token.md)). A problem's words leave it out.
   - A problem that stops Tsugiki reading, such as a refused token, in the core's words, each opening the
-    Settings page that fixes it.
+    Settings page that fixes it. A read that found no token has Try again after it, which reads the token
+    at once ([token.md](token.md)), on the Home page and on a first run with no Repository added too. No
+    other problem has it, not even a refused token.
   - After the status, each problem with a file Tsugiki reads, such as a line of `settings.toml` it can't
     parse, with the file and the line; the wait for GitHub's points ("Sync paused until 14:00: GitHub's rate
     limit is low", or with no sync waiting, "GitHub's rate limit is low. Tsugiki can ask it again at
@@ -50,4 +52,5 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
 - Each part can be switched off from the bar's right-click menu or Settings › General, and the whole bar can
   be hidden ("View: Toggle Status Bar"). Being offline, a problem, a file Tsugiki can't read, the wait for
   GitHub's points, why no mirror can be made and a mirror's question still show, since nothing else would
-  tell the user: the bar comes back with only those, and with sync status beside being offline or a problem.
+  tell the user: the bar comes back with only those, with Try again, Get git and Check again beside theirs,
+  and with sync status beside being offline or a problem.

@@ -136,6 +136,21 @@ test("a refused token shows the core's words", async ({ page }) => {
   await expect(page.getByRole("status")).toHaveText("GitHub refused the token.");
 });
 
+test("a read that found no token offers Try again with no Repository open, until the core reads again", async ({
+  page,
+}) => {
+  const problem = { kind: "no_token", message: "Install `gh` or run `gh auth login`." } as const;
+  await mockCore(page, { settings: defaults, status: { state: "problem", problem } });
+  await page.goto("/");
+  await expect(page.getByRole("status")).toHaveText(problem.message);
+  await page.getByRole("button", { name: "Try again" }).click();
+  await emitFromCore(page, "status-changed", { state: "connecting" });
+  await expect(page.getByRole("status")).toHaveText("Connecting…");
+  await expect(page.getByRole("button", { name: "Try again" })).toHaveCount(0);
+  await emitFromCore(page, "status-changed", online);
+  await expect(page.getByRole("status")).toHaveText("octocat");
+});
+
 test("settings can hide the status bar, and going offline brings it back", async ({ page }) => {
   await mockCore(page, { settings: hidden, status: online });
   await page.goto("/");

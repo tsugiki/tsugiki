@@ -232,8 +232,8 @@ fn a_fetch_passed_on_before_github_went_away_asks_nothing_and_answers_offline() 
     assert_eq!(fetches.count(), 0);
 }
 
-/// The GitHub thread owns its queue, so what waits there goes with the thread, reply and all, which
-/// `Fetching::fetch_unstored` answers as offline (#1076).
+/// The GitHub thread owns its queue, so what waits there goes with the thread, reply and all, and the fetch
+/// stops waiting (#1076).
 #[test]
 fn a_fetch_waiting_on_the_github_thread_when_it_stops_goes_with_its_queue() {
     let queued = fetch_queued_behind_a_step("held-fetch-stopped");

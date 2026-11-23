@@ -577,8 +577,10 @@ fn run(database: Database, threads: Threads, keeper: &Keeper) {
     };
     thread::scope(|scope| {
         let shared = &store;
-        // The thread owns `refreshes`, so its queue goes when the thread stops, however it stops: each
-        // request waiting there, and each sent later, then hears that Tsugiki isn't connected (#1076).
+        // The `move` closure owns `refreshes`, so the queue's receiver drops when the thread stops, however
+        // it stops. Each request waiting there for a reply, and each sent later, then gets the answer for a
+        // stopped GitHub thread at once, in place of waiting for good (#1076). Borrowing `refreshes` from
+        // outside the closure would keep the receiver until the scope ends.
         #[expect(
             unused_results,
             reason = "the scope joins the GitHub thread, which catches its own panics"

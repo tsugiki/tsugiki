@@ -4381,8 +4381,25 @@ fn github_stopped(name: &str) -> (Session, HeardRequests, TempPath) {
     };
     let session = Session::start(board, Ok(folders), connections, HOURLY);
     let stopped = seen.recv_timeout(PLENTY).unwrap();
-    assert_eq!(stopped_by(stopped), Some(stopped_checking().message));
+    // The message prints nothing of the status, which CodeQL reads as holding the login.
+    assert!(
+        stopped_by(stopped) == Some(stopped_checking().message),
+        "the status says Tsugiki stopped checking"
+    );
     (session, mirrors, folder)
+}
+
+/// The kind and the words of the failure in `answer`, or nothing when it succeeded.
+fn failure_of<T>(answer: Result<T, Error>) -> Option<(ErrorKind, String)> {
+    answer.err().map(|problem| (problem.kind, problem.message))
+}
+
+/// What `fetching::answered` says once the thread it asks has stopped.
+fn not_connected() -> Option<(ErrorKind, String)> {
+    Some((
+        ErrorKind::Offline,
+        crate::fetching::NOT_CONNECTED.to_owned(),
+    ))
 }
 
 /// Runs `ask` on a thread of its own and waits up to `PLENTY` for its answer, so a call that would wait for
@@ -4409,9 +4426,18 @@ fn once_the_github_thread_stopped_the_mirrors_size_check_says_at_once_it_isnt_co
     let size = beside(move || size_of(&gcmon()));
     session.stop(PLENTY);
 
-    let problem = size.unwrap().unwrap_err();
-    assert_eq!(problem.kind, ErrorKind::Offline, "{problem:?}");
-    assert_eq!(problem.message, crate::fetching::NOT_CONNECTED);
+    assert_eq!(failure_of(size.unwrap()), not_connected());
+}
+
+#[test]
+fn once_the_github_thread_stopped_add_repositorys_check_says_at_once_it_isnt_connected() {
+    let (session, _mirrors, _folder) = github_stopped("github-stopped-check");
+    let fetching = session.fetching();
+
+    let checked = beside(move || fetching.check(gcmon()));
+    session.stop(PLENTY);
+
+    assert_eq!(failure_of(checked.unwrap()), not_connected());
 }
 
 #[test]

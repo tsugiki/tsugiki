@@ -104,6 +104,11 @@ as a Workbench page or a ready diff, and imports no Vitest, so the e2e specs use
 the DOM, as `keydown` and `nextTask` do, and `state.ts` holds the helpers that reach into the app's bindings
 and state. What the e2e specs alone share lives in `ui/e2e/fixtures.ts`.
 
+CodeQL reads tests too, on CI only, as no local gate runs it. A test's assert or panic message prints no login
+or token message, such as an `Account` or a `Status`, nor any value from the same tuple or row: its taint
+spans the whole tuple, and `rust/cleartext-logging` fails the PR. A test strips no tags or other markup with
+`replace`, even from our own sources: `js/incomplete-multi-character-sanitization` fails it.
+
 ## One copy
 
 Code that a second place needs moves to one place that both use, in Rust, TypeScript, Svelte and the

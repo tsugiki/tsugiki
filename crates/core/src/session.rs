@@ -577,6 +577,8 @@ fn run(database: Database, threads: Threads, keeper: &Keeper) {
     };
     thread::scope(|scope| {
         let shared = &store;
+        // The thread owns `refreshes`, so its queue goes when the thread stops, however it stops: each
+        // request waiting there, and each sent later, then hears that Tsugiki isn't connected (#1076).
         #[expect(
             unused_results,
             reason = "the scope joins the GitHub thread, which catches its own panics"

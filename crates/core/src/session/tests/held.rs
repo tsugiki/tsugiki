@@ -13,14 +13,21 @@ struct Hanging {
 }
 
 impl Transport for Hanging {
+    #[expect(
+        clippy::panic_in_result_fn,
+        reason = "a test stops the GitHub thread with a panic in a request it holds"
+    )]
     fn post(&self, _: &Token, request: &Request<'_>) -> Result<Reply, Unreachable> {
         if let Some(reply) = self.before.borrow_mut().pop_front() {
             return reply;
         }
         pass_on(&self.held, request.operation.to_owned());
-        // The test lets go when it drops its end, or when it panics.
-        let RecvError = self.let_go.recv().unwrap_err();
-        Err(Unreachable::Offline)
+        // The request fails once the test drops its end, as a test that panics does, and panics once the
+        // test sends, which stops the GitHub thread.
+        match self.let_go.recv() {
+            Ok(()) => panic!("a panic in the GitHub thread"),
+            Err(RecvError) => Err(Unreachable::Offline),
+        }
     }
 }
 
@@ -29,7 +36,7 @@ struct Held {
     access: GitHubAccess,
     /// Names each question asked once `before` runs out: those that hang, and those after the test lets go.
     asked: Receiver<String>,
-    /// Lets the questions go once dropped.
+    /// Lets the questions go once dropped, and panics in the one held once it sends.
     let_go: Sender<()>,
 }
 
@@ -160,49 +167,88 @@ fn several_refresh_clicks_while_offline_ask_github_once_and_a_click_after_offlin
     assert_eq!((left, asked_after), (vec![], vec![]));
 }
 
-#[test]
-fn a_fetch_passed_on_before_github_went_away_asks_nothing_and_answers_offline() {
-    let (folders, _folder) = temp_folders("held-fetch-raced");
+/// A session signed in, whose sync step of gcmon hangs, with a fetch of #7 the session passed on, which
+/// waits in the GitHub thread's queue behind the step.
+struct QueuedFetch {
+    session: Session,
+    /// The fetch's answer, which hasn't come yet.
+    answer: Receiver<ItemFetch>,
+    /// Names each question asked after the step's.
+    asked: Receiver<String>,
+    /// Fails the step once dropped, and panics in it once it sends.
+    let_go: Sender<()>,
+    /// The changes the session tells of, kept so the board can still pass them on.
+    _changes: Receiver<Change>,
+    _folder: TempPath,
+}
+
+fn fetch_queued_behind_a_step(name: &str) -> QueuedFetch {
+    let (folders, folder) = temp_folders(name);
     let (board, changes) = changes_board();
-    let held = hanging(vec![signed_in()]);
-    let session = Session::start(board, Ok(folders), reaching(held.access), HOURLY);
-    let asked = session.fetching();
-    asked.sync(gcmon());
-    drop(held.asked.recv_timeout(PLENTY).unwrap());
+    let Held {
+        access,
+        asked,
+        let_go,
+    } = hanging(vec![signed_in()]);
+    let session = Session::start(board, Ok(folders), reaching(access), HOURLY);
+    let fetching = session.fetching();
+    fetching.sync(gcmon());
+    drop(asked.recv_timeout(PLENTY).unwrap());
 
     // Online, so the session passes the fetch on, and the GitHub thread takes it after the step.
-    let answer = asked.fetch_unstored_later(Item {
+    let answer = fetching.fetch_unstored_later(Item {
         repository: gcmon(),
         number: 7,
     });
     // The session answers in order, so it has passed the fetch on once it tells of this mark. A fetch it
     // refuses it answers at once, so no answer yet means the GitHub thread holds it.
-    asked.mark_unseen(gcmon(), 7, None);
+    fetching.mark_unseen(gcmon(), 7, None);
     drop(changes.recv_timeout(PLENTY).unwrap());
-    let before = answer.try_recv();
-    // The step fails, and the status says offline before the GitHub thread takes the fetch.
-    drop(held.let_go);
-    let fetched = answer.recv_timeout(PLENTY);
-    session.stop(PLENTY);
+    assert_eq!(answer.try_recv(), Err(TryRecvError::Empty));
+    QueuedFetch {
+        session,
+        answer,
+        asked,
+        let_go,
+        _changes: changes,
+        _folder: folder,
+    }
+}
 
-    assert_eq!(before, Err(TryRecvError::Empty));
+#[test]
+fn a_fetch_passed_on_before_github_went_away_asks_nothing_and_answers_offline() {
+    let queued = fetch_queued_behind_a_step("held-fetch-raced");
+
+    // The step fails, and the status says offline before the GitHub thread takes the fetch.
+    drop(queued.let_go);
+    let fetched = queued.answer.recv_timeout(PLENTY);
+    queued.session.stop(PLENTY);
+
     assert_eq!(fetched, Ok(UNFETCHED_OFFLINE));
-    let fetches = held
+    let fetches = queued
         .asked
         .try_iter()
         .filter(|operation| operation == "FetchItem");
     assert_eq!(fetches.count(), 0);
 }
 
+/// The GitHub thread owns its queue, so what waits there goes with the thread, reply and all, which
+/// `Fetching::fetch_unstored` answers as offline (#1076).
+#[test]
+fn a_fetch_waiting_on_the_github_thread_when_it_stops_goes_with_its_queue() {
+    let queued = fetch_queued_behind_a_step("held-fetch-stopped");
+
+    // The step panics, which stops the GitHub thread with the fetch still in its queue.
+    queued.let_go.send(()).unwrap();
+    let fetched = queued.answer.recv_timeout(PLENTY);
+    queued.session.stop(PLENTY);
+
+    assert_eq!(fetched, Err(RecvTimeoutError::Disconnected));
+}
+
 /// Asks the session for #7 of gcmon from a thread of its own, and waits for the answer. A session that
 /// passed the fetch to the GitHub thread, which holds its request, fails the test at the wait.
 fn fetch_beside(asked: &Fetching) -> Result<ItemFetch, RecvTimeoutError> {
     let fetching = asked.clone();
-    let (answer, answered) = mpsc::channel();
-    #[expect(
-        unused_results,
-        reason = "it ends with the answer, or once the test lets the request go"
-    )]
-    thread::spawn(move || answer.send(fetching.fetch_unstored(gcmon(), 7)));
-    answered.recv_timeout(PLENTY)
+    beside(move || fetching.fetch_unstored(gcmon(), 7))
 }

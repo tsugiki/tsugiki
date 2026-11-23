@@ -1,217 +1,148 @@
+use std::collections::BTreeMap;
+
 use super::*;
-use crate::filters::FilterQuery;
+use crate::facts::activity::{ActivityKind, PutAway};
+use crate::facts::issues::{IssueFacts, IssueState};
+use crate::facts::pull_requests::PullRequestFacts;
+use crate::store::testing::archived_on_closing;
+use crate::store::{Archiving, Flagging, Muting};
+use crate::testing::{cpython, hours_ago, me};
+use crate::workbench::WorkbenchView;
+use crate::workbench::testing::{Doing, ViewWorld, fixing, issue, mine, outcomes_done, stranger};
 
-/// An item drawn `hidden`, of which `is` holds.
-fn standing(hidden: Option<Hidden>, is: &[Is]) -> Standing {
-    Standing {
-        hidden,
-        is: is.iter().copied().collect(),
+/// Issue 1, which only a flag holds on the Workbench; the user's PR 10; Issue 2, which only a pin holds;
+/// Issue 3, pinned and Archived; and PR 20, a stranger's that the user muted, which a Review request made
+/// after the mute brings back (#492).
+fn build(world: &ViewWorld) {
+    let requested = PullRequestFacts {
+        number: 20,
+        title: "PR 20".to_owned(),
+        review_requests: vec![me()],
+        ..stranger()
+    };
+    world.has(
+        vec![mine(10), requested],
+        vec![issue(1), issue(2), issue(3)],
+    );
+    let store = &world.db.store;
+    let flagging = Flagging::on(1);
+    store
+        .mark_unseen(&cpython(), flagging, hours_ago(2))
+        .unwrap();
+    for number in [2, 3] {
+        store.pin(&cpython(), number).unwrap();
     }
+    let archiving = Archiving {
+        key: ItemKey::Issue { number: 3 },
+        numbers: vec![3],
+        up_to: None,
+        put_away: PutAway::Now,
+        findings: vec![],
+    };
+    store.archive(&cpython(), archiving, hours_ago(3)).unwrap();
+    let muting = Muting {
+        key: ItemKey::PullRequest { number: 20 },
+        numbers: vec![20],
+        up_to: Some(hours_ago(10)),
+        findings: vec![],
+    };
+    store.mute(&cpython(), muting, hours_ago(10)).unwrap();
+    world.happened(20, &[(ActivityKind::ReviewRequested, hours_ago(5))]);
 }
 
-fn filter() -> WorkbenchView {
-    WorkbenchView::Filter {
-        query: FilterQuery::try_from("label:bug".to_owned()).unwrap(),
-    }
-}
-
-#[test]
-fn mark_seen_takes_an_item_out_of_the_stale_reviews_and_off_the_workbench_while_only_its_waiting_held_it()
- {
-    let waiting = standing(
-        None,
-        &[Is::NeedingAttention, Is::Waiting, Is::Stale, Is::Requested],
-    );
-    let held = standing(None, &[Is::NeedingAttention, Is::Waiting, Is::Held]);
-
-    let seen = |view: &WorkbenchView, standing: &Standing| outcomes_of(view, standing).mark_seen;
-
-    // A Review request stands, acknowledged or not, so its view keeps the item (#865).
-    assert_eq!(
-        [
-            seen(&WorkbenchView::StaleReviews, &waiting),
-            seen(&WorkbenchView::Whole, &waiting),
-            seen(&WorkbenchView::ReviewRequests, &waiting),
-            seen(&WorkbenchView::Whole, &held),
-        ],
-        [
-            Outcome::Leaves,
-            Outcome::Leaves,
-            Outcome::Stays,
-            Outcome::Stays
-        ],
-    );
+/// The outcome `view` gives each action on each item it lists, each held against what the view lists once
+/// the store holds what the action writes.
+fn judged(name: &str, view: &WorkbenchView) -> BTreeMap<(u32, Doing), Outcome> {
+    let read = |world: &ViewWorld| world.placed_in(view);
+    let judged = outcomes_done(name, &build, &read).into_iter();
+    judged
+        .map(|(number, doing, outcome)| ((number, doing), outcome))
+        .collect()
 }
 
 #[test]
-fn mark_seen_puts_a_closed_item_back_in_the_archive_which_a_filters_view_keeps_drawn_archived() {
-    let closed = standing(
-        None,
-        &[
-            Is::NeedingAttention,
-            Is::Waiting,
-            Is::Held,
-            Is::Found,
-            Is::RestingArchived,
-        ],
-    );
+fn each_outcome_on_the_workbench_is_what_the_workbench_lists_once_the_store_holds_the_action() {
+    let judged = judged("outcomes-whole", &WorkbenchView::Whole);
 
-    assert_eq!(
-        outcomes_of(&WorkbenchView::Whole, &closed).mark_seen,
-        Outcome::Leaves
-    );
-    assert_eq!(outcomes_of(&filter(), &closed).mark_seen, Outcome::Stays);
+    use Doing::*;
+    use Outcome::*;
+    let expected = BTreeMap::from([
+        // Only the flag holds Issue 1, which Mark Seen clears. The pin holds it as well as the flag does.
+        ((1, MarkSeen), Leaves),
+        ((1, Archive), Leaves),
+        ((1, Mute), Leaves),
+        ((1, MuteAuthor), Leaves),
+        ((1, Pin), Stays),
+        // Only the pin holds Issue 2.
+        ((2, MarkSeen), Stays),
+        ((2, Archive), Leaves),
+        ((2, Mute), Leaves),
+        ((2, MuteAuthor), Leaves),
+        ((2, Unpin), Leaves),
+        // The user's own PR, whose author Mute author leaves alone.
+        ((10, MarkSeen), Stays),
+        ((10, Archive), Leaves),
+        ((10, Mute), Leaves),
+        // Mark Seen acknowledges the request that brought the Muted PR back, which then leaves. Archive
+        // and Mute do nothing to it.
+        ((20, MarkSeen), Leaves),
+        ((20, MuteAuthor), Leaves),
+    ]);
+    assert_eq!(judged, expected);
 }
 
 #[test]
-fn archive_keeps_a_pin_in_the_pinned_issues_and_a_requested_pr_in_the_review_requests() {
-    let pin = standing(None, &[Is::Pinned, Is::Issue]);
-    let requested = standing(None, &[Is::Requested, Is::Asked, Is::Held]);
+fn mark_seen_puts_a_closed_issue_back_in_its_archive_once_nothing_in_its_tree_waits() {
+    // The closing archived Issue 4, and the flag on the user's PR 40 under it brings it back, as a flag on
+    // the Issue itself would unarchive it.
+    let build = |world: &ViewWorld| {
+        let closed = IssueFacts {
+            state: Some(IssueState::Closed),
+            ..issue(4)
+        };
+        world.has(vec![fixing(40, 4)], vec![closed]);
+        let store = &world.db.store;
+        archived_on_closing(store, &[ItemKey::Issue { number: 4 }], hours_ago(4));
+        store
+            .mark_unseen(&cpython(), Flagging::on(40), hours_ago(2))
+            .unwrap();
+    };
+    let read = |world: &ViewWorld| world.placed_in(&WorkbenchView::Whole);
 
-    assert_eq!(
-        outcomes_of(&WorkbenchView::Pinned, &pin).archive,
-        Outcome::Stays
-    );
-    assert_eq!(
-        outcomes_of(&WorkbenchView::Whole, &pin).archive,
-        Outcome::Leaves
-    );
-    assert_eq!(
-        outcomes_of(&WorkbenchView::ReviewRequests, &requested).archive,
-        Outcome::Stays
-    );
-    assert_eq!(
-        outcomes_of(&WorkbenchView::StaleReviews, &standing(None, &[Is::Stale])).archive,
-        Outcome::Leaves
-    );
-}
+    let judged = outcomes_done("outcomes-closed", &build, &read);
 
-#[test]
-fn mute_keeps_a_pr_whose_request_stands_in_place_and_folds_the_rest_of_a_filters_view() {
-    let requested = standing(None, &[Is::Requested, Is::Asked, Is::Found, Is::Held]);
-    let found = standing(None, &[Is::Found, Is::Held]);
-
-    assert_eq!(
-        outcomes_of(&WorkbenchView::ReviewRequests, &requested).mute,
-        Outcome::Stays
-    );
-    assert_eq!(outcomes_of(&filter(), &requested).mute, Outcome::Stays);
-    assert_eq!(outcomes_of(&filter(), &found).mute, Outcome::Folds);
-    assert_eq!(
-        outcomes_of(&WorkbenchView::Whole, &found).mute,
-        Outcome::Leaves
+    assert!(
+        judged.contains(&(4, Doing::MarkSeen, Outcome::Leaves)),
+        "{judged:?}"
     );
 }
 
 #[test]
-fn an_action_that_does_nothing_to_the_item_leaves_it_unchanged() {
-    let muted = standing(Some(Hidden::Muted), &[Is::Found, Is::Issue]);
-    let standalone = standing(None, &[Is::Held]);
+fn the_review_requests_keep_a_muted_pr_whose_request_stands_once_marked_seen() {
+    let judged = judged("outcomes-requests", &WorkbenchView::ReviewRequests);
 
-    let outcomes = outcomes_of(&filter(), &muted);
-    let mine = outcomes_of(&WorkbenchView::Whole, &standalone);
-
-    assert_eq!(
-        [
-            outcomes.mark_seen,
-            outcomes.archive,
-            outcomes.mute,
-            outcomes.unarchive,
-            outcomes.unpin
-        ],
-        [Outcome::Unchanged; 5],
-    );
-    assert_eq!([mine.pin, mine.mute_author], [Outcome::Unchanged; 2]);
+    assert_eq!(judged.get(&(20, Doing::MarkSeen)), Some(&Outcome::Stays));
+    assert_eq!(judged.get(&(20, Doing::MuteAuthor)), Some(&Outcome::Stays));
 }
 
 #[test]
-fn mute_author_takes_the_item_its_author_opened_out_of_any_view_but_a_filters() {
-    let theirs = standing(None, &[Is::OfferingMuteAuthor, Is::Held, Is::Found]);
+fn the_pinned_issues_keep_a_pin_through_archive_and_let_it_go_at_the_unpin() {
+    let judged = judged("outcomes-pinned", &WorkbenchView::Pinned);
 
-    assert_eq!(
-        outcomes_of(&WorkbenchView::Whole, &theirs).mute_author,
-        Outcome::Leaves
-    );
-    assert_eq!(outcomes_of(&filter(), &theirs).mute_author, Outcome::Folds);
-}
-
-#[test]
-fn a_pin_and_unarchive_take_an_issue_out_of_archived_alone() {
-    let archived = standing(Some(Hidden::Archived), &[Is::Issue, Is::Found]);
-
-    let in_archived = outcomes_of(&WorkbenchView::Archived, &archived);
-    let in_filter = outcomes_of(&filter(), &archived);
-
-    assert_eq!(
-        [in_archived.pin, in_archived.unarchive],
-        [Outcome::Leaves; 2]
-    );
-    assert_eq!([in_filter.pin, in_filter.unarchive], [Outcome::Stays; 2]);
-}
-
-#[test]
-fn an_unpin_takes_the_issue_off_the_workbench_while_only_the_pin_held_it_or_as_it_archives_it() {
-    let alone = standing(None, &[Is::Pinned, Is::Issue]);
-    let held = standing(None, &[Is::Pinned, Is::Issue, Is::Held]);
-    let closed = standing(
-        None,
-        &[
-            Is::Pinned,
-            Is::Issue,
-            Is::Held,
-            Is::ClosedWhilePinned,
-            Is::Stale,
-        ],
-    );
-    let waiting_closed = standing(
-        None,
-        &[
-            Is::Pinned,
-            Is::Issue,
-            Is::ClosedWhilePinned,
-            Is::NeedingAttention,
-            Is::Waiting,
-        ],
-    );
-
-    let unpin = |view: &WorkbenchView, standing: &Standing| outcomes_of(view, standing).unpin;
-
-    assert_eq!(
-        [
-            unpin(&WorkbenchView::Whole, &alone),
-            unpin(&WorkbenchView::Whole, &held),
-            unpin(&WorkbenchView::Whole, &closed),
-            unpin(&WorkbenchView::StaleReviews, &closed),
-            unpin(&WorkbenchView::Whole, &waiting_closed),
-            unpin(&WorkbenchView::Pinned, &held),
-        ],
-        [
-            Outcome::Leaves,
-            Outcome::Stays,
-            Outcome::Leaves,
-            Outcome::Leaves,
-            Outcome::Stays,
-            Outcome::Leaves,
-        ],
-    );
-}
-
-#[test]
-fn an_unpin_leaves_a_muted_pin_muted_though_it_closed_while_pinned() {
-    let muted = standing(
-        Some(Hidden::Muted),
-        &[
-            Is::Pinned,
-            Is::Issue,
-            Is::ClosedWhilePinned,
-            Is::NeedingAttention,
-            Is::Asked,
-        ],
-    );
-
-    // Muted hides more than the archive the unpin would make, and the fresh ask keeps it on the Workbench.
-    assert_eq!(
-        outcomes_of(&WorkbenchView::Whole, &muted).unpin,
-        Outcome::Stays
-    );
+    use Doing::*;
+    use Outcome::*;
+    // Archive keeps Issue 2 there drawn Archived, and Mark Seen keeps the Archived Issue 3 Archived.
+    let expected = BTreeMap::from([
+        ((2, MarkSeen), Stays),
+        ((2, Archive), Stays),
+        ((2, Mute), Leaves),
+        ((2, MuteAuthor), Leaves),
+        ((2, Unpin), Leaves),
+        ((3, MarkSeen), Stays),
+        ((3, Unarchive), Stays),
+        ((3, Mute), Leaves),
+        ((3, MuteAuthor), Leaves),
+        ((3, Unpin), Leaves),
+    ]);
+    assert_eq!(judged, expected);
 }

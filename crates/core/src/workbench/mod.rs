@@ -47,7 +47,7 @@ use backports::{plant, standalone};
 use filters::FilterFacts;
 use issues::issue_item;
 use links::{link, links_of};
-use outcomes::{Place, Reach, Standing, outcomes_of, place};
+use outcomes::{Listing, Place, outcomes_of, place, shown_on_workbench};
 use rows::row;
 
 /// A Backport's line of the list.
@@ -248,20 +248,26 @@ impl ListedItem {
     /// `item` with what `causes` judge of its tree. A Muted item Needs attention only for what
     /// `Causes::fresh_asks` finds. The view that lists it then judges its `outcomes`.
     fn of(causes: &Causes, item: WorkbenchItem) -> Self {
+        let (hidden, attention) = Self::judged(causes, &item);
+        Self {
+            attention,
+            hidden,
+            key: item.key(),
+            item,
+            outcomes: Outcomes::UNJUDGED,
+        }
+    }
+
+    /// The user's state that hides `item`, and why it Needs attention, as `causes` judge its tree.
+    fn judged(causes: &Causes, item: &WorkbenchItem) -> (Option<Hidden>, Option<Attention>) {
         let key = item.key();
         let numbers = item.numbers();
         let hidden = Hidden::of(causes, key, &numbers);
         let attention = match hidden {
             Some(Hidden::Muted | Hidden::MutedAuthor) => summed(&causes.fresh_asks(key, &numbers)),
-            Some(Hidden::Archived) | None => attention_of(causes, &item),
+            Some(Hidden::Archived) | None => attention_of(causes, item),
         };
-        Self {
-            attention,
-            hidden,
-            key,
-            item,
-            outcomes: Outcomes::UNJUDGED,
-        }
+        (hidden, attention)
     }
 }
 
@@ -344,48 +350,34 @@ impl Workbench {
     ) -> Self {
         let causes = Causes::of(&facts, repository.conventions);
         let held = held_in_own_right(&facts, repository);
-        let waiting: BTreeSet<u32> = causes.waiting().collect();
-        let held_closings = std::mem::take(&mut facts.activity.held_closings);
         let filters = FilterFacts::new(repository, std::mem::take(&mut facts.filters));
         let matched = filters.matched();
-        let found = match view {
-            WorkbenchView::Filter { query } => Some(filters.numbers_of(query)),
-            WorkbenchView::Whole
-            | WorkbenchView::ReviewRequests
-            | WorkbenchView::StaleReviews
-            | WorkbenchView::Archived
-            | WorkbenchView::Pinned => None,
+        let listing = match view {
+            WorkbenchView::Whole => Listing::Whole,
+            WorkbenchView::Filter { query } => Listing::Filter {
+                found: filters.numbers_of(query),
+            },
+            WorkbenchView::ReviewRequests => Listing::ReviewRequests,
+            WorkbenchView::StaleReviews => Listing::StaleReviews,
+            WorkbenchView::Archived => Listing::Archived,
+            WorkbenchView::Pinned => Listing::Pinned,
         };
-        let first = match view {
-            WorkbenchView::Whole | WorkbenchView::Archived | WorkbenchView::Pinned => None,
-            WorkbenchView::Filter { .. } => found,
-            WorkbenchView::ReviewRequests => Some(&causes.review_requests),
-            WorkbenchView::StaleReviews => Some(&causes.stale_reviews),
+        let first = match &listing {
+            Listing::Whole | Listing::Archived | Listing::Pinned => &matched,
+            Listing::Filter { found } => found,
+            Listing::ReviewRequests => &causes.review_requests,
+            Listing::StaleReviews => &causes.stale_reviews,
         };
-        let listed: Vec<ListedItem> =
-            candidates_of(facts, repository, first.unwrap_or(&matched), &causes)
-                .into_iter()
-                .map(|item| ListedItem::of(&causes, item))
-                .collect();
-        let requested = |listed: &ListedItem| listed.item.is_reached_by(&causes.review_requests);
-        let asked = causes.asked();
-        let reach = Reach {
-            causes: &causes,
-            held: &held,
-            waiting: &waiting,
-            found,
-            asked: &asked,
-            held_closings: &held_closings,
-        };
-        let standings: Vec<(&ListedItem, Standing)> = (listed.iter())
-            .map(|listed| (listed, reach.standing_of(listed)))
+        let listed: Vec<ListedItem> = candidates_of(facts, repository, first, &causes)
+            .into_iter()
+            .map(|item| ListedItem::of(&causes, item))
             .collect();
+        let requested = |listed: &ListedItem| listed.item.is_reached_by(&causes.review_requests);
         let unhidden: Vec<&ListedItem> = (listed.iter())
             .filter(|listed| listed.hidden.is_none())
             .collect();
-        let on_workbench: Vec<&ListedItem> = (standings.iter())
-            .filter(|(_, standing)| standing.shown_on_workbench())
-            .map(|(listed, _)| *listed)
+        let on_workbench: Vec<&ListedItem> = (listed.iter())
+            .filter(|listed| shown_on_workbench(listed.hidden, listed.attention.as_ref()))
             .collect();
         // A Filter's count leaves out what it found that the user put away (#824). One switched on counts
         // what Needs attention as the Workbench does, a Muted item asked about after the mute included.
@@ -401,18 +393,18 @@ impl Workbench {
         );
         let review_requests = count_of(listed.iter().filter(|listed| requested(listed)));
         let stale_reviews = prs_of(&unhidden, &causes.stale_reviews);
+        let placed = |causes: &Causes, item: &WorkbenchItem| place(&listing, &held, causes, item);
         let (mut items, mut muted) = (Vec::new(), Vec::new());
-        for (listed, standing) in &standings {
-            let into = match place(view, standing) {
+        for listed in listed {
+            let into = match placed(&causes, &listed.item) {
                 Some(Place::Listed) => &mut items,
                 Some(Place::Folded) => &mut muted,
                 None => continue,
             };
-            let outcomes = outcomes_of(view, standing);
-            into.push(ListedItem {
-                outcomes,
-                ..(*listed).clone()
+            let outcomes = outcomes_of(&causes, &listed.item, listed.hidden, |causes| {
+                placed(causes, &listed.item)
             });
+            into.push(ListedItem { outcomes, ..listed });
         }
         let items = match view {
             WorkbenchView::Archived => last_archived_first(items, &causes),

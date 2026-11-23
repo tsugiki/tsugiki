@@ -4,12 +4,15 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use time::OffsetDateTime;
 
+use super::outcomes::Place;
 use super::{
-    IssueItem, ListedItem, TreeEntry, Workbench, WorkbenchItem, WorkbenchRow, WorkbenchView,
-    candidates_of,
+    Authored, IssueItem, ListedItem, Outcome, Outcomes, TreeEntry, Workbench, WorkbenchItem,
+    WorkbenchRow, WorkbenchView, authored_by, candidates_of,
 };
 use crate::conventions::Conventions;
-use crate::facts::activity::{ActivityFacts, ItemKey, PutAway};
+use crate::facts::activity::{
+    Activity, ActivityFacts, ActivityKind, ItemActivity, ItemKey, PutAway,
+};
 use crate::facts::issues::IssueFacts;
 use crate::facts::patch_ids::ReviewFacts;
 use crate::facts::pull_requests::{OffDefault, PrState, PullRequestFacts};
@@ -17,9 +20,9 @@ use crate::facts::{CommitSha, WorkFacts};
 use crate::login::Login;
 use crate::repository_settings::RepositorySettings;
 use crate::store::testing::OpenStore;
-use crate::store::{Archiving, Flagging, Muting};
+use crate::store::{Archiving, AuthorMuting, Flagging, Muting, Seeing};
 use crate::testing::{cpython, cpython_settings, issue_facts, pr_facts};
-use crate::work::{Causes, WorkReason, reasons};
+use crate::work::{Causes, SeenMark, WorkReason, reasons};
 
 pub(crate) use crate::testing::me;
 
@@ -27,6 +30,149 @@ impl ListedItem {
     pub(crate) fn is_archived(&self) -> bool {
         self.hidden == Some(super::Hidden::Archived)
     }
+}
+
+/// A user action that can finish an item, as `Outcomes` names each one (#1052).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub(crate) enum Doing {
+    MarkSeen,
+    Archive,
+    Unarchive,
+    Mute,
+    MuteAuthor,
+    Pin,
+    Unpin,
+}
+
+impl Doing {
+    pub(crate) const ALL: [Self; 7] = [
+        Self::MarkSeen,
+        Self::Archive,
+        Self::Unarchive,
+        Self::Mute,
+        Self::MuteAuthor,
+        Self::Pin,
+        Self::Unpin,
+    ];
+
+    /// The outcome `outcomes` give this action.
+    pub(crate) fn in_outcomes(self, outcomes: &Outcomes) -> Outcome {
+        match self {
+            Self::MarkSeen => outcomes.mark_seen,
+            Self::Archive => outcomes.archive,
+            Self::Unarchive => outcomes.unarchive,
+            Self::Mute => outcomes.mute,
+            Self::MuteAuthor => outcomes.mute_author,
+            Self::Pin => outcomes.pin,
+            Self::Unpin => outcomes.unpin,
+        }
+    }
+}
+
+impl ViewWorld {
+    /// `doing` on `listed`, as the window draws it, through the store as the session writes it: Mark Seen
+    /// on an Archived item archives it again, and Mute author marks each open item of the author's seen.
+    pub(crate) fn act(&self, listed: &ListedItem, doing: Doing) {
+        let store = &self.db.store;
+        let repository = cpython();
+        let now = OffsetDateTime::now_utc();
+        let key = listed.key;
+        let SeenMark {
+            numbers,
+            up_to,
+            findings,
+        } = listed.item.seen().mark.clone();
+        let archiving = |put_away| Archiving {
+            key,
+            numbers: numbers.clone(),
+            up_to,
+            put_away,
+            findings: findings.clone(),
+        };
+        let done = match doing {
+            Doing::MarkSeen if listed.is_archived() => {
+                store.archive(&repository, archiving(PutAway::AsBefore), now)
+            }
+            Doing::MarkSeen => store.mark_seen(
+                &repository,
+                Seeing {
+                    numbers,
+                    up_to,
+                    findings,
+                },
+            ),
+            Doing::Archive => store.archive(&repository, archiving(PutAway::Now), now),
+            Doing::Unarchive => store.unarchive(&repository, key),
+            Doing::Mute => {
+                let muting = Muting {
+                    key,
+                    numbers,
+                    up_to,
+                    findings,
+                };
+                store.mute(&repository, muting, now)
+            }
+            Doing::MuteAuthor => {
+                let author = listed.item.mute_author_offered().unwrap().clone();
+                let facts = store.work_facts(&repository).unwrap();
+                let Authored { marks, .. } = authored_by(facts, &self.settings(), &author);
+                store.mute_author(&repository, AuthorMuting { author, marks }, now)
+            }
+            Doing::Pin => store.pin(&repository, key.number()),
+            Doing::Unpin => store.unpin(&repository, key.number(), now),
+        };
+        done.unwrap();
+    }
+
+    /// Each item `view` lists, as the store holds it now, with the place it gives the item.
+    pub(crate) fn placed_in(&self, view: &WorkbenchView) -> Vec<(ListedItem, Place)> {
+        let order = crate::settings::ListOrder::Attention;
+        let read = Workbench::read(&self.db.reader, &self.settings(), view, order).unwrap();
+        let listed = read.items.into_iter().map(|listed| (listed, Place::Listed));
+        let folded = read.muted.into_iter().map(|listed| (listed, Place::Folded));
+        listed.chain(folded).collect()
+    }
+}
+
+/// The outcome a list gives each action on each item it lists in the world `build` makes, but those that
+/// leave the item unchanged, each held against the list once a world built afresh takes the action through
+/// the store. `read` gives each item the list holds, with the place it gives the item. The world of each
+/// action takes `name` with the item's number and the action.
+pub(crate) fn outcomes_done(
+    name: &str,
+    build: &dyn Fn(&ViewWorld),
+    read: &dyn Fn(&ViewWorld) -> Vec<(ListedItem, Place)>,
+) -> Vec<(u32, Doing, Outcome)> {
+    let world = ViewWorld::new(name);
+    build(&world);
+    let listed = read(&world);
+    world.finish();
+    let mut judged = Vec::new();
+    for (item, _) in &listed {
+        let number = item.key.number();
+        for doing in Doing::ALL {
+            let outcome = doing.in_outcomes(&item.outcomes);
+            if outcome == Outcome::Unchanged {
+                continue;
+            }
+            let world = ViewWorld::new(&format!("{name}-{number}-{doing:?}"));
+            build(&world);
+            let place = |world: &ViewWorld| {
+                let found = read(world)
+                    .into_iter()
+                    .find(|(listed, _)| listed.key == item.key);
+                found.map(|(_, place)| place)
+            };
+            let before = place(&world);
+            world.act(item, doing);
+            let after = place(&world);
+            world.finish();
+            let done = Outcome::between(before, after);
+            assert_eq!(outcome, done, "{doing:?} on {number} in {name}");
+            judged.push((number, doing, outcome));
+        }
+    }
+    judged
 }
 
 pub(crate) fn someone() -> Login {
@@ -210,6 +356,21 @@ impl ViewWorld {
         let store = &self.db.store;
         store.save_pull_requests(&cpython(), pull_requests).unwrap();
         store.save_issues(&cpython(), issues).unwrap();
+    }
+
+    /// Each event, one that names the user as its kind says, happened on Issue or PR `number` at its moment.
+    pub(crate) fn happened(&self, number: u32, events: &[(ActivityKind, OffsetDateTime)]) {
+        let named = |(kind, at): &(ActivityKind, OffsetDateTime)| Activity {
+            kind: kind.clone(),
+            who: me(),
+            at: *at,
+        };
+        let events = events.iter().map(named).collect();
+        let activity = vec![ItemActivity { number, events }];
+        let store = &self.db.store;
+        store
+            .save_fetched_pull_requests(&cpython(), vec![], activity)
+            .unwrap();
     }
 
     /// Mute on Issue `number`, whose tree holds `numbers`, from now.

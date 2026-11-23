@@ -1,15 +1,17 @@
 use time::Duration;
 
 use super::*;
-use crate::facts::activity::{Activity, ActivityKind, ItemActivity, ItemKey, PutAway};
+use crate::facts::activity::{ActivityKind, ItemKey, PutAway};
 use crate::facts::issues::IssueFacts;
 use crate::facts::pull_requests::{PrState, PullRequestFacts};
 use crate::store::testing::{OpenStore, archived_on_closing, seeing};
 use crate::store::{Archiving, AuthorMuting, Flagging, Muting, Opened};
 use crate::testing::{cpython, cpython_settings, me};
 use crate::work::Why;
+use crate::workbench::outcomes::{Outcome, Place};
 use crate::workbench::testing::{
-    BOT, ViewWorld, assigned_issue, backport, fixing, issue, mine, outline_of, own, stranger,
+    BOT, Doing, ViewWorld, assigned_issue, backport, fixing, issue, mine, outcomes_done,
+    outline_of, own, stranger,
 };
 
 /// A moment well after the epoch, so two days before it is too.
@@ -419,21 +421,6 @@ impl ViewWorld {
             marks: Vec::new(),
         };
         self.db.store.mute_author(&cpython(), muting, at).unwrap();
-    }
-
-    /// Each event, one that names the user as its kind says, happened on Issue or PR `number` at its moment.
-    fn happened(&self, number: u32, events: &[(ActivityKind, OffsetDateTime)]) {
-        let named = |(kind, at): &(ActivityKind, OffsetDateTime)| Activity {
-            kind: kind.clone(),
-            who: me(),
-            at: *at,
-        };
-        let events = events.iter().map(named).collect();
-        let activity = vec![ItemActivity { number, events }];
-        let store = &self.db.store;
-        store
-            .save_fetched_pull_requests(&cpython(), vec![], activity)
-            .unwrap();
     }
 
     /// Mark Unseen on Issue or PR `number`, two hours ago.
@@ -1144,59 +1131,94 @@ fn the_window_sends_a_page_and_gets_the_next_one_s_start_as_text() {
     assert_eq!(sent["show_muted"], "on");
 }
 
-#[test]
-fn each_item_says_what_each_action_does_to_it_in_the_inbox_and_mute_author_with_show_muted_on_keeps_it()
- {
-    let world = ViewWorld::new("inbox-outcomes");
-    let opened = |number, at| IssueFacts {
-        author: Some(Login::new("issue-author")),
-        ..issue_at(number, at)
+/// The outcome the first page at `at` gives each action on each item it lists in the world `build` makes,
+/// each held against what the page lists once the store holds what the action writes (#1052).
+fn judged(
+    name: &str,
+    at: OffsetDateTime,
+    build: &dyn Fn(&ViewWorld),
+) -> BTreeMap<(u32, Doing), Outcome> {
+    let read = |world: &ViewWorld| {
+        let read = Inbox::read(&world.db.reader, &world.settings(), InboxPage::Latest, at);
+        let items = read.unwrap().items.into_iter();
+        items.map(|listed| (listed, Place::Listed)).collect()
     };
+    let judged = outcomes_done(name, build, &read).into_iter();
+    judged
+        .map(|(number, doing, outcome)| ((number, doing), outcome))
+        .collect()
+}
+
+/// Issue 1, which the Issue's author opened, with PR 10 under it, which someone else wrote; Issue 2, which
+/// the Issue's author opened too; and the Standalone PR 20. "Show muted" is as `show` says.
+fn three_items(world: &ViewWorld, show: ShowMuted) {
     world.has(
         vec![pr_at(10, Some(1), ago(1)), pr_at(20, None, ago(3))],
-        vec![opened(1, ago(10)), opened(2, ago(2))],
+        vec![issue_at(1, ago(10)), issue_at(2, ago(2))],
     );
-    let outcomes = |inbox: &Inbox| {
-        let items = inbox.items.iter();
-        let each = items.map(|listed| (listed.key.number(), listed.outcomes));
-        each.collect::<BTreeMap<u32, Outcomes>>()
-    };
+    world.show_muted(show);
+}
 
-    let off = outcomes(&read(&world, InboxPage::Latest));
-    world.show_muted(ShowMuted::On);
-    let on = outcomes(&read(&world, InboxPage::Latest));
-    world.finish();
+#[test]
+fn each_outcome_in_the_inbox_is_what_the_inbox_lists_once_the_store_holds_the_action() {
+    let off = judged("inbox-outcomes-off", now(), &|world| {
+        three_items(world, ShowMuted::Off);
+    });
+    let on = judged("inbox-outcomes-on", now(), &|world| {
+        three_items(world, ShowMuted::On);
+    });
 
-    let issue = Outcomes {
-        mark_seen: Outcome::Stays,
-        archive: Outcome::Leaves,
-        unarchive: Outcome::Unchanged,
-        mute: Outcome::Leaves,
-        mute_author: Outcome::Leaves,
-        pin: Outcome::Leaves,
-        unpin: Outcome::Unchanged,
+    use Doing::*;
+    use Outcome::*;
+    let item = |number| {
+        [
+            ((number, MarkSeen), Stays),
+            ((number, Archive), Leaves),
+            ((number, Mute), Leaves),
+            ((number, MuteAuthor), Leaves),
+        ]
     };
-    // Issue 1 stays as the header of PR 10, which someone else wrote. Only an Issue takes a pin.
-    let expected = BTreeMap::from([
-        (
-            1,
-            Outcomes {
-                mute_author: Outcome::Stays,
-                ..issue
-            },
-        ),
-        (2, issue),
-        (
-            20,
-            Outcomes {
-                pin: Outcome::Unchanged,
-                ..issue
-            },
-        ),
+    let mut expected: BTreeMap<(u32, Doing), Outcome> =
+        [item(1), item(2), item(20)].into_iter().flatten().collect();
+    // A pin takes an Issue out. Mute author leaves Issue 1 as the header of PR 10, which someone else wrote.
+    expected.extend([
+        ((1, Pin), Leaves),
+        ((2, Pin), Leaves),
+        ((1, MuteAuthor), Stays),
     ]);
     assert_eq!(off, expected);
-    assert!(
-        on.values()
-            .all(|outcomes| outcomes.mute_author == Outcome::Stays)
-    );
+    // With "Show muted" on, a Muted author's item stays.
+    expected.extend([((2, MuteAuthor), Stays), ((20, MuteAuthor), Stays)]);
+    assert_eq!(on, expected);
+}
+
+#[test]
+fn mute_author_with_show_muted_off_keeps_an_item_where_a_fresh_ask_keeps_an_earlier_muted_authors_row()
+ {
+    let build = |world: &ViewWorld| {
+        let closed = IssueFacts {
+            state: Some(IssueState::Closed),
+            ..issue_at(1, ago(9))
+        };
+        let requested = PullRequestFacts {
+            review_requests: vec![me()],
+            ..by("other-author", pr_at(10, Some(1), ago(1)))
+        };
+        world.has(vec![requested], vec![closed]);
+        // The PR's opening brings the closed Issue back from its archive (#823).
+        let store = &world.db.store;
+        archived_on_closing(store, &[ItemKey::Issue { number: 1 }], ago(8));
+        let opened = Opened {
+            issues: vec![1],
+            openings: BTreeSet::new(),
+        };
+        store.bring_back(&cpython(), opened).unwrap();
+        world.mute_author_at("other-author", ago(10));
+        world.happened(10, &[(ActivityKind::ReviewRequested, ago(5))]);
+    };
+
+    let judged = judged("inbox-outcomes-fresh-ask", now(), &build);
+
+    // Mute author marks no closed item seen, so the ask stays fresh, and keeps PR 10 under its Issue.
+    assert_eq!(judged.get(&(1, Doing::MuteAuthor)), Some(&Outcome::Stays));
 }

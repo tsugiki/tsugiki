@@ -35,10 +35,10 @@ use time::{Duration, OffsetDateTime};
 use super::attention::summed;
 use super::backports::plant;
 use super::links::placed;
+use super::outcomes::{Pinning, Place, outcomes_of};
 use super::trees::Trees;
 use super::{
-    Hidden, ListedItem, Outcome, Outcomes, PrTree, TreeEntry, WorkbenchItem, WorkbenchRow,
-    candidates,
+    Hidden, ListedItem, Outcomes, PrTree, TreeEntry, WorkbenchItem, WorkbenchRow, candidates,
 };
 use crate::conventions::Conventions;
 use crate::error::Error;
@@ -158,36 +158,23 @@ impl Inbox {
     /// wrote as `show` says.
     fn listed(read: PageRead, repository: &RepositorySettings, show: ShowMuted) -> Self {
         let causes = Causes::of(&read.facts, repository.conventions);
-        let issue_authors = (read.facts.issues.iter())
-            .filter_map(|issue| Some((issue.number, issue.author.clone()?)));
-        let pr_authors = (read.facts.pull_requests.iter())
-            .filter_map(|pr| Some((pr.number, pr.author.clone()?)));
-        let authors: BTreeMap<u32, Login> = issue_authors.chain(pr_authors).collect();
         let grouped = candidates(
             (read.facts, &read.links),
             repository,
             &BTreeSet::new(),
             &causes,
         );
-        // Archive takes an item out until it comes back (#490), Mute until the user unmutes it (#492), and a
-        // pin until the user unpins it (#488). A Muted author's item stays for "Show muted" to judge, unless
-        // one of those takes it out too.
+        let in_inbox = |causes: &Causes, item: &WorkbenchItem| {
+            ListedItem::in_inbox(causes, item.clone(), show)
+        };
         let mut items: Vec<ListedItem> = (grouped.into_iter())
-            .filter(|item| !item.is_pinned())
-            .filter_map(|item| match show {
-                ShowMuted::On => Some(ListedItem::of(&causes, item)),
-                ShowMuted::Off => ListedItem::without_muted_authors(&causes, item),
+            .filter_map(|item| {
+                let listed = in_inbox(&causes, &item)?;
+                let outcomes = outcomes_of(&causes, &item, listed.hidden, |causes| {
+                    in_inbox(causes, &item).map(|_| Place::Listed)
+                });
+                Some(ListedItem { outcomes, ..listed })
             })
-            .filter(|listed| match listed.hidden {
-                None => true,
-                Some(Hidden::Archived | Hidden::Muted) => false,
-                Some(Hidden::MutedAuthor) => {
-                    let key = listed.key;
-                    !causes.is_muted_on_its_own(key)
-                        && !causes.is_archived(key, &listed.item.numbers())
-                }
-            })
-            .map(|listed| listed.judged_in_inbox(&causes, show, &authors))
             .collect();
         let place_of =
             |listed: &ListedItem| read.places.get(&listed.item.updated_at_and_number().1);
@@ -234,48 +221,27 @@ impl ListedItem {
         })
     }
 
-    /// The item with the outcome in the Inbox of each action (#1052), which lists an item that no state of
-    /// the user's hides, or with "Show muted" on as `show` says, a Muted author's (#825). `authors` holds the
-    /// author of each Issue and PR. Mark Seen keeps an item there; Archive, Mute and a pin take it out; and
-    /// Mute author takes out an item whose rows that author all wrote, with "Show muted" off.
-    fn judged_in_inbox(
-        self,
-        causes: &Causes,
-        show: ShowMuted,
-        authors: &BTreeMap<u32, Login>,
-    ) -> Self {
-        let muted = self.hidden.is_some_and(Hidden::is_muted);
-        let unless_muted = |outcome| if muted { Outcome::Unchanged } else { outcome };
-        let mute_author = match (&self.item.mute_author_offered(), show) {
-            (None, _) => Outcome::Unchanged,
-            (Some(_), _) if self.hidden == Some(Hidden::MutedAuthor) => Outcome::Unchanged,
-            (Some(_), ShowMuted::On) => Outcome::Stays,
-            (Some(login), ShowMuted::Off) => {
-                let hides = |key: ItemKey| {
-                    causes.is_by_muted_author(key) || authors.get(&key.number()) == Some(login)
-                };
-                match self.item.clone().without(&hides) {
-                    Some(_) => Outcome::Stays,
-                    None => Outcome::Leaves,
-                }
+    /// `item` as the Inbox lists it, as `causes` judge it, if it does, with the rows Muted authors wrote as
+    /// `show` says. Archive takes an item out until it comes back (#490), Mute until the user unmutes it
+    /// (#492), and a pin until the user unpins it (#488). A Muted author's item stays for "Show muted" to
+    /// judge, unless one of those takes it out too (#825).
+    fn in_inbox(causes: &Causes, item: WorkbenchItem, show: ShowMuted) -> Option<Self> {
+        if item.pinning(causes) == Pinning::Pinned {
+            return None;
+        }
+        let listed = match show {
+            ShowMuted::On => Some(Self::of(causes, item)),
+            ShowMuted::Off => Self::without_muted_authors(causes, item),
+        }?;
+        let kept = match listed.hidden {
+            None => true,
+            Some(Hidden::Archived | Hidden::Muted) => false,
+            Some(Hidden::MutedAuthor) => {
+                let key = listed.key;
+                !causes.is_muted_on_its_own(key) && !causes.is_archived(key, &listed.item.numbers())
             }
         };
-        let outcomes = Outcomes {
-            mark_seen: unless_muted(Outcome::Stays),
-            archive: unless_muted(Outcome::Leaves),
-            mute: unless_muted(Outcome::Leaves),
-            mute_author,
-            pin: match self.item {
-                WorkbenchItem::Issue(_) => Outcome::Leaves,
-                WorkbenchItem::StandalonePr(_) | WorkbenchItem::StandaloneBackport(_) => {
-                    Outcome::Unchanged
-                }
-            },
-            // The Inbox lists no Archived item and no Pinned issue.
-            unarchive: Outcome::Unchanged,
-            unpin: Outcome::Unchanged,
-        };
-        Self { outcomes, ..self }
+        kept.then_some(listed)
     }
 }
 

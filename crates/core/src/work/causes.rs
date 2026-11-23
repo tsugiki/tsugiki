@@ -19,6 +19,10 @@ use crate::facts::patch_ids::{StaleFinding, StaleFound};
 use crate::facts::pull_requests::{CiState, LatestReview, PrState, PullRequestFacts, ReviewState};
 use crate::login::Login;
 
+mod after;
+
+pub(crate) use after::Act;
+
 /// One reason an item Needs attention.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
 #[serde(tag = "kind", rename_all = "snake_case")]
@@ -116,6 +120,8 @@ pub(crate) struct Causes {
     muted_authors: Vec<Login>,
     /// The user's Pinned issues (#488).
     pinned: BTreeSet<u32>,
+    /// The Pinned issues that closed while pinned, whose closing waits for the unpin, which archives them.
+    held_closings: BTreeSet<u32>,
     /// The user signed in, whose own items Mute author leaves alone.
     viewer: Option<Login>,
     /// The Review request or the assignment to the user that stands on each Issue and PR, acknowledged or
@@ -203,6 +209,7 @@ impl Causes {
                 .map(|muted| muted.login.clone())
                 .collect(),
             pinned: facts.activity.pinned.clone(),
+            held_closings: facts.activity.held_closings.clone(),
             viewer: Some(viewer.clone()),
             acknowledged: facts.activity.acknowledged.clone(),
         }
@@ -295,6 +302,12 @@ impl Causes {
         fresh.collect()
     }
 
+    /// Whether a Review request or an assignment to the user stands on Issue or PR `number`, acknowledged or
+    /// not.
+    pub(crate) fn is_asked(&self, number: u32) -> bool {
+        self.asks.contains_key(&number)
+    }
+
     /// The Issues and PRs where a Review request or an assignment to the user stands, acknowledged or not.
     pub(crate) fn asked(&self) -> BTreeSet<u32> {
         self.asks.keys().copied().collect()
@@ -315,12 +328,6 @@ impl Causes {
             let seen = closed || acknowledged.is_none_or(|at| *at <= archive.seen_up_to);
             !self.needs_attention(*number) && seen
         })
-    }
-
-    /// Whether the item `key` names is closed and has an archive, so it goes back to Archived once nothing
-    /// in its tree Needs attention, as `is_archived` says.
-    pub(crate) fn rests_archived(&self, key: ItemKey) -> bool {
-        self.archived.contains_key(&key) && self.closed.contains(&key.number())
     }
 
     /// When the user last put away the item `key` names, if they archived it, which orders the Archived view

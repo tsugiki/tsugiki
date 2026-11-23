@@ -16,7 +16,7 @@ use std::collections::BTreeSet;
 
 use crate::links::BackportLink;
 
-pub(crate) use causes::{Cause, Causes};
+pub(crate) use causes::{Act, Cause, Causes};
 pub use causes::{SeenMark, Why};
 pub use reach::MirrorWork;
 pub(crate) use reach::{

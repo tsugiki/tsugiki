@@ -5,6 +5,7 @@ import {
   type AppearanceSettings,
   commands,
   type OnThisMachine_Serialize,
+  type ReadOnlyChoice,
   type RepositorySettings_Serialize,
   type SettingsChanges_Deserialize,
 } from "$lib/data/bindings";
@@ -49,6 +50,18 @@ const appearanceChanges = (
   };
   return Object.keys(changes).length > 0 ? changes : undefined;
 };
+
+/** Whether the user chose Read-only for `repository`: a Repository that can write leaves `read_only` out. */
+const chosenReadOnly = (repository: RepositorySettings): boolean => repository.read_only ?? false;
+
+/** The choice of Read-only of each Repository in `now` whose page changed it from `then` (#915). */
+const readOnlyChanges = (now: RepositorySettings[], then: RepositorySettings[]): ReadOnlyChoice[] =>
+  now
+    .filter((repository) => {
+      const before = then.find((one) => one.name === repository.name);
+      return before !== undefined && chosenReadOnly(before) !== chosenReadOnly(repository);
+    })
+    .map((repository) => ({ repository: repository.name, read_only: chosenReadOnly(repository) }));
 
 export class SettingsDialog {
   readonly #settings: SettingsState;
@@ -105,13 +118,30 @@ export class SettingsDialog {
     const differs = (table: Edited) => !same(current[table], before.settings[table]);
     const appearance = appearanceChanges(current.appearance, before.settings.appearance);
     const filters = this.filters.changes;
+    const readOnly = readOnlyChanges(current.repositories, before.settings.repositories);
     return {
       ...(differs("status_bar") && { status_bar: current.status_bar }),
       ...(differs("releases") && { releases: current.releases }),
       ...(appearance && { appearance }),
       ...(!same(servers, before.servers) && { language_servers: servers }),
       ...(filters.length > 0 && { filters }),
+      ...(readOnly.length > 0 && { read_only: readOnly }),
     };
+  }
+
+  /** Whether `repository`'s page has Read-only on, once the dialog has read the files. */
+  readOnly(repository: string): boolean | undefined {
+    const listed = this.current?.repositories.find((one) => one.name === repository);
+    return listed === undefined ? undefined : chosenReadOnly(listed);
+  }
+
+  /** Turns Read-only on or off on `repository`'s page, which Apply saves and Cancel puts back (#915). The
+   * window shows nothing of it until then: the Repository's state says what the files hold. */
+  chooseReadOnly(repository: string, on: boolean) {
+    this.change((settings) => {
+      const listed = settings.repositories.find((one) => one.name === repository);
+      if (listed !== undefined) listed.read_only = on;
+    });
   }
 
   /** Whether anything changed, so the button reads Apply, not OK. */

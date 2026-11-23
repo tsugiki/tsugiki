@@ -106,6 +106,9 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
       "Mark Unseen" otherwise. The command palette's "Mark Seen" and "Mark Unseen" act on what `Q` and
       `Shift+Q` would where the focus was as it opened: the item on show from the Detail pane or with the
       Issue list hidden, and otherwise the line under the cursor ([keyboard.md](keyboard.md)).
+    - Atop the Issue and PR views of a **Read-only** Repository, a line says why, for each reason it holds
+      ([token.md](token.md)). "you chose it in this Repository's settings" links to the Repository's page in
+      Settings, which switches the choice ([settings.md](settings.md)).
     - The Issue view shows the title, an author line, the Origin PRs, the description, and recent comments,
       with a box to comment. The author line says who opened the Issue and how long ago, with the date and
       time in its tooltip, how many comments it has, and whom it is assigned to, if anyone. Under it the

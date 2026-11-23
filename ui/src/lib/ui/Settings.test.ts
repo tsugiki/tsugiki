@@ -1001,7 +1001,7 @@ describe("Settings › Advanced", () => {
   });
 
   it("opens on Advanced at a server's row, whose path takes the focus once the files are read", async () => {
-    render(Settings, { ...props(), at: "clangd" });
+    render(Settings, { ...props(), at: { server: "clangd" } });
     expect(within(nav()).getByRole("button", { name: "Advanced" }).getAttribute("aria-current")).toBe("page");
     await vi.waitFor(() => {
       expect(document.activeElement).toBe(path("clangd"));
@@ -1439,5 +1439,90 @@ describe("Settings › a Repository's Filters", () => {
     );
     expect(field(2, "Search")).toHaveProperty("value", "label:bug");
     expect(button("Apply").hasAttribute("disabled")).toBe(false);
+  });
+});
+
+describe("Settings › a Repository's Read-only switch", () => {
+  const files = settingsWith((settings) => {
+    const cpython = settings.repositories[1];
+    if (cpython) cpython.read_only = true;
+  });
+  const page = (name: string) => screen.getByRole("region", { name });
+  const box = (name: string) =>
+    within(page(name)).getByRole<HTMLInputElement>("checkbox", { name: "Read-only" });
+  /** The dialog, once it has read the files that make python/cpython Read-only. */
+  const read = async (onclose = () => {}) => {
+    core.rereadSettings.mockResolvedValue(ok(loaded(files)));
+    await opened(onclose);
+  };
+
+  it("comes first on the page, says what the files hold, and saves each change on Apply", async () => {
+    const onclose = vi.fn();
+    await read(onclose);
+    await go("python/cpython");
+    const first = page("python/cpython").querySelector("input") === box("python/cpython");
+    const cpython = box("python/cpython").checked;
+    await fireEvent.click(box("python/cpython"));
+    await go("some-maintainer/gcmon");
+    const gcmon = box("some-maintainer/gcmon").checked;
+    await fireEvent.click(box("some-maintainer/gcmon"));
+    await fireEvent.click(button("Apply"));
+
+    expect(first).toBe(true);
+    expect([cpython, gcmon]).toEqual([true, false]);
+    expect(core.applySettings).toHaveBeenCalledWith({
+      read_only: [
+        { repository: "some-maintainer/gcmon", read_only: true },
+        { repository: "python/cpython", read_only: false },
+      ],
+    });
+    await vi.waitFor(() => {
+      expect(onclose).toHaveBeenCalledOnce();
+    });
+  });
+
+  it("asks nothing of a switch turned back, and puts it back on Cancel", async () => {
+    const onclose = vi.fn();
+    await read(onclose);
+    await go("python/cpython");
+
+    await fireEvent.click(box("python/cpython"));
+    expect(button("Apply")).toBeTruthy();
+    await fireEvent.click(box("python/cpython"));
+    expect(button("OK")).toBeTruthy();
+    await fireEvent.click(box("python/cpython"));
+    await fireEvent.click(button("Cancel"));
+
+    expect(onclose).toHaveBeenCalledOnce();
+    expect(core.applySettings).not.toHaveBeenCalled();
+    expect(state.settings).toEqual(files);
+  });
+
+  it("is off until the dialog has read the files, and while Apply saves", async () => {
+    const reading = Promise.withResolvers<unknown>();
+    core.rereadSettings.mockReturnValue(reading.promise);
+    const saving = Promise.withResolvers<unknown>();
+    core.applySettings.mockReturnValue(saving.promise);
+    render(Settings, props());
+    await go("python/cpython");
+    const unread = box("python/cpython").disabled;
+    reading.resolve(ok(loaded(files)));
+    await vi.waitFor(() => {
+      expect(box("python/cpython").disabled).toBe(false);
+    });
+
+    await fireEvent.click(box("python/cpython"));
+    await fireEvent.click(button("Apply"));
+
+    expect(unread).toBe(true);
+    expect(box("python/cpython").disabled).toBe(true);
+  });
+
+  it("opens on the Repository's page when asked for it", async () => {
+    render(Settings, { ...props(), at: { repository: "python/cpython" } });
+    expect(within(nav()).getByRole("button", { name: "python/cpython" }).getAttribute("aria-current")).toBe(
+      "page",
+    );
+    expect(page("python/cpython")).toBeTruthy();
   });
 });

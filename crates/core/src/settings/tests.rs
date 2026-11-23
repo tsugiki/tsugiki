@@ -1944,6 +1944,144 @@ fn apply_of_filters_alone_saves_over_an_appearance_value_tsugiki_cant_read() {
     );
 }
 
+/// Apply with `choice` the one change: the choice of Read-only a Repository's page leaves.
+fn choosing(choice: ReadOnlyChoice) -> SettingsChanges {
+    SettingsChanges {
+        read_only: vec![choice],
+        ..SettingsChanges::default()
+    }
+}
+
+/// Apply with Repository `name` switched to Read-only on its page.
+fn read_only(name: &str) -> SettingsChanges {
+    choosing(ReadOnlyChoice {
+        repository: repository(name),
+        read_only: true,
+    })
+}
+
+/// Apply with Repository `name` switched to write on its page.
+fn can_write(name: &str) -> SettingsChanges {
+    choosing(ReadOnlyChoice {
+        repository: repository(name),
+        read_only: false,
+    })
+}
+
+#[test]
+fn apply_writes_read_only_in_the_repository_s_table_and_takes_it_out_again() {
+    let (mut files, folders, _root) = settings_saying("read-only-switch", TWO_FILTERS);
+
+    files.apply(read_only("a/b")).unwrap();
+    let chosen = fs::read_to_string(folders.settings_file()).unwrap();
+    let read_chosen = files.loaded().settings.repositories[0].read_only;
+    files.apply(can_write("a/b")).unwrap();
+    let back = fs::read_to_string(folders.settings_file()).unwrap();
+
+    assert_eq!(
+        chosen,
+        TWO_FILTERS.replace("name = \"a/b\"\n", "name = \"a/b\"\nread_only = true\n")
+    );
+    assert!(read_chosen);
+    assert_eq!(back, TWO_FILTERS);
+    assert!(!files.loaded().settings.repositories[0].read_only);
+}
+
+#[test]
+fn apply_writes_read_only_in_a_repository_written_inline_under_the_name_the_file_gives() {
+    let before = "repositories = [{ name = \"Python/CPython\", filters = [] }]\n";
+    let (mut files, folders, _root) = settings_saying("read-only-inline", before);
+
+    files.apply(read_only("python/cpython")).unwrap();
+    let chosen = fs::read_to_string(folders.settings_file()).unwrap();
+    files.apply(can_write("python/cpython")).unwrap();
+    let back = fs::read_to_string(folders.settings_file()).unwrap();
+
+    assert_eq!(
+        chosen,
+        "repositories = [{ name = \"Python/CPython\", filters = [], read_only = true }]\n"
+    );
+    assert_eq!(back, before);
+}
+
+#[test]
+fn apply_of_read_only_leaves_the_rest_of_a_repository_written_inline_as_the_user_wrote_it() {
+    let before = "repositories = [{ name=\"a/b\",  filters = [\n    # Mine first.\n    \
+                  { name = \"Mine\", query = \"author:@me\" },\n] }]\n";
+    let (mut files, folders, _root) = settings_saying("read-only-inline-kept", before);
+
+    files.apply(read_only("a/b")).unwrap();
+    let chosen = fs::read_to_string(folders.settings_file()).unwrap();
+    files.apply(can_write("a/b")).unwrap();
+    let back = fs::read_to_string(folders.settings_file()).unwrap();
+
+    assert_eq!(chosen, before.replace("\n] }]", "\n], read_only = true }]"));
+    assert_eq!(back, before);
+}
+
+#[test]
+fn apply_of_read_only_leaves_be_a_hand_edit_that_made_the_same_choice() {
+    // The page sends a Repository's choice only when the user switched it, so it read the other value. The
+    // file holds that value, which Apply switches, or the one the page leaves, which a hand edit made
+    // while Settings was open or an Apply whose answer the window missed, and which Apply leaves be.
+    let before = "[[repositories]]\nname = \"a/b\"\nread_only   =   true # Mine.\n";
+    let (mut files, folders, _root) = settings_saying("read-only-same", before);
+
+    files.apply(read_only("a/b")).unwrap();
+
+    assert_eq!(fs::read_to_string(folders.settings_file()).unwrap(), before);
+}
+
+#[test]
+fn apply_keeps_a_read_only_the_user_commented_on_at_false() {
+    let before = "[[repositories]]\nname = \"a/b\"\nread_only = true # Until I trust it.\n";
+    let (mut files, folders, _root) = settings_saying("read-only-comment", before);
+
+    files.apply(can_write("a/b")).unwrap();
+    let after = fs::read_to_string(folders.settings_file()).unwrap();
+
+    assert_eq!(
+        after,
+        "[[repositories]]\nname = \"a/b\"\nread_only = false # Until I trust it.\n"
+    );
+    assert!(!files.loaded().settings.repositories[0].read_only);
+}
+
+#[test]
+fn apply_of_read_only_refuses_a_repository_the_file_doesnt_hold_and_saves_nothing() {
+    let (mut files, folders, _root) = settings_saying("read-only-missing", TWO_FILTERS);
+
+    let missing = files
+        .apply(SettingsChanges {
+            status_bar: Some(StatusBarSettings { visible: false }),
+            ..read_only("c/d")
+        })
+        .unwrap_err();
+
+    assert_eq!(missing.kind, ErrorKind::NotFound);
+    assert_eq!(missing.message, "Tsugiki doesn't have c/d.");
+    assert_eq!(
+        fs::read_to_string(folders.settings_file()).unwrap(),
+        TWO_FILTERS
+    );
+}
+
+#[test]
+fn apply_of_read_only_alone_saves_over_an_appearance_value_tsugiki_cant_read() {
+    let before = "[appearance]\ntheme = 7\n\n[[repositories]]\nname = \"a/b\"\nfilters = []\n";
+    let (folders, _root) = temp_folders("read-only-unread");
+    fs::write(folders.settings_file(), before).unwrap();
+    let mut files = SettingsFiles::load(folders.clone());
+
+    files.apply(read_only("a/b")).unwrap();
+    let after = fs::read_to_string(folders.settings_file()).unwrap();
+
+    assert_eq!(
+        after,
+        "[appearance]\ntheme = 7\n\n[[repositories]]\nname = \"a/b\"\nfilters = []\nread_only = true\n"
+    );
+}
+
 #[test]
 fn the_owner_hands_the_session_the_filters_an_apply_saves_as_a_hand_edit() {
     let (files, _folders, _root) = settings_saying("owner-filters", TWO_FILTERS);
@@ -2708,7 +2846,10 @@ fn the_owner_saves_an_addition_and_answers_with_what_the_files_say() {
     let owner = SettingsOwner::start(Ok(SettingsFiles::load(folders.clone())));
 
     let saved = owner
-        .add_repository(repository("python/cpython"), MirrorSource::Download)
+        .add_repository(
+            RepositorySettings::new(repository("python/cpython")),
+            MirrorSource::Download,
+        )
         .unwrap();
     let text = fs::read_to_string(folders.settings_file()).unwrap();
 
@@ -2729,7 +2870,10 @@ fn the_owner_passes_on_why_a_file_refused_an_addition() {
     let owner = SettingsOwner::start(Ok(SettingsFiles::load(folders)));
 
     let refused = owner
-        .add_repository(repository("a/b"), MirrorSource::Download)
+        .add_repository(
+            RepositorySettings::new(repository("a/b")),
+            MirrorSource::Download,
+        )
         .unwrap_err();
 
     assert!(
@@ -2744,7 +2888,10 @@ fn without_folders_the_owner_says_what_went_wrong_with_them() {
     let lost = Error::new(ErrorKind::Internal, "HOME isn't a full path.");
     let owner = SettingsOwner::start(Err(lost.clone()));
 
-    let adding = owner.add_repository(repository("a/b"), MirrorSource::Download);
+    let adding = owner.add_repository(
+        RepositorySettings::new(repository("a/b")),
+        MirrorSource::Download,
+    );
     let switching = owner.put_on_workbench(repository("a/b"), query("label:bug"), OnWorkbench::On);
     let answering = owner.save_mirror_source(repository("a/b"), MirrorSource::Download);
     let resizing = owner.save_panes(WIDE);
@@ -2799,7 +2946,10 @@ fn additions_that_overlap_all_reach_the_view() {
             )]
             scope.spawn(move || {
                 owner
-                    .add_repository(repository(name), MirrorSource::Download)
+                    .add_repository(
+                        RepositorySettings::new(repository(name)),
+                        MirrorSource::Download,
+                    )
                     .unwrap()
             });
         }
@@ -2817,7 +2967,10 @@ fn an_owner_whose_thread_has_gone_says_so() {
     };
 
     let refused = owner
-        .add_repository(repository("a/b"), MirrorSource::Download)
+        .add_repository(
+            RepositorySettings::new(repository("a/b")),
+            MirrorSource::Download,
+        )
         .unwrap_err();
 
     assert_eq!(refused.message, STOPPED_SAVING);
@@ -2850,7 +3003,12 @@ fn stop_waits_for_the_save_under_way_and_the_saves_asked_before_it() {
     }));
     let adding = {
         let owner = owner.clone();
-        thread::spawn(move || owner.add_repository(repository("a/b"), MirrorSource::Download))
+        thread::spawn(move || {
+            owner.add_repository(
+                RepositorySettings::new(repository("a/b")),
+                MirrorSource::Download,
+            )
+        })
     };
     arrival.recv_timeout(PLENTY).unwrap();
     // Late enough that a `stop` that didn't wait would have returned before it.

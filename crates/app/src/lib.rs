@@ -43,7 +43,7 @@ use tsugiki_core::misses::Miss;
 use tsugiki_core::read_only::RepositoryState;
 use tsugiki_core::releases::NewVersion;
 use tsugiki_core::repository::RepositoryName;
-use tsugiki_core::repository_settings::{MirrorCost, NameCheck};
+use tsugiki_core::repository_settings::{MirrorCost, NameCheck, RepositorySettings};
 use tsugiki_core::search::{Query, SearchId, SearchState, TextSearch};
 use tsugiki_core::settings::{
     CommandId, Home, LoadedSettings, PaneLayout, SettingsOwner, TokenSource,
@@ -554,19 +554,28 @@ fn check_mirror_cost(repository: &str, calls: &Calls) -> Result<MirrorCost, Erro
     calls.mirror_cost(RepositoryName::parse(repository)?)
 }
 
-/// The user's choice in Add repository: the Repository, by the name GitHub gave it, and where its mirror gets
-/// its objects. The name stays text until the core parses it, so a name that isn't one gets the same refusal
-/// as everywhere else.
+/// The user's choice in Add repository: the Repository, by the name GitHub gave it, where its mirror gets
+/// its objects, and whether the user chose **Read-only** for it (#915). The name stays text until the core
+/// parses it, so a name that isn't one gets the same refusal as everywhere else.
 #[derive(Debug, Clone, Deserialize, Type)]
 pub(crate) struct NewRepository {
     name: String,
     source: MirrorSource,
+    read_only: bool,
 }
 
 /// Adds the Repository, and starts its first sync (ADR 0015) and its mirror's clone.
 fn add_named_repository(repository: NewRepository, calls: &Calls) -> Result<Home, Error> {
-    let NewRepository { name, source } = repository;
-    calls.add_repository(RepositoryName::parse(&name)?, source)
+    let NewRepository {
+        name,
+        source,
+        read_only,
+    } = repository;
+    let settings = RepositorySettings {
+        read_only,
+        ..RepositorySettings::new(RepositoryName::parse(&name)?)
+    };
+    calls.add_repository(settings, source)
 }
 
 /// The switch in a Filter's view: the Repository, the Filter's search, and whether its items go on the

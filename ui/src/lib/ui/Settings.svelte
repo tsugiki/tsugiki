@@ -1,13 +1,14 @@
 <!-- The Settings dialog (docs/devel/settings.md), laid out as variant B of the Settings prototype on
      `prototype/app-shell`: the pages in a column on the left, each Repository's under Repositories, the open
      one on the right, and Cancel and Apply under them. `SettingsDialog` decides what each does. It opens on
-     General, or on Advanced at a language server's row, as the Definition peek's link asks (#683). Settings ›
-     Repositories opens Add repository… over it (#533). -->
+     General, or on Advanced at a language server's row, as the Definition peek's link asks (#683), or on a
+     Repository's page, as the link in a Read-only Repository's line asks (#915). Settings › Repositories
+     opens Add repository… over it (#533). -->
 <script lang="ts">
   import { untrack } from "svelte";
   import type { About } from "$lib/state/about.svelte";
   import type { Home } from "$lib/state/home.svelte";
-  import type { ServerName } from "$lib/state/server-words";
+  import type { SettingsAt } from "$lib/state/settings-ask.svelte";
   import type { SettingsState } from "$lib/state/settings.svelte";
   import {
     SETTINGS_PAGES,
@@ -48,9 +49,9 @@
     about: About | undefined;
     /** The open Repository, whose language servers' logs Settings › Advanced opens, if one is open. */
     repository?: string | undefined;
-    /** The language server whose row in Settings › Advanced the dialog opens at, or nothing to open on
-     * General. */
-    at?: ServerName | undefined;
+    /** The language server's row in Settings › Advanced or the Repository's page the dialog opens at, or
+     * nothing to open on General. */
+    at?: SettingsAt | undefined;
     /** Runs once the dialog has read the files again, so the rest of the window takes what they say now,
      * such as a theme edited by hand. */
     onreread: () => void;
@@ -69,8 +70,13 @@
   const dialog = new SettingsDialog(
     untrack(() => settings),
     untrack(() => theme),
-    untrack((): Shown => (at === undefined ? { page: "General" } : { page: "Advanced" })),
+    untrack((): Shown => {
+      if (at === undefined) return { page: "General" };
+      return "server" in at ? { page: "Advanced" } : { repository: at.repository };
+    }),
   );
+  /** The language server whose row in Settings › Advanced the dialog opened at, if it did. */
+  const server = $derived(at !== undefined && "server" in at ? at.server : undefined);
   void dialog.open().then((reread) => {
     if (reread) onreread();
   });
@@ -142,7 +148,7 @@
       {:else if dialog.shown.page === "Keyboard"}
         <KeyboardPage />
       {:else if dialog.shown.page === "Advanced"}
-        <AdvancedPage {dialog} {repository} {at} />
+        <AdvancedPage {dialog} {repository} at={server} />
       {:else}
         <p class="empty">Nothing to set here yet.</p>
       {/if}

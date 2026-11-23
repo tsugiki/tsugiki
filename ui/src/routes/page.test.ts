@@ -109,6 +109,7 @@ vi.mock("$lib/data/bindings", async () => {
       newVersion: async () => null,
       refresh: async () => null,
       languageServers: async () => [],
+      repositorySync: async () => ({ status: "ok", data: { last_sync: null, open: null } }),
       ...core,
     },
     events: {
@@ -146,6 +147,8 @@ vi.mock("$lib/data/bindings", async () => {
         },
       },
       languageServersChanged: { listen: async () => () => {} },
+      // A Repository's page in Settings listens for news of its sync.
+      repositorySyncChanged: { listen: async () => () => {} },
     },
   };
 });
@@ -337,6 +340,28 @@ it("says a Read-only Repository is so in the status bar and atop its Issue view,
     expect(screen.queryByText(words)).toBeNull();
   });
   expect(screen.getByRole("status").textContent?.trim()).toBe("octocat");
+});
+
+it("says a Repository Read-only by choice is so in the status bar, and its line opens its page in Settings", async () => {
+  core.home.mockResolvedValue(gcmonHome);
+  core.workbench.mockResolvedValue(oneIssue);
+  core.openIssue.mockResolvedValue({ status: "ok", data: null });
+  core.issue.mockResolvedValue({ status: "ok", data: null });
+  core.repositoryState.mockResolvedValue({
+    status: "ok",
+    data: { read_only: ["chosen"], connection: "online" },
+  });
+  render(Page);
+  await fireEvent.click(await screen.findByRole("button", { name: "#7 It crashes" }));
+
+  const link = await screen.findByRole("button", { name: "this Repository's settings" });
+  await vi.waitFor(() => {
+    expect(screen.getByRole("status").textContent?.trim()).toBe("octocat · Read-only");
+  });
+  await fireEvent.click(link);
+
+  const settings = await screen.findByRole("dialog", { name: "Settings" });
+  expect(within(settings).getByRole("region", { name: "some-maintainer/gcmon" })).toBeTruthy();
 });
 
 it("says so when the core can't say what to open", async () => {
@@ -1990,7 +2015,7 @@ describe("the Settings dialog", () => {
       expect(screen.getByRole("region", { name: "Advanced" })).toBeTruthy();
     });
     expect(screen.getByRole("group", { name: "clangd" }).classList.contains("asked")).toBe(true);
-    expect(settingsAsk.server).toBeUndefined();
+    expect(settingsAsk.asked).toBeUndefined();
     await fireEvent.keyDown(window, { key: "Escape" });
 
     await ctrlComma(row);
@@ -2002,7 +2027,7 @@ describe("the Settings dialog", () => {
     await ctrlShiftP();
     settingsAsk.open("ty");
     await vi.waitFor(() => {
-      expect(settingsAsk.server).toBeUndefined();
+      expect(settingsAsk.asked).toBeUndefined();
     });
     expect(settings()).toBeNull();
   });

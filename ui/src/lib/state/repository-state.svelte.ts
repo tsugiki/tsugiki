@@ -16,16 +16,36 @@ export class RepositoryStateView extends Followed<RepositoryState> {
   }
 }
 
+/** A piece of the words that say why a Repository is Read-only: plain text, or the words that link to the
+ * Repository's page in Settings, where the user switches their choice (#915). */
+export type ReadOnlyPiece = { text: string; settings?: true };
+
 /** Why Tsugiki can't write to `repository`, as each reason says it. */
-const READ_ONLY: Record<ReadOnly, (repository: string) => string> = {
-  chosen: () => "you chose it in this Repository's settings",
-  token: (repository) => `your token can't write to ${repository}`,
+const READ_ONLY: Record<ReadOnly, (repository: string) => ReadOnlyPiece[]> = {
+  chosen: () => [{ text: "you chose it in " }, { text: "this Repository's settings", settings: true }],
+  token: (repository) => [{ text: `your token can't write to ${repository}` }],
 };
+
+/** The line atop the Issue and PR views of `repository` while it is Read-only, in pieces, as
+ * `readOnlyWords` says it. Nothing, while Tsugiki can write there, or before the core says. */
+export function readOnlyPieces(
+  state: RepositoryState | undefined,
+  repository: string,
+): ReadOnlyPiece[] | null {
+  if (state === undefined || state.read_only.length === 0) return null;
+  const reasons = state.read_only.map((reason, at) => [
+    ...(at === 0 ? [] : [{ text: ", and " }]),
+    ...READ_ONLY[reason](repository),
+  ]);
+  return [{ text: "Read-only: " }, ...reasons.flat()];
+}
 
 /** The line atop the Issue and PR views of `repository` while it is Read-only, such as "Read-only: your
  * token can't write to python/cpython". Nothing, while Tsugiki can write there, or before the core says. */
 export function readOnlyWords(state: RepositoryState | undefined, repository: string): string | null {
-  if (state === undefined || state.read_only.length === 0) return null;
-  const reasons = state.read_only.map((reason) => READ_ONLY[reason](repository));
-  return `Read-only: ${reasons.join(", and ")}`;
+  return (
+    readOnlyPieces(state, repository)
+      ?.map((piece) => piece.text)
+      .join("") ?? null
+  );
 }

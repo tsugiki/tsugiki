@@ -29,6 +29,9 @@ export class AddRepositoryState {
   step = $state<AddStep>({ step: "typing" });
   /** Where the mirror gets its objects. A clone picked after the text changed goes to the choice before. */
   mirror = $state(new MirrorChoosing());
+  /** Whether the user chose Read-only for the Repository, as it starts: the user tries Tsugiki there, then
+   * turns writes on in its page in Settings once they trust it (#915). It holds for any Repository typed. */
+  readOnly = $state(true);
 
   get input() {
     return this.#input;
@@ -58,13 +61,15 @@ export class AddRepositoryState {
       found.kind === "held" ? { step: "held", name: found.name } : { step: "checked", check: found.check };
   }
 
-  /** Adds what was checked, by the name GitHub gave, and returns what the window opens on now. It adds
-   * nothing while the user is still picking a clone, or the one they picked can't lend. */
+  /** Adds what was checked, by the name GitHub gave, Read-only if the user left it so, and returns what the
+   * window opens on now. It adds nothing while the user is still picking a clone, or the one they picked
+   * can't lend. */
   async add(check: RepositoryCheck): Promise<Home | undefined> {
     const source = this.mirror.source;
     if (source === undefined) return undefined;
     this.step = { step: "adding", check };
-    const answer = await ask(commands.addRepository({ name: check.repository.name, source }));
+    const repository = { name: check.repository.name, source, read_only: this.readOnly };
+    const answer = await ask(commands.addRepository(repository));
     if (answer.status === "ok") {
       return answer.data;
     }

@@ -57,7 +57,7 @@ it("asks for the server's row in Settings › Advanced from a line that says to 
   expect(screen.getByText("Set up ty to go to definitions in Python")).toBeDefined();
 
   await fireEvent.click(screen.getByRole("button", { name: "Open Settings › Advanced" }));
-  expect(settingsAsk.take()).toBe("ty");
+  expect(settingsAsk.take()).toEqual({ server: "ty" });
 });
 
 it("offers no link to Settings from a line that says it found nothing", () => {

@@ -42,6 +42,7 @@ mod saving;
 const REPOSITORIES: &str = "repositories";
 const FILTERS: &str = "filters";
 const QUERY: &str = "query";
+const READ_ONLY: &str = "read_only";
 const RECENT: &str = "recent";
 /// The keys of an entry in `recent`.
 const NAME: &str = "name";
@@ -154,6 +155,19 @@ pub struct SettingsChanges {
     pub language_servers: Option<LanguageServerSettings>,
     /// The Filters of each Repository whose page changed them (#535).
     pub filters: Vec<RepositoryFilters>,
+    /// The choice of **Read-only** of each Repository whose page changed it (#915).
+    pub read_only: Vec<ReadOnlyChoice>,
+}
+
+/// The choice of **Read-only** a Repository's page in Settings leaves, which Apply writes as the
+/// Repository's `read_only` (#915). The page sends it only when the user switched it, so the page read the
+/// other value. The file holds that value, which Apply switches, or the one the page leaves, which a hand
+/// edit made while the dialog was open or an Apply whose answer the window missed wrote, and which Apply
+/// leaves be. So no hand edit is lost, and unlike `RepositoryFilters` it carries nothing the page read.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Type)]
+pub struct ReadOnlyChoice {
+    pub repository: RepositoryName,
+    pub read_only: bool,
 }
 
 /// The Filters a Repository's page in Settings leaves, which Apply writes in their order (#535), and those
@@ -1048,16 +1062,18 @@ impl SettingsFiles {
     /// `settings.toml` might hold work the user hasn't finished. So does an `[appearance]` or `[diff]` value
     /// Tsugiki can't read.
     pub fn write(&mut self, settings: &Settings) -> Result<(), Error> {
-        self.save_settings(Some(settings), &[])
+        self.save_settings(Some(settings), &[], &[])
     }
 
-    /// Saves the tables of `settings` that the Settings window edits, if it is given, and the Filters each
-    /// of `filters` gives its Repository, in one save, as `write` saves `settings` alone. A Filters-only save
-    /// merges no other table, so an `[appearance]` or `[diff]` value Tsugiki can't read doesn't refuse it.
+    /// Saves the tables of `settings` that the Settings window edits, if it is given, the Filters each of
+    /// `filters` gives its Repository, and the choice of Read-only each of `read_only` gives its Repository,
+    /// in one save, as `write` saves `settings` alone. A save of Repositories alone merges no other table,
+    /// so an `[appearance]` or `[diff]` value Tsugiki can't read doesn't refuse it.
     fn save_settings(
         &mut self,
         settings: Option<&Settings>,
         filters: &[RepositoryFilters],
+        read_only: &[ReadOnlyChoice],
     ) -> Result<(), Error> {
         let machine = self.machine_to_edit()?;
         let path = settings_file(&self.folders, &machine);
@@ -1076,6 +1092,9 @@ impl SettingsFiles {
         for change in filters {
             edit.put_filters(change)?;
         }
+        for choice in read_only {
+            edit.put_read_only(choice)?;
+        }
         edit.save()?;
         self.reload();
         Ok(())
@@ -1093,8 +1112,8 @@ impl SettingsFiles {
             .map(|servers| Self::language_servers_edit(&machine, servers))
             .transpose()?;
         let settings = changes.made_to(self.loaded.settings.clone())?;
-        if settings.is_some() || !changes.filters.is_empty() {
-            self.save_settings(settings.as_ref(), &changes.filters)?;
+        if settings.is_some() || !changes.filters.is_empty() || !changes.read_only.is_empty() {
+            self.save_settings(settings.as_ref(), &changes.filters, &changes.read_only)?;
         }
         if let Some(edit) = servers {
             edit.save()?;
@@ -1203,12 +1222,7 @@ impl SettingsFiles {
         opened_at: OffsetDateTime,
     ) -> Result<Home, Error> {
         self.reload();
-        let held = self.loaded.settings.held(name).ok_or_else(|| {
-            Error::new(
-                ErrorKind::NotFound,
-                &format!("Tsugiki doesn't have {name}."),
-            )
-        })?;
+        let held = (self.loaded.settings.held(name)).ok_or_else(|| not_held(name))?;
         let path = self.folders.machine_file();
         let mut edit = TomlEdit::open_machine(&path)?;
         put_first_in_recent(edit.document.as_table_mut(), &held, opened_at);
@@ -1411,7 +1425,7 @@ impl From<Change> for Request {
 /// What the owner's thread saves, and where it answers with what the settings say after.
 enum Change {
     Add {
-        name: RepositoryName,
+        repository: RepositorySettings,
         source: MirrorSource,
         reply: Sender<Result<SettingsView, Error>>,
     },
@@ -1442,7 +1456,8 @@ enum Change {
         reply: Sender<Result<SettingsView, Error>>,
     },
     Apply {
-        changes: SettingsChanges,
+        // Boxed: unboxed, the tables Apply can change would make each request take their size.
+        changes: Box<SettingsChanges>,
         reply: Sender<Result<SettingsView, Error>>,
     },
 }
@@ -1518,16 +1533,13 @@ impl SettingsOwner {
                     (
                         Ok(files),
                         Change::Add {
-                            name,
+                            repository,
                             source,
                             reply,
                         },
                     ) => {
-                        let saved = files.add_repository(
-                            &RepositorySettings::new(name),
-                            &source,
-                            OffsetDateTime::now_utc(),
-                        );
+                        let saved =
+                            files.add_repository(&repository, &source, OffsetDateTime::now_utc());
                         (saved.map(|_| files.view()), reply)
                     }
                     (
@@ -1568,7 +1580,7 @@ impl SettingsOwner {
                         (Ok(files.view()), reply)
                     }
                     (Ok(files), Change::Apply { changes, reply }) => {
-                        (files.apply(changes).map(|()| files.view()), reply)
+                        (files.apply(*changes).map(|()| files.view()), reply)
                     }
                     (
                         Err(problem),
@@ -1651,16 +1663,17 @@ impl SettingsOwner {
         self.view.clone()
     }
 
-    /// Adds `name` to the settings, and answers with what they say now.
+    /// Adds `repository` to the settings with what it holds, unless they hold its name already, and answers
+    /// with what they say now.
     pub fn add_repository(
         &self,
-        name: RepositoryName,
+        repository: RepositorySettings,
         source: MirrorSource,
     ) -> Result<SettingsView, Error> {
         let (reply, answer) = mpsc::channel();
         self.ask(
             Change::Add {
-                name,
+                repository,
                 source,
                 reply,
             },
@@ -1737,6 +1750,7 @@ impl SettingsOwner {
     /// settings say now.
     pub fn apply(&self, changes: SettingsChanges) -> Result<SettingsView, Error> {
         let (reply, answer) = mpsc::channel();
+        let changes = Box::new(changes);
         self.ask(Change::Apply { changes, reply }, &answer)
     }
 
@@ -1925,13 +1939,7 @@ impl TomlEdit<'_, Settings> {
             (Some(repositories), Some(written)) => repository_in_file(repositories, name, written),
             _ => None,
         };
-        match repository {
-            Some(repository) => Ok(repository),
-            None => Err(Error::new(
-                ErrorKind::NotFound,
-                &format!("Tsugiki doesn't have {name}."),
-            )),
-        }
+        repository.ok_or_else(|| not_held(name))
     }
 
     /// Makes the Filters of the Repository `change` names the ones it lists, as `put_filters` says. It
@@ -1992,6 +2000,65 @@ impl TomlEdit<'_, Settings> {
         put_filters(repository, filters);
         Ok(())
     }
+
+    /// Writes the choice of Read-only `choice` gives its Repository as its `read_only`, in the first table
+    /// that names it, the one the settings read: `read_only = true`, or no key for one that can write, as
+    /// `append` writes them. A `read_only` that says so already stays as the user wrote it, and one the user
+    /// commented on stays, at `false`. In a Repository written inline the rest of its table stays as the
+    /// user wrote it too. It refuses a Repository the file doesn't hold.
+    fn put_read_only(&mut self, choice: &ReadOnlyChoice) -> Result<(), Error> {
+        let name = &choice.repository;
+        let repositories = self.document.get_mut(REPOSITORIES);
+        let inline = repositories.as_deref().is_some_and(Item::is_array);
+        let repository = repositories
+            .and_then(|repositories| repository_in_file(repositories, name, None))
+            .ok_or_else(|| not_held(name))?;
+        let wanted = toml_edit::value(choice.read_only);
+        let closing = inline.then(|| closing_space(repository)).flatten();
+        merge_value(
+            repository,
+            READ_ONLY,
+            &wanted,
+            Some(&toml_edit::value(false)),
+        );
+        if let Some(closing) = closing {
+            keep_closing_space(repository, closing);
+        }
+        Ok(())
+    }
+}
+
+/// The last key of the inline table `table` and the space its value keeps before the `}`, if the user wrote
+/// one.
+fn closing_space(table: &dyn TableLike) -> Option<(String, RawString)> {
+    let (key, item) = table.iter().last()?;
+    let space = item.as_value()?.decor().suffix()?.clone();
+    Some((key.to_owned(), space))
+}
+
+/// Keeps the space `closing` says the user wrote before the `}` of the inline table `table` before its last
+/// key changed. A key added at its end would follow that space, as `{ name = "a/b" , read_only = true }`, and
+/// one taken out of its end would leave none, as `{ name = "a/b"}`. So the space moves to the last value
+/// now, which may be the one that held it, and the rest of the table stays as the user wrote it, a list
+/// over several lines with its comments included.
+fn keep_closing_space(table: &mut dyn TableLike, closing: (String, RawString)) {
+    let (was_last, space) = closing;
+    let last = table.iter().last().map(|(key, _)| key.to_owned());
+    if let Some(value) = table.get_mut(&was_last).and_then(Item::as_value_mut) {
+        value.decor_mut().set_suffix("");
+    }
+    let last = last.and_then(|key| table.get_mut(&key)?.as_value_mut());
+    if let Some(value) = last {
+        value.decor_mut().set_suffix(space);
+    }
+}
+
+/// The refusal of a change to `name`, a Repository the settings don't hold.
+fn not_held(name: &RepositoryName) -> Error {
+    Error::new(
+        ErrorKind::NotFound,
+        &format!("Tsugiki doesn't have {name}."),
+    )
 }
 
 /// A Filter takes a block of its own, because the user edits these by hand (ADR 0014).

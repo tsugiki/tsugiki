@@ -66,9 +66,14 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
   the window Tsugiki holds. They change as soon as a sync saves new ones, a first sync included, and before
   a sync has counted them they don't show. The last sync says "Not synced yet" before the first one
   finishes, moves on each minute, and changes when a sync of that Repository finishes, open or not. Each
-  part waits for the core's answer, and the line shows once one has come. The page's groups follow the
-  header in this order: Conventions, First sync, Filters, Muted authors, On this machine, then Reset cache
-  and Remove repository. Only Filters is built so far.
+  part waits for the core's answer, and the line shows once one has come. The page's first row, under the
+  header, is the "Read-only" switch, which shows the Repository's `read_only` as the files hold it. Apply
+  saves it with the page's other rows, and Cancel puts it back. Nothing else shows the switch until Apply
+  has saved it. Then a Repository opened since launch hears of it: its Issue and PR views and the status
+  bar follow, and so does its header on a dialog Apply keeps open. A Repository not opened since launch
+  keeps the old word in that header until the page shows again (#1057). The switch waits for the files and
+  is off while Apply saves. The page's groups follow in this order: Conventions, First sync, Filters, Muted
+  authors, On this machine, then Reset cache and Remove repository. Only Filters is built so far.
 - A Repository's Filters group lists each Filter on a line of its own, in the order `settings.toml` gives
   and the Sidebar shows: its name and its search, each edited in place, ↑ and ↓, off at either end, and
   Delete. Add filter adds a Filter with a blank name and search at the end and puts the focus in its name. A
@@ -132,9 +137,14 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
   the user's choice, whatever the token can do, and Tsugiki sends no write there
   ([token.md](token.md)). A Repository without it can write, and Tsugiki writes the key only when it is
   true. The choice travels with the file, while the token's mark stays in the database, and Tsugiki works
-  out whether a write may go from both as it sends one. The Issue and PR views say "Read-only: you chose it
-  in this Repository's settings" atop. Only a hand edit sets it for now: Add repository and the
-  Repository's page get the switch (#915).
+  out whether a write may go from both as it sends one, so the next write follows an Apply. Add
+  repository's "Read-only" box, checked unless the user unchecks it, sets it on the Repository it adds
+  ([repositories.md](repositories.md)), and the switch on the Repository's page sets it or takes it out.
+  Apply writes it in the first table that names the Repository, the one the settings read, written inline
+  or not, and leaves the rest of that table as the user wrote it. A `read_only` the user commented on stays
+  in place at `false`. The Issue and PR views say
+  "Read-only: you chose it in this Repository's settings" atop, where "this Repository's settings" opens
+  its page, and the status bar says "Read-only" as for the token ([status-bar.md](status-bar.md)).
 - Settings are kept in two TOML files, which Tsugiki reads when it starts and when the Settings dialog opens,
   so a hand edit takes effect at the next of those ([ADR
   0014](../adr/0014-settings-in-toml-files-user-state-in-the-database-and-a-portable-mode.md)).

@@ -50,7 +50,8 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
   and goes as soon as Tsugiki sees another token. The Issue and PR views of a Read-only Repository say
   "Read-only: your token can't write to python/cpython" atop, and the status bar says "Read-only" on the
   left, after who is signed in.
-- A Repository is **Read-only** also when the user chose it in `settings.toml` ([settings.md](settings.md)).
+- A Repository is **Read-only** also when the user chose it, in Add repository or on its page in Settings,
+  which `settings.toml` keeps ([settings.md](settings.md)).
   Tsugiki sends no write to a Read-only Repository, whichever the reason. As a write is about to go, the
   core works out from the settings and the database whether the Repository is Read-only, so a write that a
   control let through, or one sent after the mark changed, still goes nowhere. Such a write fails as one

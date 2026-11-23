@@ -1,22 +1,32 @@
-// A way for any part of the window to ask for the Settings dialog at a language server's row, as the
-// Definition peek's link does (#683). The page opens the dialog there unless another dialog is open.
+// A way for any part of the window to ask for the Settings dialog at a place: a language server's row, as
+// the Definition peek's link does (#683), or a Repository's page, as the link in a Read-only Repository's
+// line does (#915). The page opens the dialog there unless another dialog is open.
 
 import type { ServerName } from "$lib/data/bindings";
 
+/** A place the Settings dialog opens at: a language server's row in Settings › Advanced, or a Repository's
+ * page. */
+export type SettingsAt = { server: ServerName } | { repository: string };
+
 class SettingsAsk {
-  /** The server whose row in Settings › Advanced was asked for, until the page takes the ask. */
-  server = $state<ServerName>();
+  /** The place asked for, until the page takes the ask. */
+  asked = $state<SettingsAt>();
 
   /** Asks for Settings › Advanced at `server`'s row. */
   open(server: ServerName) {
-    this.server = server;
+    this.asked = { server };
   }
 
-  /** The server asked for, if one was, which no longer waits. */
-  take(): ServerName | undefined {
-    const server = this.server;
-    this.server = undefined;
-    return server;
+  /** Asks for the page of `repository` in Settings. */
+  openRepository(repository: string) {
+    this.asked = { repository };
+  }
+
+  /** The place asked for, if one was, which no longer waits. */
+  take(): SettingsAt | undefined {
+    const asked = this.asked;
+    this.asked = undefined;
+    return asked;
   }
 }
 

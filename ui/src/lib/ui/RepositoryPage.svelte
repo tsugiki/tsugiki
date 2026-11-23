@@ -1,8 +1,8 @@
 <!-- A Repository's page in Settings (docs/devel/settings.md, #534). Its header names the Repository and says
      whether Tsugiki can write there, with why not, its open Issues and PRs as GitHub last counted them, and
      its last sync, which moves on while the page shows. Each part waits for the core's answer, and the line
-     shows once one has come. Its Filters follow, which the user renames, edits, moves, deletes and adds, and
-     the dialog's Apply saves (#535). -->
+     shows once one has come. Its first row switches Read-only (#915). Its Filters follow, which the user
+     renames, edits, moves, deletes and adds. The dialog's Apply saves both (#535). -->
 <script lang="ts">
   import { isBlank } from "$lib/state/filter-edits.svelte";
   import { RepositoryStateView } from "$lib/state/repository-state.svelte";
@@ -41,6 +41,8 @@
     ].filter((part) => part !== null),
   );
 
+  /** Whether this page has Read-only on, once the dialog has read the files (#915). */
+  const readOnly = $derived(dialog.readOnly(repository));
   /** The Filters of this page, once the dialog has read the files. */
   const filters = $derived(dialog.filters.page(repository));
   /** Whether the next name field to show is the one Add filter added, which takes the focus. */
@@ -58,6 +60,22 @@
 {#if parts.length > 0}
   <p class="facts">{parts.join(" · ")}</p>
 {/if}
+
+<div class="row">
+  <label>
+    <input
+      type="checkbox"
+      checked={readOnly}
+      disabled={readOnly === undefined || dialog.applying}
+      onchange={(e) => {
+        dialog.chooseReadOnly(repository, e.currentTarget.checked);
+      }}
+    />
+    Read-only
+  </label>
+  <StoredIn where="settings" />
+  <p class="help">Tsugiki sends nothing to GitHub here, such as a comment or a review.</p>
+</div>
 
 <h3>Filters <StoredIn where="settings" /></h3>
 <p class="help">
@@ -131,10 +149,29 @@
     align-items: center;
   }
 
+  .row {
+    margin-bottom: 10px;
+  }
+
+  label {
+    display: inline-flex;
+    gap: 6px;
+    align-items: center;
+    cursor: pointer;
+  }
+
+  label input {
+    margin: 0;
+  }
+
   .help {
     margin: 0 0 8px;
     font-size: 12px;
     color: var(--fg-muted);
+  }
+
+  .row .help {
+    margin: 3px 0 0 22px;
   }
 
   .filters {

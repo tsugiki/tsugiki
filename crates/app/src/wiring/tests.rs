@@ -226,7 +226,7 @@ fn hear(app: &App<MockRuntime>, event: &str) -> Receiver<Value> {
 const CPYTHON: &str = "python/cpython";
 
 fn add_cpython() -> Value {
-    json!({ "repository": { "name": CPYTHON, "source": { "kind": "download" } } })
+    json!({ "repository": { "name": CPYTHON, "source": { "kind": "download" }, "read_only": false } })
 }
 
 fn the_whole_workbench() -> Value {
@@ -293,7 +293,8 @@ fn the_account_page_hears_the_token_comes_from_gh() {
 #[test]
 fn a_name_that_isnt_one_is_refused_before_the_missing_folders_matter() {
     let wired = Wired::start(Err(no_folders()), no_network());
-    let nonsense = json!({ "name": "nonsense", "source": { "kind": "download" } });
+    let nonsense =
+        json!({ "name": "nonsense", "source": { "kind": "download" }, "read_only": false });
 
     let adding = wired.ask("add_repository", json!({ "repository": nonsense }));
     let checking = wired.ask("check_repository", json!({ "input": "nonsense" }));
@@ -603,6 +604,36 @@ fn settings_reads_a_hand_edit_as_it_opens_and_apply_lasts_through_a_restart() {
     );
 }
 
+/// Add repository's Read-only box makes the Repository Read-only by choice, and its page's switch, through
+/// Apply, lets it write again (#915).
+#[test]
+fn a_repository_added_read_only_is_so_by_choice_until_its_page_s_switch_is_applied() {
+    let (folders, _root) = temp_folders("wired-read-only");
+    let wired = Wired::start(Ok(folders.clone()), no_network());
+    let cpython = json!({ "repository": CPYTHON });
+    let read_only = json!({ "name": CPYTHON, "source": { "kind": "download" }, "read_only": true });
+
+    drop(
+        wired
+            .ask("add_repository", json!({ "repository": read_only }))
+            .unwrap(),
+    );
+    let added = std::fs::read_to_string(folders.settings_file()).unwrap();
+    let chosen = wired.ask("repository_state", cpython.clone()).unwrap();
+    let switch = json!({ "read_only": [{ "repository": CPYTHON, "read_only": false }] });
+    let applied = wired.ask("apply_settings", json!({ "changes": switch }));
+    let writes = wired.ask("repository_state", cpython).unwrap();
+    drop(wired.stop());
+    let file = std::fs::read_to_string(folders.settings_file()).unwrap();
+
+    assert!(added.contains("read_only = true"), "{added}");
+    assert_eq!(chosen["read_only"], json!(["chosen"]));
+    let repository = &applied.unwrap()["settings"]["repositories"][0];
+    assert_eq!(repository.get("read_only"), None, "{repository}");
+    assert_eq!(writes["read_only"], json!([]));
+    assert!(!file.contains("read_only"), "{file}");
+}
+
 /// Settings › Repositories hears what each Repository has on this machine (#533).
 #[test]
 fn settings_hears_where_each_mirror_gets_its_objects_and_how_much_of_the_disk_it_takes() {
@@ -829,7 +860,8 @@ fn a_switch_opens_the_repository_syncs_it_and_a_restart_reopens_it() {
     let (folders, _root) = temp_folders("wired-switch");
     let wired = Wired::start(Ok(folders.clone()), no_network());
     wired.call("add_repository", add_cpython());
-    let peps = json!({ "name": "python/peps", "source": { "kind": "download" } });
+    let peps =
+        json!({ "name": "python/peps", "source": { "kind": "download" }, "read_only": false });
     wired.call("add_repository", json!({ "repository": peps }));
 
     let opened = wired.ask("open_repository", json!({ "name": "Python/CPython" }));
@@ -2703,7 +2735,7 @@ fn stopping_waits_for_the_settings_change_under_way() {
     }));
     let adding = std::thread::spawn(move || {
         settings.add_repository(
-            RepositoryName::parse(CPYTHON).unwrap(),
+            RepositorySettings::new(RepositoryName::parse(CPYTHON).unwrap()),
             MirrorSource::Download,
         )
     });

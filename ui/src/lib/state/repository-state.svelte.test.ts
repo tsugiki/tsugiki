@@ -2,7 +2,12 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { commands, events } from "$lib/data/bindings";
 import { ok, refused } from "$lib/testing/fixtures";
 import { catchChanged } from "$lib/testing/state";
-import { readOnlyWords, type RepositoryState, RepositoryStateView } from "./repository-state.svelte";
+import {
+  readOnlyPieces,
+  readOnlyWords,
+  type RepositoryState,
+  RepositoryStateView,
+} from "./repository-state.svelte";
 
 vi.mock("$lib/data/bindings", () => ({
   commands: { repositoryState: vi.fn() },
@@ -169,6 +174,18 @@ describe("readOnlyWords", () => {
     expect(readOnlyWords(both, "python/cpython")).toBe(
       "Read-only: you chose it in this Repository's settings, and your token can't write to python/cpython",
     );
+  });
+
+  it("gives the words of the user's choice that link to the Repository's settings apart", () => {
+    const both: RepositoryState = { read_only: ["chosen", "token"], connection: "online" };
+    expect(readOnlyPieces(both, "python/cpython")).toEqual([
+      { text: "Read-only: " },
+      { text: "you chose it in " },
+      { text: "this Repository's settings", settings: true },
+      { text: ", and " },
+      { text: "your token can't write to python/cpython" },
+    ]);
+    expect(readOnlyPieces(writable, "python/cpython")).toBeNull();
   });
 
   it("says nothing while Tsugiki can write there, offline too, or before the core says", () => {

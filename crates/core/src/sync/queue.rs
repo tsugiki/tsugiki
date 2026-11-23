@@ -139,8 +139,8 @@ pub struct Syncs {
     trees: VecDeque<OpenedTree>,
     /// The settings owner's view, which each step reads its Repository's settings from.
     settings: LatestReader<SettingsView>,
-    /// The Repositories opened since launch, whose lists the window shows, so it hears of a hand edit to
-    /// their settings.
+    /// The Repositories opened since launch, which alone sync, so the session hands the Mirror worker the
+    /// wants of their saved facts.
     repositories_opened: Vec<RepositoryName>,
     /// The Issues of `open` the user has opened since it opened. Each reads its tree once, because the
     /// session reads an Issue on screen again about once a minute.

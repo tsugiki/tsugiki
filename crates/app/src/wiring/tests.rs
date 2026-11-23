@@ -204,6 +204,22 @@ impl Wired {
         assert!(answer.is_ok(), "{command} failed: {answer:?}");
     }
 
+    /// Marks CPython's item `number` unseen, and answers with each change the window heard up to the
+    /// mark's. The session takes its messages in order, so the mark's change comes after those of what came
+    /// before it.
+    fn heard_until_marked(&self, number: u32) -> Vec<Value> {
+        let marked = json!({ "repository": CPYTHON, "number": number });
+        self.call("mark_unseen", marked);
+        let mut heard = Vec::new();
+        while heard
+            .last()
+            .is_none_or(|change: &Value| change["items"] != json!([number]))
+        {
+            heard.push(self.workbenches.recv_timeout(PLENTY).unwrap());
+        }
+        heard
+    }
+
     fn stop(self) -> Self {
         self.core.stop(PLENTY);
         self
@@ -644,6 +660,38 @@ fn a_repository_added_read_only_is_so_by_choice_until_its_page_s_switch_is_appli
     assert!(!file.contains("read_only"), "{file}");
 }
 
+/// An Apply that switches Read-only on a Repository the window never opened tells the window, whose page of
+/// that Repository in Settings asks for its state again while the dialog stays open (#1057).
+#[test]
+fn an_apply_tells_the_window_of_a_repository_it_never_opened() {
+    let (folders, _root) = temp_folders("wired-apply-unopened");
+    let wired = Wired::start(Ok(folders.clone()), no_network());
+    drop(wired.ask("add_repository", add_cpython()).unwrap());
+    let file = std::fs::read_to_string(folders.settings_file()).unwrap();
+    let peps = "python/peps";
+    let added = format!("{file}\n[[repositories]]\nname = \"{peps}\"\n");
+    std::fs::write(folders.settings_file(), added).unwrap();
+
+    drop(wired.ask("reread_settings", json!({})).unwrap());
+    drop(wired.heard_until_marked(1));
+    let writes = wired.ask("repository_state", json!({ "repository": peps }));
+    let switch = json!({ "read_only": [{ "repository": peps, "read_only": true }] });
+    wired.call("apply_settings", json!({ "changes": switch }));
+    let heard = wired.heard_until_marked(2);
+    let chosen = wired.ask("repository_state", json!({ "repository": peps }));
+    drop(wired.stop());
+
+    assert_eq!(writes.unwrap()["read_only"], json!([]));
+    assert_eq!(
+        heard,
+        [
+            json!({ "repository": peps, "items": [] }),
+            json!({ "repository": CPYTHON, "items": [2] }),
+        ]
+    );
+    assert_eq!(chosen.unwrap()["read_only"], json!(["chosen"]));
+}
+
 /// Settings › Repositories hears what each Repository has on this machine (#533).
 #[test]
 fn settings_hears_where_each_mirror_gets_its_objects_and_how_much_of_the_disk_it_takes() {
@@ -678,16 +726,7 @@ fn conventions_edited_by_hand_reach_the_window_as_a_change_once_the_settings_are
     let layout = json!({ "layout": { "sidebar": 240 } });
     drop(wired.ask("save_pane_layout", layout).unwrap());
     let reread = wired.ask("reread_settings", json!({})).unwrap();
-    // The session takes its messages in order, so this change comes after any the rereads made.
-    let marked = json!({ "repository": CPYTHON, "number": 8 });
-    drop(wired.ask("mark_unseen", marked).unwrap());
-    let mut heard = Vec::new();
-    while heard
-        .last()
-        .is_none_or(|change: &Value| change["items"] != json!([8]))
-    {
-        heard.push(wired.workbenches.recv_timeout(PLENTY).unwrap());
-    }
+    let heard = wired.heard_until_marked(8);
     drop(wired.stop());
 
     assert_ne!(edited, file, "{file}");
@@ -695,9 +734,11 @@ fn conventions_edited_by_hand_reach_the_window_as_a_change_once_the_settings_are
         reread["settings"]["repositories"][0]["conventions"],
         "github"
     );
+    // The first change is the add's, which lists CPython anew.
     assert_eq!(
         heard,
         [
+            json!({ "repository": CPYTHON, "items": [] }),
             json!({ "repository": CPYTHON, "items": [] }),
             json!({ "repository": CPYTHON, "items": [8] }),
         ]
@@ -2823,5 +2864,7 @@ fn stopping_hands_the_session_a_settings_change_that_ends_during_the_stop() {
     letting_go.join().unwrap();
     assert!(saving.join().unwrap().is_ok());
     assert_ne!(edited, file, "{file}");
-    assert_eq!(heard, [json!({ "repository": CPYTHON, "items": [] })]);
+    // The add's change, then the pane layout's, whose reload took in the Conventions.
+    let changed = json!({ "repository": CPYTHON, "items": [] });
+    assert_eq!(heard, [changed.clone(), changed]);
 }

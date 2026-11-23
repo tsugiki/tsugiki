@@ -1,7 +1,8 @@
 // A Repository's state (#398): why Tsugiki can't write there, if it can't, and whether GitHub can be reached.
 // Each write control reads it. Asked for once, then again each time the core says the Repository changed,
-// as it does when the token's mark on it changes or a hand edit changes its settings, and each time the
-// status changes, which can say Tsugiki went offline or came back (ADR 0008).
+// as it does when the token's mark on it changes or a hand edit or an Apply changes its settings, opened
+// since launch or not (#1057), and each time the status changes, which can say Tsugiki went offline or came
+// back (ADR 0008).
 import { commands, events, type Connection, type ReadOnly, type RepositoryState } from "$lib/data/bindings";
 import { Followed, naming } from "./followed.svelte";
 

@@ -18,7 +18,12 @@ import {
 /** The commit the user's Review covered. */
 /** What the list says of an item beside its facts: nothing Needs attention, and it isn't hidden. The key
  * plays no part here. */
-const unmarked = { attention: null, key: { kind: "issue", number: 1 } as const, hidden: null };
+const unmarked = {
+  attention: null,
+  key: { kind: "issue", number: 1 } as const,
+  hidden: null,
+  unpin: "stays" as const,
+};
 
 const REVIEWED = "1".repeat(40);
 /** The head the check compared it with. */

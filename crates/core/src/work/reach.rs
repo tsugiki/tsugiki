@@ -43,6 +43,20 @@ pub(crate) fn in_own_right(
     repository: &RepositorySettings,
     causes: &Causes,
 ) -> BTreeSet<u32> {
+    let mut own = unpinned_in_own_right(facts, repository, causes);
+    if facts.viewer.is_some() {
+        own.extend(&facts.activity.pinned);
+    }
+    own
+}
+
+/// The Issues and PRs `in_own_right` finds, but for the pins: those a Pinned issue's unpin leaves on the
+/// Workbench (#1052).
+pub(crate) fn unpinned_in_own_right(
+    facts: &WorkFacts,
+    repository: &RepositorySettings,
+    causes: &Causes,
+) -> BTreeSet<u32> {
     let Some(viewer) = facts.viewer.as_ref() else {
         return BTreeSet::new();
     };
@@ -51,7 +65,6 @@ pub(crate) fn in_own_right(
         .filter(|pr| reasons(pr, viewer).iter().any(holds))
         .map(|pr| pr.number);
     let mut own = matched(&repository.filters, &facts.filters);
-    own.extend(&facts.activity.pinned);
     own.extend(reasoned);
     own.extend(causes.waiting());
     own

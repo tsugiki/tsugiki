@@ -34,6 +34,7 @@ const issue = (number: number, waiting: boolean, pullRequests: TreeEntry[] = [])
     : null,
   key: { kind: "issue", number },
   hidden: null,
+  unpin: "stays",
 });
 
 const listing = (waiting: boolean) => workbenchPage([issue(7, waiting), issue(8, false)]);

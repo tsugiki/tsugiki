@@ -2040,6 +2040,8 @@ export type ListedItem_Deserialize = {
 	key: ItemKey,
 	/**  Whether the user's state hides the item, which only some lists show, as `Hidden` says. */
 	hidden?: Hidden | null,
+	/**  The unpin's effect on the item. The Inbox lists no Pinned issue, so it says `Stays` of each item. */
+	unpin: Unpin,
 } & WorkbenchItem_Deserialize;
 
 /**  A top-level entry of the list, with why it Needs attention, if it does. */
@@ -2049,6 +2051,8 @@ export type ListedItem_Serialize = {
 	key: ItemKey,
 	/**  Whether the user's state hides the item, which only some lists show, as `Hidden` says. */
 	hidden: Hidden | null,
+	/**  The unpin's effect on the item. The Inbox lists no Pinned issue, so it says `Stays` of each item. */
+	unpin: Unpin,
 } & WorkbenchItem_Serialize;
 
 /**  A first sync's progress through its queue. It learns of more PRs as it reads, so `prs_known` grows. */
@@ -4127,6 +4131,21 @@ export type Unfetched =
 { kind: "behind" } | 
 /**  GitHub has no ref for the PR. */
 { kind: "not_on_github" };
+
+/**
+ *  An unpin's effect on a listed item on the Workbench (#488), which the window reads to move the cursor on
+ *  at the keypress (#1052).
+ */
+export type Unpin = 
+/**
+ *  The item stays where it is: it has no pin, something besides the pin keeps it on the Workbench, or
+ *  the Workbench doesn't list it.
+ */
+"stays" | 
+/**  Nothing but its pin keeps the Issue on the Workbench, which the unpin takes it off. */
+"leaves" | 
+/**  The Issue closed while pinned, so the unpin archives it. */
+"archives";
 
 /**  What a lookup waits for, which the Definition peek says while it waits. */
 export type Waiting = 

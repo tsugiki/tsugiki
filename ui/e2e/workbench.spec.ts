@@ -24,6 +24,7 @@ const review: ListedItem = {
   attention: { since: "2026-11-04T10:00:00Z", why: [{ kind: "review_requested" }] },
   key: { kind: "issue", number: 112564 },
   hidden: null,
+  unpin: "stays",
   kind: "issue",
   number: 112564,
   title: "GIL drop during collection",
@@ -425,22 +426,21 @@ test("a change that moves the Detail pane's row leaves the scroll alone once the
   await expect(row).not.toBeInViewport();
 });
 
-test("a change that moves the focused row under the cursor gives it back the focus, though the Detail pane shows another item", async ({
+test("a change that moves the focused row under the cursor off the screen scrolls the list to it and gives it back the focus, though the Detail pane shows another item (#1052)", async ({
   page,
 }) => {
-  const { row, topOf, expectAt, moveToTop } = await openFarDown(page);
+  const { row, moveToTop } = await openFarDown(page);
   await row.focus();
   await page.keyboard.press("ArrowDown");
   const cursor = page.getByRole("button", { name: "#1021 Item 1021" });
   await expect(cursor).toBeFocused();
-  const above = await topOf("#1020");
-  expect(above).toBeDefined();
 
   await moveToTop(1021);
 
+  await expect(cursor).toBeInViewport();
   await expect(cursor).toBeFocused();
   await expect(cursor).toHaveAttribute("aria-current", "true");
-  await expectAt("#1020", above);
+  await expect(page.getByRole("heading", { name: /Item 1020/ })).toBeVisible();
 });
 
 test("the status bar says when the Repository last synced, and a click asks again", async ({ page }) => {

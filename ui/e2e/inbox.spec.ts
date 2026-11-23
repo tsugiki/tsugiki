@@ -17,6 +17,7 @@ const issue = (number: number): ListedItem => {
     attention: null,
     key: { kind: "issue", number },
     hidden: null,
+    unpin: "stays",
     kind: "issue",
     number,
     title: `Issue ${String(number)}`,

@@ -2191,48 +2191,50 @@ it("leaves the focus in a text box clicked between Q on a row and the core's ans
   box.remove();
 });
 
-it("moves the cursor, and the focus a row held, to the next row when a sync takes the row's attention", async () => {
+it("keeps the cursor, the focus its row held and the Detail pane on the item a sync moves down the list (#1052)", async () => {
   const { marked, markedSeen } = await threeAlone();
   marked.focus();
 
   markedSeen([]);
 
-  const landed = await screen.findByRole("button", { name: "#6 Next" });
   await vi.waitFor(() => {
-    expect(document.activeElement).toBe(landed);
+    expect(itemOrder()).toEqual(["#6 Next", "#8 Last", "#5 Alone"]);
   });
-  expect(landed.getAttribute("aria-current")).toBe("true");
+  await rowFocused("#5 Alone");
+  await nextTask();
+  expect(screen.getByRole("heading", { name: /PR 5/ })).toBeTruthy();
+  expect(core.pullRequest).toHaveBeenLastCalledWith("python/cpython", 5);
 });
 
-it("moves only the cursor when a sync takes the attention of the row under it while the focus is elsewhere", async () => {
-  const { markedSeen } = await threeAlone();
-  const box = document.createElement("input");
-  document.body.append(box);
-  box.focus();
+it("takes the cursor off the list when a sync takes its item out, where the focus stays, the Detail pane keeps the item, and ↓ goes to the first row (#1052)", async () => {
+  const { marked, tookAway } = await threeAlone();
+  marked.focus();
 
-  markedSeen([]);
-
-  const landed = await screen.findByRole("button", { name: "#6 Next" });
+  tookAway();
   await vi.waitFor(() => {
-    expect(landed.getAttribute("aria-current")).toBe("true");
+    expect(itemOrder()).toEqual(["#6 Next", "#8 Last"]);
   });
   await tick();
-  expect(document.activeElement).toBe(box);
-  box.remove();
+  const current = document.querySelectorAll('.list [aria-current="true"]');
+  const focused = document.activeElement;
+  await press("ArrowDown");
+
+  expect([current.length, focused]).toEqual([0, document.body]);
+  await rowFocused("#6 Next");
+  expect(screen.getByRole("heading", { name: /PR 5/ })).toBeTruthy();
 });
 
-it("leaves the focus on the list's header when a sync takes the attention of the row under the cursor", async () => {
-  const { markedSeen } = await threeAlone();
+it("leaves the focus on the list's header when a sync takes the item under the cursor out of the list", async () => {
+  const { tookAway } = await threeAlone();
   const order = screen.getByRole("button", { name: /By attention/ });
   order.focus();
 
-  markedSeen([]);
-
-  const landed = await screen.findByRole("button", { name: "#6 Next" });
+  tookAway();
   await vi.waitFor(() => {
-    expect(landed.getAttribute("aria-current")).toBe("true");
+    expect(itemOrder()).toEqual(["#6 Next", "#8 Last"]);
   });
   await tick();
+
   expect(document.activeElement).toBe(order);
 });
 
@@ -2354,23 +2356,7 @@ it("opens the next item with the list hidden, and Alt+← goes back to the one t
   expect(await screen.findByRole("heading", { name: /PR 5/ })).toBeTruthy();
 });
 
-it("shows nothing open once the user finishes with the last item, and Alt+← opens it again", async () => {
-  vi.spyOn(navigator, "platform", "get").mockReturnValue("Win32");
-  const { tookAway } = await threeAlone();
-  await fireEvent.click(screen.getByRole("button", { name: "#8 Last" }));
-  await screen.findByRole("heading", { name: /PR 8/ });
-  await fireEvent.keyDown(window, { key: "b", code: "KeyB", ctrlKey: true, altKey: true });
-
-  await press("e");
-  tookAway(8);
-
-  expect(await screen.findByText(/Nothing open/)).toBeTruthy();
-  await detailFocused();
-  await press("ArrowLeft", { altKey: true });
-  expect(await screen.findByRole("heading", { name: /PR 8/ })).toBeTruthy();
-});
-
-it("shows nothing open, with the focus on the cursor's row, once the user finishes with the last item from the Detail pane", async () => {
+it("opens the last row once the user takes the last item out from the Detail pane, which keeps the focus (#1052)", async () => {
   const { tookAway } = await threeAlone();
   await fireEvent.click(screen.getByRole("button", { name: "#8 Last" }));
   await screen.findByRole("heading", { name: /PR 8/ });
@@ -2381,8 +2367,37 @@ it("shows nothing open, with the focus on the cursor's row, once the user finish
   await fireEvent.keyDown(button, { key: "m" });
   tookAway(8);
 
-  await rowFocused("#6 Next");
+  await screen.findByRole("heading", { name: /PR 6/ });
+  await detailFocused();
+  expect(screen.getByRole("button", { name: "#6 Next" }).getAttribute("aria-current")).toBe("true");
+});
+
+it("shows nothing open, with no row under the cursor, once the user takes the only item out, and Alt+← opens it again", async () => {
+  vi.spyOn(navigator, "platform", "get").mockReturnValue("Win32");
+  const send = catchEveryListener();
+  core.workbench.mockResolvedValue(workbenchPage([{ ...standalone, attention: null }]));
+  render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onsettings: () => {} });
+  const row = await screen.findByRole("button", { name: "#5 Alone" });
+  await fireEvent.click(row);
+  await screen.findByRole("heading", { name: /PR 5/ });
+  row.focus();
+
+  await fireEvent.keyDown(row, { key: "e" });
+  await tick();
+  const current = document.querySelectorAll('.list [aria-current="true"]').length;
+  expect(document.activeElement, "the focus leaves the row with the cursor, for the list").toBe(
+    document.body,
+  );
+  core.workbench.mockResolvedValue(workbenchPage([], { count: 0 }));
+  send("python/cpython", [5]);
+
+  await vi.waitFor(() => {
+    expect(itemOrder()).toEqual([]);
+  });
   expect(screen.queryByRole("region", { name: "PR view" })).toBeNull();
+  expect(current).toBe(0);
+  await press("ArrowLeft", { altKey: true });
+  expect(await screen.findByRole("heading", { name: /PR 5/ })).toBeTruthy();
 });
 
 it("leaves the Detail pane as it is on Q on a row it doesn't show", async () => {
@@ -2398,18 +2413,6 @@ it("leaves the Detail pane as it is on Q on a row it doesn't show", async () => 
   await rowFocused("#8 Last");
   expect(core.markSeen).toHaveBeenCalledOnce();
   expect(screen.getByRole("heading", { name: /PR 5/ })).toBeTruthy();
-});
-
-it("leaves the Detail pane as it is when a sync takes the attention of the item on show", async () => {
-  const { marked, markedSeen } = await threeAlone();
-  marked.focus();
-
-  markedSeen([]);
-
-  await rowFocused("#6 Next");
-  await nextTask();
-  expect(screen.getByRole("heading", { name: /PR 5/ })).toBeTruthy();
-  expect(core.pullRequest).toHaveBeenLastCalledWith("python/cpython", 5);
 });
 
 it("opens the next item once Archive takes the item off the list, though a sync answered between the core's reply and its write", async () => {
@@ -2461,18 +2464,16 @@ it("opens the next item once Mark Seen takes effect, though the order changed in
   expect(await screen.findByRole("heading", { name: /PR 6/ })).toBeTruthy();
 });
 
-it("leaves the Detail pane as it is when the user's mark fails, and a sync then quiets the item", async () => {
+it("keeps the cursor and the Detail pane where the keypress put them when the user's mark fails (#1052)", async () => {
   core.markSeen.mockResolvedValue(refused("no database"));
-  const { marked, markedSeen } = await threeAlone();
+  const { marked } = await threeAlone();
   marked.focus();
 
   await fireEvent.keyDown(marked, { key: "q" });
   await screen.findByText(/no database/);
-  markedSeen([]);
 
   await rowFocused("#6 Next");
-  await nextTask();
-  expect(screen.getByRole("heading", { name: /PR 5/ })).toBeTruthy();
+  expect(screen.getByRole("heading", { name: /PR 6/ })).toBeTruthy();
 });
 
 it("leaves the Issue on show as it is on Q on a PR's row in its tree, though the Issue stops waiting", async () => {
@@ -2588,54 +2589,6 @@ it("keeps the focus the Detail pane took for the next item through another app i
   expect(document.activeElement).toBe(pane);
 });
 
-it("leaves the Detail pane as it is once the user moves the cursor off the item and back before the mark takes effect", async () => {
-  const { marked, markedSeen } = await threeAlone();
-  marked.focus();
-
-  await fireEvent.keyDown(marked, { key: "q" });
-  await fireEvent.keyDown(marked, { key: "ArrowDown" });
-  await fireEvent.keyDown(document.activeElement as HTMLElement, { key: "ArrowUp" });
-  await rowFocused("#5 Alone");
-  markedSeen([]);
-
-  await rowFocused("#6 Next");
-  await nextTask();
-  expect(screen.getByRole("heading", { name: /PR 5/ })).toBeTruthy();
-});
-
-it("leaves the Detail pane as it is once Mark Seen leaves the item waiting, and a later sync quiets it", async () => {
-  const { marked, markedSeen, redrawn } = await threeAlone();
-  marked.focus();
-
-  await fireEvent.keyDown(marked, { key: "q" });
-  // A Stale review the check found after the window drew the page still waits (#908).
-  redrawn({
-    attention: { since: "2026-11-04T11:00:00Z", why: [{ kind: "stale_review" }] },
-    seen: { mark: { numbers: [5], up_to: "2026-11-04T11:00:00Z", findings: [] }, state: "seen" },
-  });
-  await nextTask();
-  markedSeen([]);
-
-  await rowFocused("#6 Next");
-  await nextTask();
-  expect(screen.getByRole("heading", { name: /PR 5/ })).toBeTruthy();
-});
-
-it("leaves the Detail pane as it is once a view keeps the archived item drawn Archived, and a later sync quiets it", async () => {
-  const { marked, markedSeen, redrawn } = await threeAlone();
-  marked.focus();
-
-  await fireEvent.keyDown(marked, { key: "e" });
-  // A Filter's view keeps an Archived item that a Review request still holds in it (#824).
-  redrawn({ hidden: "archived" });
-  await nextTask();
-  markedSeen([]);
-
-  await rowFocused("#6 Next");
-  await nextTask();
-  expect(screen.getByRole("heading", { name: /PR 5/ })).toBeTruthy();
-});
-
 it("opens the next item once E on the row of an Issue whose view hasn't arrived archives it", async () => {
   core.issue.mockReturnValue(new Promise(() => {}));
   const changed = catchEveryListener();
@@ -2649,23 +2602,6 @@ it("opens the next item once E on the row of an Issue whose view hasn't arrived 
   changed("python/cpython", issue.seen.mark.numbers);
 
   expect(await screen.findByRole("heading", { name: /PR 5/ })).toBeTruthy();
-});
-
-it("opens the next item once Mark Seen takes effect, though an Archive made while it waited failed", async () => {
-  const seen = Promise.withResolvers<typeof done>();
-  core.markSeen.mockReturnValue(seen.promise);
-  core.archive.mockResolvedValue(refused("no database"));
-  const { marked, markedSeen } = await threeAlone();
-  marked.focus();
-
-  await fireEvent.keyDown(marked, { key: "q" });
-  await fireEvent.keyDown(marked, { key: "e" });
-  await screen.findByText(/no database/);
-  seen.resolve(done);
-  await nextTask();
-  markedSeen();
-
-  expect(await screen.findByRole("heading", { name: /PR 6/ })).toBeTruthy();
 });
 
 it("keeps the last item on show once Mark Seen leaves it last, where the cursor stays", async () => {
@@ -2688,53 +2624,30 @@ it("keeps the last item on show once Mark Seen leaves it last, where the cursor 
   expect(screen.getByRole("heading", { name: /PR 8/ })).toBeTruthy();
 });
 
-it.each([
-  {
-    how: "from the Issue view",
-    open: (view: HTMLElement) => within(view).findByRole("button", { name: /^#160662 / }),
-  },
-  {
-    how: "from its row",
-    open: () =>
-      within(issueList() as HTMLElement).findByRole("button", {
-        name: "#160662 gh-112564: Fix UAF for gc debug print",
-      }),
-  },
-])(
-  "keeps a PR of the Issue's tree opened $how while the Issue's Archive waited to land",
-  async ({ open }) => {
-    core.issue.mockResolvedValue(
-      ok({
-        ...issue,
-        merged: [],
-        merged_count: 0,
-        author: "issue-author",
-        assignees: [],
-        labels: [],
-        content: null,
-        needs_attention: [],
-      }),
-    );
-    const changed = catchEveryListener();
-    const { issueRow } = await listing();
-    await fireEvent.click(issueRow);
-    const view = await screen.findByRole("region", { name: "Issue view" });
-    await within(view).findByRole("button", { name: "Archive" });
+it("opens the next item at E in the Issue view, and keeps a PR of the Issue's tree opened after it once the Archive lands (#1052)", async () => {
+  const changed = catchEveryListener();
+  const { issueRow } = await listing();
+  await fireEvent.click(issueRow);
+  const view = await screen.findByRole("region", { name: "Issue view" });
 
-    await fireEvent.keyDown(view, { key: "e" });
-    await fireEvent.click(await open(view));
-    await screen.findByRole("heading", { name: /PR 160662/ });
-    core.workbench.mockResolvedValue(workbenchPage([{ ...standalone, attention: null }]));
-    changed("python/cpython", issue.seen.mark.numbers);
-    await vi.waitFor(() => {
-      expect(itemOrder()).toEqual(["#5 Alone"]);
-    });
-    await nextTask();
+  await fireEvent.keyDown(view, { key: "e" });
+  await screen.findByRole("heading", { name: /PR 5/ });
+  await fireEvent.click(
+    await within(issueList() as HTMLElement).findByRole("button", {
+      name: "#160662 gh-112564: Fix UAF for gc debug print",
+    }),
+  );
+  await screen.findByRole("heading", { name: /PR 160662/ });
+  core.workbench.mockResolvedValue(workbenchPage([{ ...standalone, attention: null }]));
+  changed("python/cpython", issue.seen.mark.numbers);
+  await vi.waitFor(() => {
+    expect(itemOrder()).toEqual(["#5 Alone"]);
+  });
+  await nextTask();
 
-    expect(screen.getByRole("heading", { name: /PR 160662/ })).toBeTruthy();
-    expect(core.pullRequest).not.toHaveBeenCalledWith("python/cpython", 5);
-  },
-);
+  expect(screen.getByRole("heading", { name: /PR 160662/ })).toBeTruthy();
+  expect(core.pullRequest).toHaveBeenLastCalledWith("python/cpython", 160662);
+});
 
 it("stops the Detail pane taking the focus by a click once the focus it took falls to the page", async () => {
   const { tookAway } = await threeAlone();
@@ -2827,7 +2740,7 @@ it("scrolls the list to the Detail pane's row once a change moves the row off th
   expect(document.activeElement).toBe(document.body);
 });
 
-it("gives the focus back to the row under the cursor when a change moves it off the screen, and scrolls nothing with nothing open (#796)", async () => {
+it("gives the focus back to the row under the cursor when a change moves it off the screen, and scrolls it back with nothing open too (#796, #1052)", async () => {
   const send = catchEveryListener();
   const { prRow } = await listing();
   for (let step = 0; step < 3; step++) await press("ArrowDown");
@@ -2846,7 +2759,7 @@ it("gives the focus back to the row under the cursor when a change moves it off 
   expect(focus.mock.calls).toEqual([[{ preventScroll: true }]]);
   expect(itemOrder()).toEqual(["#5 Alone", "#112564 GIL drop during collection"]);
   expect(document.activeElement).toBe(prRow);
-  expect(scrolled()).toBe(90);
+  expect(scrolled()).toBe(38);
 });
 
 it("follows the Detail pane's PR to its line under an Issue, with the focus and the scroll (#796)", async () => {
@@ -3336,7 +3249,7 @@ it("leaves Mute Author out of the palette on the user's own row", async () => {
   expect(paletteRow(component, "mute_author", row)).toBeUndefined();
 });
 
-it("mutes the author of the Issue on show from its button, the list follows, and the button turns into Unmute", async () => {
+it("mutes the author of the Issue on show from its button, the list follows, and back on the Issue the button reads Unmute", async () => {
   const changed = catchEveryListener();
   const { issueRow } = await listing();
   await fireEvent.click(issueRow);
@@ -3351,6 +3264,9 @@ it("mutes the author of the Issue on show from its button, the list follows, and
   });
   core.workbench.mockResolvedValue(workbenchPage([{ ...standalone, attention: null }]));
   changed("python/cpython", issue.seen.mark.numbers);
+  // Mute author finished the Issue its author opened, so the next item opened (#1052).
+  await screen.findByRole("region", { name: "PR view" });
+  await press("ArrowLeft", { altKey: true });
   const button = await screen.findByRole("button", { name: "Unmute issue-author" });
 
   const list = within(issueList() as HTMLElement);

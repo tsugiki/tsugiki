@@ -39,7 +39,7 @@ use crate::links::BackportKind;
 use crate::repository_settings::RepositorySettings;
 use crate::settings::ListOrder;
 use crate::store::StoreReader;
-use crate::work::{Causes, SeenMark, in_own_right};
+use crate::work::{Causes, SeenMark, in_own_right, unpinned_in_own_right};
 use attention::{attention_of, summed};
 use backports::{plant, standalone};
 use filters::FilterFacts;
@@ -200,6 +200,8 @@ pub struct ListedItem {
     pub key: ItemKey,
     /// Whether the user's state hides the item, which only some lists show, as `Hidden` says.
     pub hidden: Option<Hidden>,
+    /// The unpin's effect on the item. The Inbox lists no Pinned issue, so it says `Stays` of each item.
+    pub unpin: Unpin,
 }
 
 /// The user's own state that hides an item. A Muted item that is Archived too is Muted, which hides more.
@@ -241,7 +243,7 @@ impl Hidden {
 
 impl ListedItem {
     /// `item` with what `causes` judge of its tree. A Muted item Needs attention only for what
-    /// `Causes::fresh_asks` finds.
+    /// `Causes::fresh_asks` finds. An unpin leaves it as it is until `unpin_judged` says otherwise.
     fn of(causes: &Causes, item: WorkbenchItem) -> Self {
         let key = item.key();
         let numbers = item.numbers();
@@ -255,12 +257,46 @@ impl ListedItem {
             hidden,
             key,
             item,
+            unpin: Unpin::Stays,
         }
     }
 
     fn is_archived(&self) -> bool {
         self.hidden == Some(Hidden::Archived)
     }
+
+    /// The item with what an unpin does to it, if it is a Pinned issue (#1052): `unpinned` holds what keeps
+    /// an item on the Workbench but the pins, and `held_closings` the pins that closed while pinned.
+    fn unpin_judged(self, unpinned: &BTreeSet<u32>, held_closings: &BTreeSet<u32>) -> Self {
+        let unpin = match (&self.item, self.hidden) {
+            (WorkbenchItem::Issue(issue), None | Some(Hidden::Archived)) if issue.pinned => {
+                if held_closings.contains(&issue.number) {
+                    Unpin::Archives
+                } else if self.hidden.is_none() && !self.item.is_reached_by(unpinned) {
+                    Unpin::Leaves
+                } else {
+                    Unpin::Stays
+                }
+            }
+            // A Muted pin stays as Muted as it was, which hides more than Archived.
+            _ => Unpin::Stays,
+        };
+        Self { unpin, ..self }
+    }
+}
+
+/// An unpin's effect on a listed item on the Workbench (#488), which the window reads to move the cursor on
+/// at the keypress (#1052).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Type)]
+#[serde(rename_all = "snake_case")]
+pub enum Unpin {
+    /// The item stays where it is: it has no pin, something besides the pin keeps it on the Workbench, or
+    /// the Workbench doesn't list it.
+    Stays,
+    /// Nothing but its pin keeps the Issue on the Workbench, which the unpin takes it off.
+    Leaves,
+    /// The Issue closed while pinned, so the unpin archives it.
+    Archives,
 }
 
 /// The list the window asks for.
@@ -342,6 +378,8 @@ impl Workbench {
     ) -> Self {
         let causes = Causes::of(&facts, repository.conventions);
         let own_right = in_own_right(&facts, repository, &causes);
+        let unpinned = unpinned_in_own_right(&facts, repository, &causes);
+        let held_closings = std::mem::take(&mut facts.activity.held_closings);
         let filters = FilterFacts::new(repository, std::mem::take(&mut facts.filters));
         let matched = filters.matched();
         let selected = match view {
@@ -353,7 +391,7 @@ impl Workbench {
         let listed: Vec<ListedItem> =
             candidates_of(facts, repository, selected.unwrap_or(&matched), &causes)
                 .into_iter()
-                .map(|item| ListedItem::of(&causes, item))
+                .map(|item| ListedItem::of(&causes, item).unpin_judged(&unpinned, &held_closings))
                 .collect();
         let requested = |listed: &ListedItem| listed.item.is_reached_by(&causes.review_requests);
         let asked = causes.asked();

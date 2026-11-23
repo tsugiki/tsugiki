@@ -96,21 +96,20 @@ export const treeRows = (entries: TreeEntry[]): WorkbenchRow[] =>
 /** A line of the list: where the cursor stops, and the title it shows. */
 type Line = { stop: Stop; title: string };
 
-/** What takes an item off the list that the cursor waits on: an unpin, which takes an Archived pin out of the
- * Pinned issues though they list it marked hidden (#489), or another mark. */
-type Leaving = "unpin" | "mark";
-
 /** The key of view `view`, which keeps its own unfolded Issues. */
 const keyOf = (view: SidebarView) => (view.kind === "filter" ? `filter ${view.query}` : view.kind);
 
-/** The parts of `item`'s row that a mark changes: hidden or not, why it Needs attention, and how seen it
- * is. Two answers that draw it the same can't tell whether a mark between them took effect (#982). */
-const drawnOf = (item: ListedItem) => JSON.stringify([item.hidden, item.attention, item.seen.state]);
+/** Whether two keys name the same item. */
+const sameKey = (a: ItemKey, b: ItemKey) => a.kind === b.kind && a.number === b.number;
 
-/** The item of `items` whose own line `stop` is, as against a PR or Backport in its tree. Only that line
- * carries the item's attention. */
+/** The item of `items` whose own line `stop` is, as against a PR or Backport in its tree. */
 const ownerOf = (stop: Stop, items: ListedItem[]) =>
   stop.issue === undefined ? items.find((item) => item.number === stop.number) : undefined;
+
+/** The effect on the view on show of a user action that finishes an item (#1052): it leaves the item in
+ * the list, or takes it out. With nothing after the item, the cursor then stays on it, or goes to the last
+ * row. */
+type Finishing = "stays" | "out";
 
 /** The lines of `item` the cursor stops on, in the order the list shows them. An Issue's tree shows only
  * while `unfolded` says it does. */
@@ -132,21 +131,15 @@ function linesOf(item: ListedItem, unfolded: (issue: number) => boolean): Line[]
   }));
 }
 
-/** The cursor's move once the line under it lost its attention or left the list: whether it finished the
- * item for a mark that `finish` waited on, and where it went, as `landed` hears them. */
-export type Landing = {
-  /** Whether the cursor left the item that `finish` waited for it to leave (#982). */
-  finished: boolean;
-  /** Onto the line of the first item after it that the list still shows; onto the last line, of another
-   * item, when none came after it; onto the last line, still the same item's, as nothing else came after
-   * it and the item stayed; or nowhere, as the cursor stays where it was with the list empty. */
-  to: { kind: "next"; stop: Stop } | { kind: "last" } | { kind: "kept" } | { kind: "empty" };
-};
+/** The cursor's move at the keypress of a user action that finished the selected item (#1052): `from`, the
+ * key of that item, `was`, the line the cursor left, and `to`, the line it moved to, or nothing as it left
+ * the list, with no other line to go to. */
+export type Landing = { from: ItemKey; was: Stop; to: Stop | undefined };
 
 /** The hooks a Workbench calls on the page that shows it, each with a default that does nothing. */
 export type WorkbenchHooks = {
-  /** Runs each time the line under the cursor loses its attention or leaves the list, once the cursor has
-   * moved on from it, as `landing` says. */
+  /** Runs each time a user action finishes the selected item, once the cursor has moved on from it, as
+   * `landing` says. */
   landed?: (landing: Landing) => void;
   /** The list's order as the window holds it when each question is asked. By attention without it. */
   order?: () => ListOrder;
@@ -183,17 +176,9 @@ export class WorkbenchState {
   /** The "On the Workbench" switch each Filter's search has, as the user last set it, while that waits to
    * save. */
   #wanted = new SvelteMap<string, boolean>();
-  /** The line the list's keys act on. A re-query leaves it in place (ADR 0008). Only `#put` and a landing
-   * write it, so a finish's wait sees each move (#982). */
+  /** The line the list's keys act on, or none, as when a change took its item out of the list. A re-query
+   * leaves it on its item, wherever that moved (ADR 0008). */
   #cursor = $state<Stop>();
-  /** The numbers of the items the user archived or unarchived whose answer hasn't placed the cursor yet,
-   * each with what takes it off. Only `#placeCursor` reads it, so it needn't be reactive. */
-  // eslint-disable-next-line svelte/prefer-svelte-reactivity
-  #leaving = new Map<number, Leaving>();
-  /** The item `finish` waits for the cursor to leave, as the list drew it when the first mark on it was
-   * made, how many marks on it wait for the core's reply, and whether one of them did what it was asked
-   * (#982). Only the cursor's moves and `#placeCursor` read it, so it needn't be reactive. */
-  #finish: { number: number; drawn: string; replies: number; done: boolean } | undefined;
   /** The Issues unfolded in each view, by the view's key. */
   #unfolded = new SvelteMap<string, SvelteSet<number>>();
   /** The keys of the views whose fold of Muted items is open. */
@@ -396,43 +381,37 @@ export class WorkbenchState {
     this.#put(stop);
   }
 
-  /** Puts the cursor on line `stop`, or on none. A cursor that leaves the item a finish waits on stops the
-   * wait, as only the cursor leaving that item for the mark finishes it (#982). */
+  /** Puts the cursor on line `stop`, or on none. */
   #put(stop: Stop | undefined) {
     this.#cursor = stop;
-    const holder = stop && this.#itemOf(stop, this.#everything);
-    if (holder?.number !== this.#finish?.number) this.#finish = undefined;
   }
 
-  /** Ends the wait `finish` started, as the Detail pane has opened something else than the view the mark
-   * was made on, which the item's going then mustn't replace (#982). */
-  forgetFinish() {
-    this.#finish = undefined;
+  /** The selected item: the item that holds the line under the cursor (#1052). */
+  get #selected(): ListedItem | undefined {
+    const cursor = this.cursor;
+    return cursor && this.#itemOf(cursor, this.#everything);
   }
 
   /**
-   * Waits for `marking`, the user's own Mark Seen, Archive or Mute that takes item `number` out of place,
-   * and says what went wrong, if anything did (#982). While the cursor is on a line of that item, `landed`
-   * then hears that the cursor leaving it finished it, whichever answer shows the item gone: the core
-   * replies before it writes, so no answer's time can tell. The wait stops when the cursor leaves the item
-   * for anything else, when an answer shows the item changed but in place, as a Filter's view keeps an
-   * Archived item (#824) or a Stale review keeps it waiting (#908), and when each mark that waits on the
-   * item failed.
+   * Moves the cursor on from the selected item at the keypress of a user action that finishes it, if `key`
+   * names that item (#1052): to the first line after the item's lines that the list shows, or else to the
+   * last line, which is the item's own while `finishing` says the action leaves it in the list. With no
+   * other line, the cursor leaves the list. `landed` then hears where the cursor went. Nothing waits on the
+   * core, so a sync's answer or a failed action leaves the cursor where the keypress put it.
    */
-  async finish(number: number, marking: Promise<string | undefined>) {
-    const cursor = this.cursor;
-    const holder = cursor && this.#itemOf(cursor, this.#everything);
-    if (holder?.number !== number) return marking;
-    if (this.#finish?.number !== number) {
-      this.#finish = { number, drawn: drawnOf(holder), replies: 0, done: false };
-    }
-    const finish = this.#finish;
-    finish.replies += 1;
-    const problem = await marking;
-    finish.replies -= 1;
-    if (problem === undefined) finish.done = true;
-    else if (finish.replies === 0 && !finish.done && this.#finish === finish) this.#finish = undefined;
-    return problem;
+  #finish(key: ItemKey | undefined, finishing: Finishing) {
+    const was = this.cursor;
+    const item = this.#selected;
+    const shown = this.#shownItems;
+    const at = item ? shown.indexOf(item) : -1;
+    if (!was || !item || !key || !sameKey(item.key, key) || at === -1) return;
+    const open = this.#open();
+    const lines = (items: ListedItem[]) => this.#lines(items, (issue) => open?.has(issue) ?? false);
+    const next = lines(shown.slice(at + 1)).at(0)?.stop;
+    if (!next && finishing === "stays") return;
+    const to = next ?? lines(shown.filter((other) => other !== item)).at(-1)?.stop;
+    this.#put(to);
+    this.#landed({ from: item.key, was, to });
   }
 
   /** The part in Mark Seen of line `stop`: an Issue's covers its tree, and a PR's the PR alone. */
@@ -458,20 +437,19 @@ export class WorkbenchState {
     return rows.find((row) => row.number === stop.number);
   }
 
-  /** Mark Seen with `mark`, as the window drew it. Of an item the window draws `archived`, it goes through
-   * Archive, which marks seen the same way and keeps the item Archived (#490), in its place in the Archived
-   * view (#491). Says what went wrong, if anything did. */
-  async markSeen(mark: SeenMark, archived?: ItemKey) {
+  /** Mark Seen with `mark`, as the window drew it, on line `stop` if the list has it. Of an item the window
+   * draws `archived`, it goes through Archive, which marks seen the same way and keeps the item Archived
+   * (#490), in its place in the Archived view (#491). On the selected item's own line, while the item Needs
+   * attention or has something to mark seen, it finishes the item, which stays in the list (#1052). On a PR
+   * in an Issue's tree it marks the PR alone, which keeps the item. Says what went wrong, if anything did. */
+  async markSeen(stop: Stop | undefined, mark: SeenMark, archived?: ItemKey) {
+    const owner = stop && ownerOf(stop, this.#everything);
+    const settles = owner && (owner.attention !== null || owner.seen.state !== "seen");
+    this.#finish(settles ? owner.key : undefined, "stays");
     const marking = archived
       ? commands.keepArchived(this.#repository, archived, mark)
       : commands.markSeen(this.#repository, mark);
     return problemIn(marking);
-  }
-
-  /** Whether `stop` is an item's own line, and that item Needs attention, so that Mark Seen on it moves the
-   * cursor on from the line. */
-  waits(stop: Stop): boolean {
-    return ownerOf(stop, this.#everything)?.attention != null;
   }
 
   /** The key of the item that holds line `stop`, while the list draws it `hidden`: Archived (#490) or Muted
@@ -496,10 +474,10 @@ export class WorkbenchState {
 
   /** Mark Unseen on Issue or PR `number`. It unarchives `archived`, the item that holds it if the window
    * draws that Archived, as the flag on a PR in an Archived Issue's tree would otherwise leave the Issue
-   * archived (#491). Says what went wrong, if anything did. */
+   * archived (#491), which finishes the item in the Archived view. Says what went wrong, if anything did. */
   async markUnseen(number: number, archived?: ItemKey) {
-    const marking = commands.markUnseen(this.#repository, number, archived ?? null);
-    return this.#leave(archived && this.#unarchiving(archived), marking);
+    this.#finish(archived && this.#unarchiving(archived), "out");
+    return problemIn(commands.markUnseen(this.#repository, number, archived ?? null));
   }
 
   /** What Archive or Mute on line `stop` acts on: the item that holds the line, with its tree's part in Mark
@@ -509,16 +487,20 @@ export class WorkbenchState {
     return item && { key: item.key, mark: item.seen.mark };
   }
 
-  /** Archive on `archived`, as the window drew it (#490). Once the item leaves the list, a cursor on any of
-   * its lines lands on the item after it. Says what went wrong, if anything did. */
+  /** Archive on `archived`, as the window drew it (#490), which finishes the item (#1052). A Filter's view
+   * keeps an Archived item in its place (#824), and the Review requests view an item whose Review request
+   * stands (#490), while any other view takes it out. Says what went wrong, if anything did. */
   async archive({ key, mark }: Hiding) {
-    return this.#leave(key, commands.archive(this.#repository, key, mark));
+    const kind = this.#shown.kind;
+    this.#finish(key, kind === "filter" || kind === "review_requests" ? "stays" : "out");
+    return problemIn(commands.archive(this.#repository, key, mark));
   }
 
-  /** Mute on the item `key` names, with `mark` as the window drew it (#492). Once the item leaves the list, a
-   * cursor on any of its lines lands on the item after it. Says what went wrong, if anything did. */
+  /** Mute on the item `key` names, with `mark` as the window drew it (#492), which finishes the item
+   * (#1052). Says what went wrong, if anything did. */
   async mute({ key, mark }: Hiding) {
-    return this.#leave(key, commands.mute(this.#repository, key, mark));
+    this.#finish(key, "out");
+    return problemIn(commands.mute(this.#repository, key, mark));
   }
 
   /** Unmutes the item `key` names, which stays in the list. Says what went wrong, if anything did. */
@@ -527,12 +509,13 @@ export class WorkbenchState {
   }
 
   /** Mute author on `login`, the author of line `stop` if the list holds one (#494). Their items leave the
-   * list, and once the item that holds the line leaves, as it does when they opened it, a cursor on any of
-   * its lines lands on the item after it. Says what went wrong, if anything did. */
+   * list, and Mute author finishes the item that holds the line when they opened it (#1052). Says what went
+   * wrong, if anything did. */
   async muteAuthor(login: string, stop: Stop | undefined) {
     const item = stop && this.#itemOf(stop, this.#everything);
     const theirs = item?.mute_author.kind === "mute" && item.mute_author.login === login;
-    return this.#leave(theirs ? item.key : undefined, commands.muteAuthor(this.#repository, login));
+    this.#finish(theirs ? item.key : undefined, "out");
+    return problemIn(commands.muteAuthor(this.#repository, login));
   }
 
   /** Unmutes the author `login`, whose items come back. Says what went wrong, if anything did. */
@@ -541,47 +524,39 @@ export class WorkbenchState {
   }
 
   /** Pins Issue `number` (#488), which then stays on the Workbench, leaves the Inbox, and leaves Archived as
-   * the pin unarchives it. A cursor on any of its lines there lands on the item after it, as for Unarchive
-   * (#491). Says what went wrong, if anything did. */
+   * the pin unarchives it, which finishes it there (#1052). Says what went wrong, if anything did. */
   async pin(number: number) {
-    const leaves = this.pinTakesOut({ number, pinned: false });
-    return this.#leave(leaves, commands.pin(this.#repository, number));
-  }
-
-  /** The key of the Issue `pin` names, while the list shows a view that Pin or Unpin on it takes it out of:
-   * a pin the Inbox or Archived, an unpin the Pinned issues (#489). Any other view keeps listing it. */
-  pinTakesOut({ number, pinned }: Pin): ItemKey | undefined {
     const kind = this.#shown.kind;
-    const leaves = pinned ? kind === "pinned" : kind === "inbox" || kind === "archived";
-    return leaves ? { kind: "issue", number } : undefined;
+    const out = kind === "inbox" || kind === "archived";
+    this.#finish(out ? { kind: "issue", number } : undefined, "out");
+    return problemIn(commands.pin(this.#repository, number));
   }
 
-  /** Unpins Issue `number` (#488), which then leaves the Pinned issues (#489). A cursor on any of its lines
-   * there lands on the item after it, as for a pin in the Inbox. Says what went wrong, if anything did. */
+  /** Unpins Issue `number` (#488), which finishes it where the unpin takes it out (#1052): the Pinned issues
+   * (#489), the Workbench while nothing but the pin keeps it there, and, for a pin that closed while pinned,
+   * which the unpin archives, the Workbench and the Stale reviews. Says what went wrong, if anything did. */
   async unpin(number: number) {
-    const leaves = this.pinTakesOut({ number, pinned: true });
-    return this.#leave(leaves, commands.unpin(this.#repository, number), "unpin");
+    const unpin = this.#everything.find((item) => item.number === number)?.unpin;
+    const kind = this.#shown.kind;
+    const out =
+      kind === "pinned" ||
+      (kind === "whole" && (unpin === "leaves" || unpin === "archives")) ||
+      (kind === "stale_reviews" && unpin === "archives");
+    this.#finish(out ? { kind: "issue", number } : undefined, "out");
+    return problemIn(commands.unpin(this.#repository, number));
   }
 
-  /** Unarchives the item `key` names. Once the item leaves the list, as it leaves the Archived view (#491),
-   * a cursor on any of its lines lands on the item after it. Says what went wrong, if anything did. */
+  /** Unarchives the item `key` names, which finishes it in the Archived view, as the item leaves it (#491).
+   * Says what went wrong, if anything did. */
   async unarchive(key: ItemKey) {
-    return this.#leave(this.#unarchiving(key), commands.unarchive(this.#repository, key));
+    this.#finish(this.#unarchiving(key), "out");
+    return problemIn(commands.unarchive(this.#repository, key));
   }
 
   /** `key`, of an item to unarchive, while the list shows the Archived view, which the item then leaves.
    * Any other view keeps listing it. */
   #unarchiving(key: ItemKey): ItemKey | undefined {
     return this.#shown.kind === "archived" ? key : undefined;
-  }
-
-  /** Waits for `marking`, a mark that takes the item `key` names off the list, if it names one, which then
-   * lands the cursor on the item after it. Says what went wrong, if anything did. */
-  async #leave(key: ItemKey | undefined, marking: Parameters<typeof problemIn>[0], by: Leaving = "mark") {
-    if (key) this.#leaving.set(key.number, by);
-    const problem = await problemIn(marking);
-    if (key && problem !== undefined) this.#leaving.delete(key.number);
-    return problem;
   }
 
   /** The Sidebar's line of the Filter whose view is selected, while the settings hold it. */
@@ -652,77 +627,25 @@ export class WorkbenchState {
   }
 
   /**
-   * Places the cursor once an answer put `items` on show, where `before` is what the same view showed in the
-   * same order until then, if it did. Neither holds the Muted items while they're folded (#824), and
-   * `inPlace` never does.
+   * Places the cursor once an answer put `items` on show, which hold the Muted items only while they show
+   * (#824), where `same` says whether the same view showed in the same order until then. Nothing an answer
+   * brings is the user's action, so it moves the cursor only with its item or off the list (#1052).
    *
-   * When the line under the cursor, an item's own, Needed attention in `before`, and in `items` no longer
-   * does or has left the list, the cursor lands on the first item after it in `before` that `items` still
-   * lists, or else on the last line, and `landed` runs. So it does when the user archived the item that
-   * holds the cursor's line, or unarchived it in the Archived view, on any of its lines, and no line of
-   * `items` names that line's Issue or PR any more (#490, #491). So it does too when the user muted it and
-   * it went into a Filter's Muted items, or a change put it into them while they're folded (#824). With
-   * nothing listed it stays where it was, and `landed` runs too, as the Detail pane may wait for the item to
-   * go (#982).
-   *
-   * Otherwise the cursor stays on its line, which may have moved, and follows a PR that a change put under
-   * an Issue, or took out from under one, unfolding the Issue over a PR under the cursor, as another view
-   * may have it folded.
+   * The cursor stays on its line wherever the list moved it, into the open Muted items too, and follows a
+   * PR that a change put under an Issue, or took out from under one, unfolding the Issue over a PR under the
+   * cursor, as another view may have it folded. When a change took the line out of the list on show, into
+   * the folded Muted items too, the cursor leaves the list: no line is under it, and the next ↓ goes to the
+   * first line. In a newly selected view that doesn't list the line, it stays on that line.
    */
-  #placeCursor(items: ListedItem[], inPlace: ListedItem[], before: ListedItem[] | undefined) {
-    // An archive waits for the answer that takes its item off the list, as one that a sync asked for can
-    // land before the archive's own, with the item still listed. An item the list doesn't hold waits no
-    // more, and neither does one it holds marked hidden outside the Archived view, as a Filter's view keeps
-    // an Archived or Muted item (#824). The Pinned issues list an Archived pin marked hidden too, so there
-    // only an unpin, which takes the pin out, waits on a hidden row (#489).
-    const kind = this.#shown.kind;
-    const leaving = [...this.#leaving.keys()];
-    for (const [number, by] of this.#leaving) {
-      const listed = this.#everything.find((item) => item.number === number);
-      const waits = kind === "archived" || (kind === "pinned" && by === "unpin");
-      const kept = listed?.hidden != null && !waits;
-      if (!listed || kept) this.#leaving.delete(number);
-    }
+  #placeCursor(items: ListedItem[], same: boolean) {
     const cursor = this.cursor;
     if (cursor === undefined) return;
-    const owner = before && ownerOf(cursor, before);
-    const quiet = owner?.attention && !items.find((item) => item.number === owner.number)?.attention;
-    const was = before && this.#itemOf(cursor, before);
-    // The list holds `items` by now.
-    const namedIn = (list: ListedItem[]) =>
-      this.#lines(list, () => true).some((line) => line.stop.number === cursor.number);
-    const folded = !this.mutedShown && namedIn(this.muted);
-    const left = was && !namedIn(inPlace) && (leaving.includes(was.number) || folded);
-    if (before && was && (quiet || left)) {
-      // The first item after it that the list still shows, folded Muted items left out.
-      const stops = this.#stops();
-      const owns = (number: number) =>
-        stops.find((stop) => stop.number === number && stop.issue === undefined);
-      const after = before.slice(before.indexOf(was) + 1);
-      const next = after.map((item) => owns(item.number)).find((stop) => stop !== undefined);
-      const last = stops.at(-1);
-      const finished = this.#finish?.number === was.number;
-      this.#finish = undefined;
-      this.#cursor = next ?? last ?? cursor;
-      this.#landed({ finished, to: this.#landing(next, last, was) });
-      return;
-    }
     // The lines of `items`, folded Issues' PRs too, so the cursor never opens the folded Muted items.
     const stops = this.#lines(items, () => true).map((line) => line.stop);
     const line =
       stops.find((stop) => sameStop(cursor, stop)) ?? stops.find((stop) => stop.number === cursor.number);
     if (line) this.moveTo(line);
-    // An item the answer draws changed but in place shows what the mark did, which then didn't move it.
-    const holder = line && this.#itemOf(line, this.#everything);
-    if (this.#finish && (!holder || drawnOf(holder) !== this.#finish.drawn)) this.#finish = undefined;
-  }
-
-  /** The place a cursor that left a line of `was` went to: onto `next`, the line of the first item after it
-   * that the list still shows, or else onto `last`, the list's last line, which may be `was`'s own still. */
-  #landing(next: Stop | undefined, last: Stop | undefined, was: ListedItem): Landing["to"] {
-    if (next) return { kind: "next", stop: next };
-    if (!last) return { kind: "empty" };
-    return this.#itemOf(last, this.#everything)?.number === was.number ? { kind: "kept" } : { kind: "last" };
+    else if (same) this.#put(undefined);
   }
 
   /** The item of `items` that holds line `stop`, under a folded Issue or not. */
@@ -850,9 +773,8 @@ export class WorkbenchState {
     { items, muted }: { items: ListedItem[]; muted: ListedItem[] },
     reach: InboxCursor | null,
   ) {
-    const same = keyOf(view) === this.#viewKey() && order === this.#shownOrder;
-    const before = same && this.items ? this.#shownItems : undefined;
-    const changed = before ? this.#changing() : undefined;
+    const same = keyOf(view) === this.#viewKey() && order === this.#shownOrder && this.items !== undefined;
+    const changed = same ? this.#changing() : undefined;
     this.items = items;
     this.muted = muted;
     this.#reach = reach;
@@ -860,7 +782,7 @@ export class WorkbenchState {
     this.#shownOrder = order;
     // A fold that empties closes, so the next item muted goes into it folded.
     if (muted.length === 0) this.#mutedOpen.delete(keyOf(view));
-    this.#placeCursor(this.#shownItems, items, before);
+    this.#placeCursor(this.#shownItems, same);
     changed?.();
   }
 

@@ -379,8 +379,6 @@
     }
     keep?.hide();
     kept = keep;
-    // The item a mark on the view on show waits to finish mustn't replace what opens instead (#982).
-    if (next !== detail) workbench.forgetFinish();
     detail = next;
     if (focusedView !== next) focusedView = undefined;
   }
@@ -489,56 +487,51 @@
     return problem;
   }
 
-  /** Mark Seen on `marked`, as the window drew it. Once the item no longer Needs attention, a cursor on its
-   * row lands on the row that came after it, whether the item moved or kept its place, and `cursorLanded`
-   * runs. On the Detail pane's item, with the cursor on its row while it Needs attention, the pane waits for
-   * the cursor to move on from it (#982). */
+  /** Mark Seen on `marked`, as the window drew it, which moves the cursor on from the selected item as
+   * `WorkbenchState.markSeen` says (#1052). */
   async function markSeen(marked: Marked | undefined) {
-    if (!marked) return;
-    const cursor = workbench.underCursor;
-    const waits =
-      detailLine()?.number === marked.number && cursor?.number === marked.number && workbench.waits(cursor);
-    await finish(waits ? marked.number : undefined, (opened) =>
-      opened.markSeen(marked.seen.mark, marked.archived),
-    );
-  }
-
-  /** Says what went wrong with the user's own mark that `marking` makes, as `sayMarkProblem` does. With the
-   * number of the list's item it takes out of place, while it acts on the Detail pane's item, the Workbench
-   * waits for the cursor to leave that item, as `WorkbenchState.finish` says (#982). */
-  async function finish(
-    item: number | undefined,
-    marking: (opened: WorkbenchState) => Promise<string | undefined>,
-  ) {
-    await sayMarkProblem((opened) =>
-      item === undefined ? marking(opened) : opened.finish(item, marking(opened)),
-    );
+    if (marked) {
+      await sayMarkProblem((opened) => opened.markSeen(marked.stop, marked.seen.mark, marked.archived));
+    }
   }
 
   /**
-   * Follows the cursor once it has moved on from a line that lost its place, as `landing` says. When that
-   * finished the Detail pane's item for the user's own mark, the pane opens the item the cursor moved on
-   * to, as `Enter` would, or shows nothing open when no item came after it, and keeps the item that stayed
-   * last (#982). Focus in the Detail pane then stays there, in the item it opens, or goes to the cursor's
-   * row when the pane goes with nothing open.
+   * Follows the cursor once the user's own action finished the selected item and moved the cursor on at the
+   * keypress, as `landing` says (#1052). While the Detail pane shows that item, or a PR in its tree, it
+   * opens the line the cursor moved to, as `Enter` does, or shows nothing open once the cursor left the
+   * list. Focus in the Detail pane stays there, in the item it opens, or goes to the cursor's row when the
+   * pane goes with nothing open.
    *
-   * Otherwise, once the cursor moved, the focus goes to the row it landed on when a row of the list holds
-   * the focus, or the page does, as it does once nothing else holds it. Focus anywhere else, such as in a
-   * text box or on the list's header, stays put.
+   * Focus on a row of the list, or on none, goes with the cursor, and once the cursor left the list it
+   * stays on the list, which takes the keys while nothing holds the focus. Focus anywhere else, such as in a
+   * text box or on the list's header, stays put. The list scrolls as little as it takes to bring the
+   * cursor's row back on the screen, as `keepOnScreen` says.
    */
-  function cursorLanded({ finished, to }: Landing) {
+  function cursorLanded({ from, was, to }: Landing) {
     const focused = document.activeElement;
-    if (finished && to.kind !== "kept") {
+    const left = rowOf(was);
+    const keep = left && keepOnScreen(left.box, left.scroller);
+    const follows = followsCursor(focused);
+    if (detailIn(from)) {
       const inDetail = inDetailPane(focused);
-      if (to.kind === "next") open(to.stop);
+      if (to) open(to);
       else swap(undefined);
-      if (inDetail) {
-        focusDetail();
-        return;
-      }
+      if (inDetail) focusDetail();
     }
-    if (to.kind === "empty") return;
-    if (followsCursor(focused)) focusCursor();
+    void tick().then(() => {
+      const moved = cursorRow();
+      if (moved && keep) keep(moved.box);
+      if (!follows) return;
+      if (moved) moved.line.focus({ preventScroll: true });
+      else if (focused instanceof HTMLElement && focused !== document.body) focused.blur();
+    });
+  }
+
+  /** Whether the Detail pane shows a line of the item `key` names, while the list holds that line. */
+  function detailIn(key: ItemKey): boolean {
+    const line = detailLine();
+    const shown = line && workbench.hidingBy(line)?.key;
+    return shown?.kind === key.kind && shown.number === key.number;
   }
 
   /** Gives the focus to the Detail pane once it shows the view it's about to, or to the cursor's row when
@@ -576,39 +569,35 @@
   /**
    * Before a change in the view on show: what follows the row under the cursor once the change is drawn
    * (#796). A row that held the focus gets it back, as moving a focused element in the page drops its
-   * focus. While the cursor is on the Detail pane's item, a change that takes its row off the screen
-   * scrolls the list to bring it back, as `keepOnScreen` says. The layout is read only then.
+   * focus. A change that takes the row off the screen scrolls the list to bring it back, as `keepOnScreen`
+   * says (#1052). The layout is read only then. A change that takes the row out of the list leaves the
+   * cursor on none, and the focus that row held falls to the page, so the list keeps the keys.
    */
   function listChanging(): () => void {
     const row = cursorRow();
     if (!row) return () => {};
     const focused = document.activeElement === row.line;
-    const keep = onDetail(row.stop) ? keepOnScreen(row.box, row.scroller) : undefined;
+    const keep = keepOnScreen(row.box, row.scroller);
     return () =>
       void tick().then(() => {
         const moved = cursorRow();
         if (!moved) return;
-        if (keep && onDetail(moved.stop)) keep(moved.box);
+        keep(moved.box);
         if (focused) moved.line.focus({ preventScroll: true });
       });
   }
 
-  /** The row under the cursor, while the list shows it: the button that names its line, the box around
-   * that, and the list that scrolls it. */
-  function cursorRow() {
-    const stop = workbench.cursor;
+  /** The row under the cursor, while the list shows it, as `rowOf` finds it. */
+  const cursorRow = () => rowOf(workbench.cursor);
+
+  /** The row of line `stop`, while the list shows it: the button that names its line, the box around that,
+   * and the list that scrolls it. */
+  function rowOf(stop: Stop | undefined) {
     if (!stop || !list) return undefined;
     const name = lineName(stop);
     const line = list.querySelector<HTMLElement>(`[data-item="${name}"]`);
     const box = list.querySelector<HTMLElement>(`[data-row="${name}"]`);
     return line && box ? { stop, line, box, scroller: list } : undefined;
-  }
-
-  /** Whether line `stop` is the Detail pane's item, on whichever line the list now has it, as a change can
-   * put a PR under an Issue after it opened. */
-  function onDetail(stop: Stop): boolean {
-    const shown = detailLine();
-    return shown?.number === stop.number && shown.kind === stop.kind;
   }
 
   /** Mark Unseen on `marked`. It unarchives the Archived item that holds it, which comes back Marked unseen
@@ -722,32 +711,20 @@
     return pin && (() => void togglePin(pin));
   }
 
-  /** Pins the Issue `pin` names, or unpins it if the user pinned it. A pin or unpin that takes the Detail
-   * pane's Issue out of the view on show, a pin the Inbox or Archived and an unpin the Pinned issues (#489),
-   * opens the next item as Archive does (#982). */
-  async function togglePin(pin: Pin) {
-    const { number, pinned } = pin;
-    const leaves = workbench.pinTakesOut(pin);
-    const marking = (opened: WorkbenchState) => (pinned ? opened.unpin(number) : opened.pin(number));
-    await finish(leaves && hidingOnDetail({ key: leaves }), marking);
+  /** Pins the Issue `pin` names, or unpins it if the user pinned it, which moves the cursor on from the
+   * selected item where the pin or unpin takes it out of the view on show (#1052). */
+  async function togglePin({ number, pinned }: Pin) {
+    await sayMarkProblem((opened) => (pinned ? opened.unpin(number) : opened.pin(number)));
   }
 
-  /** Archive on `archived`. Once the item leaves the list, a cursor on it lands on the row after it. */
+  /** Archive on `archived`, which moves the cursor on from the selected item (#1052). */
   async function archive(archived: Hiding) {
-    await finish(hidingOnDetail(archived), (opened) => opened.archive(archived));
+    await sayMarkProblem((opened) => opened.archive(archived));
   }
 
-  /** Mute on `muted`. Once the item leaves the list, a cursor on it lands on the row after it. */
+  /** Mute on `muted`, which moves the cursor on from the selected item (#1052). */
   async function mute(muted: Hiding) {
-    await finish(hidingOnDetail(muted), (opened) => opened.mute(muted));
-  }
-
-  /** The number of the item that Archive, Mute or Pin on `key` takes off the list, while the list holds the
-   * Detail pane's line in that item, which needs no view to have arrived (#982). */
-  function hidingOnDetail({ key }: Pick<Hiding, "key">): number | undefined {
-    const line = detailLine();
-    const shown = line && workbench.hidingBy(line)?.key;
-    return shown?.kind === key.kind && shown.number === key.number ? key.number : undefined;
+    await sayMarkProblem((opened) => opened.mute(muted));
   }
 
   /** Unmutes the item `key` names. */
@@ -755,8 +732,8 @@
     await sayMarkProblem((opened) => opened.unmute(key));
   }
 
-  /** Unarchives the item `key` names. Once it leaves the list, as the Archived view, a cursor on it lands on
-   * the row after it. */
+  /** Unarchives the item `key` names, which moves the cursor on from the selected item in the Archived view
+   * (#1052). */
   async function unarchive(key: ItemKey) {
     await sayMarkProblem((opened) => opened.unarchive(key));
   }

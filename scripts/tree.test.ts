@@ -133,6 +133,31 @@ describe("treeLines", () => {
     ]);
   });
 
+  it("draws a ticket the one named blocks through a cycle, whichever ticket of the cycle is lowest", () => {
+    // 9 is blocked by 1; 1 and 2 block each other, and 5 blocks 1. The walk from the lowest number drops
+    // 2 → 1, but 5 blocks 2 through 1.
+    const tickets = [ticket(9, [1]), ticket(1, [2, 5]), ticket(2, [1]), ticket(5)];
+    expect(treeLines(tickets, [5])).toEqual([
+      "#5 Ticket 5 (1)",
+      "└─ #1 Ticket 1 (2)  [also #2]",
+      "   ├─ #2 Ticket 2 (1)",
+      "   └─ #9 Ticket 9 (3)",
+      "max depth: 3",
+    ]);
+  });
+
+  it("hangs a ticket in a cycle under a blocker the walk down reached first, never under its own child", () => {
+    // 1 and 2 block each other, 5 blocks 1, and 3 blocks 2 from outside the tree, so 2 runs deeper than 5.
+    // 1 still goes under 5: under 2 it would hang from its own child.
+    const tickets = [ticket(1, [2, 5]), ticket(2, [1, 3]), ticket(3), ticket(5)];
+    expect(treeLines(tickets, [5])).toEqual([
+      "#5 Ticket 5 (1)",
+      "└─ #1 Ticket 1 (3)  [also #2]",
+      "   └─ #2 Ticket 2 (2)  [also #3*]",
+      "max depth: 3",
+    ]);
+  });
+
   it("prints nothing when no ticket is open", () => {
     expect(treeLines([], [])).toEqual([]);
   });

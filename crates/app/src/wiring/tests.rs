@@ -204,6 +204,22 @@ impl Wired {
         assert!(answer.is_ok(), "{command} failed: {answer:?}");
     }
 
+    /// Marks CPython's item `number` unseen, and answers with each change the window heard up to the
+    /// mark's. The session takes its messages in order, so the mark's change comes after those of what came
+    /// before it.
+    fn heard_until_marked(&self, number: u32) -> Vec<Value> {
+        let marked = json!({ "repository": CPYTHON, "number": number });
+        self.call("mark_unseen", marked);
+        let mut heard = Vec::new();
+        while heard
+            .last()
+            .is_none_or(|change: &Value| change["items"] != json!([number]))
+        {
+            heard.push(self.workbenches.recv_timeout(PLENTY).unwrap());
+        }
+        heard
+    }
+
     fn stop(self) -> Self {
         self.core.stop(PLENTY);
         self
@@ -655,26 +671,13 @@ fn an_apply_tells_the_window_of_a_repository_it_never_opened() {
     let peps = "python/peps";
     let added = format!("{file}\n[[repositories]]\nname = \"{peps}\"\n");
     std::fs::write(folders.settings_file(), added).unwrap();
-    // The session takes its messages in order, so each mark's change comes after what came before it.
-    let heard_until_marked = |number: u32| {
-        let marked = json!({ "repository": CPYTHON, "number": number });
-        drop(wired.ask("mark_unseen", marked).unwrap());
-        let mut heard = Vec::new();
-        while heard
-            .last()
-            .is_none_or(|change: &Value| change["items"] != json!([number]))
-        {
-            heard.push(wired.workbenches.recv_timeout(PLENTY).unwrap());
-        }
-        heard
-    };
 
     drop(wired.ask("reread_settings", json!({})).unwrap());
-    drop(heard_until_marked(1));
+    drop(wired.heard_until_marked(1));
     let writes = wired.ask("repository_state", json!({ "repository": peps }));
     let switch = json!({ "read_only": [{ "repository": peps, "read_only": true }] });
     drop(wired.ask("apply_settings", json!({ "changes": switch })).unwrap());
-    let heard = heard_until_marked(2);
+    let heard = wired.heard_until_marked(2);
     let chosen = wired.ask("repository_state", json!({ "repository": peps }));
     drop(wired.stop());
 
@@ -723,16 +726,7 @@ fn conventions_edited_by_hand_reach_the_window_as_a_change_once_the_settings_are
     let layout = json!({ "layout": { "sidebar": 240 } });
     drop(wired.ask("save_pane_layout", layout).unwrap());
     let reread = wired.ask("reread_settings", json!({})).unwrap();
-    // The session takes its messages in order, so this change comes after any the rereads made.
-    let marked = json!({ "repository": CPYTHON, "number": 8 });
-    drop(wired.ask("mark_unseen", marked).unwrap());
-    let mut heard = Vec::new();
-    while heard
-        .last()
-        .is_none_or(|change: &Value| change["items"] != json!([8]))
-    {
-        heard.push(wired.workbenches.recv_timeout(PLENTY).unwrap());
-    }
+    let heard = wired.heard_until_marked(8);
     drop(wired.stop());
 
     assert_ne!(edited, file, "{file}");
@@ -740,7 +734,7 @@ fn conventions_edited_by_hand_reach_the_window_as_a_change_once_the_settings_are
         reread["settings"]["repositories"][0]["conventions"],
         "github"
     );
-    // The first change is the add's, whose reload of the files takes in any hand edit too.
+    // The first change is the add's, which lists CPython anew.
     assert_eq!(
         heard,
         [

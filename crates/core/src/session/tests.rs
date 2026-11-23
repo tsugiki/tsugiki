@@ -2500,6 +2500,7 @@ fn a_hand_edit_to_the_settings_tells_the_window_and_the_windows_own_switch_doesn
     let elsewhere = RepositoryName::parse("a/b").unwrap();
 
     let asked = session.fetching();
+    // The window opens gcmon and not a/b, and each hears of its hand edits all the same.
     asked.sync(gcmon());
     asked.settings_changed(SettingsSave::new(
         RepositorySettings::new(elsewhere.clone()),

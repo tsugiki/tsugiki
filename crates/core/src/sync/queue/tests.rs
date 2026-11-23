@@ -481,9 +481,11 @@ fn a_sync_given_up_after_its_retry_told_the_unsaved_step_tells_nothing_new() {
     let (saves_once, _calls) = harness.db.store.failing_at_call(Some(1));
     let failure = syncs.step(&harness.github, &saves_once).unwrap_err();
     saves_once.close();
+    fails_telling_nothing(&mut syncs, &failure, soon());
     let retried = syncs.step(&harness.github, &harness.db.store).unwrap();
 
-    let told = told_giving_up(&mut syncs, &failure);
+    // Each failure counted comes after the retry that worked.
+    let told = told_giving_up(&mut syncs, &failed(broken()));
 
     assert_eq!(retried, Some(Progress::Recorded(cpython())));
     assert_eq!(told, []);

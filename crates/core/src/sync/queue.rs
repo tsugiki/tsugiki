@@ -363,6 +363,7 @@ impl Syncs {
     /// sync alone, so the other Repositories carry on. It waits until `next_refresh`, or for the rate limit
     /// until GitHub's points come back. It also takes a sync that keeps failing out of the queue, and answers
     /// with the news of a step it saved before its place failed to save, which the retry would have told.
+    #[must_use = "a given-up sync's news has to reach the window, which no retry will tell"]
     pub fn after_failure(
         &mut self,
         failure: &StepFailure,

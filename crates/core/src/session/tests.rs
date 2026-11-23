@@ -723,7 +723,7 @@ fn two_threads(intervals: Intervals, mirrors: MirrorRequests) -> (TwoThreads, Fe
 }
 
 impl TwoThreads {
-    /// The GitHub thread's queue, for a stop that has to reach it before its next turn, as a stop the
+    /// The GitHub thread's queue, for a message that has to reach it before its next turn, as a message the
     /// session's thread passes on reaches it a moment later.
     fn github(&self) -> Sender<GitHubMessage> {
         self.keeper.telling.github.clone()

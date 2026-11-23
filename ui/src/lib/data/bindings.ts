@@ -1042,7 +1042,14 @@ export type ErrorKind = ErrorKind_Serialize | ErrorKind_Deserialize;
 /**  What the UI can do something about. */
 export type ErrorKind_Deserialize = { kind: "offline" } | 
 /**  GitHub's certificate isn't valid at this computer's date and time, so no request reaches GitHub. */
-{ kind: "certificate_dates" } | { kind: "unauthorized" } | { kind: "write_refused" } | { kind: "rate_limited"; 
+{ kind: "certificate_dates" } | 
+/**
+ *  A read of the token found none, so Tsugiki asks GitHub nothing until a read finds one. The status bar
+ *  offers Try again beside it, which reads the token at once.
+ */
+{ kind: "no_token" } | 
+/**  GitHub refused the token. */
+{ kind: "unauthorized" } | { kind: "write_refused" } | { kind: "rate_limited"; 
 /**
  *  The time Tsugiki can ask GitHub again, by this computer's clock, in seconds since the Unix epoch,
  *  if known.
@@ -1057,7 +1064,14 @@ resets_at?: number | null } | { kind: "not_found" } | { kind: "conflict" } |
 /**  What the UI can do something about. */
 export type ErrorKind_Serialize = { kind: "offline" } | 
 /**  GitHub's certificate isn't valid at this computer's date and time, so no request reaches GitHub. */
-{ kind: "certificate_dates" } | { kind: "unauthorized" } | { kind: "write_refused" } | { kind: "rate_limited"; 
+{ kind: "certificate_dates" } | 
+/**
+ *  A read of the token found none, so Tsugiki asks GitHub nothing until a read finds one. The status bar
+ *  offers Try again beside it, which reads the token at once.
+ */
+{ kind: "no_token" } | 
+/**  GitHub refused the token. */
+{ kind: "unauthorized" } | { kind: "write_refused" } | { kind: "rate_limited"; 
 /**
  *  The time Tsugiki can ask GitHub again, by this computer's clock, in seconds since the Unix epoch,
  *  if known.

@@ -158,7 +158,8 @@ export class StatusState {
     }
   }
 
-  /** Asks the core to refresh the open Repository now. The answers come as events. */
+  /** Asks the core to refresh the open Repository now, and to read the token at once after a read that found
+   * none. The answers come as events. */
   async refresh() {
     try {
       await commands.refresh();

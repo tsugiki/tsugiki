@@ -28,9 +28,11 @@ little, and a screen can't show a mix of old and new data.
   tauri-specta, or `ts-rs` with a thin hand-written `invoke` layer if tauri-specta isn't ready). CI fails when
   the generated bindings are out of date.
 - Commands return `Result<T, Error>`. `Error` is `{ kind, message }`, where the kind is one the UI acts on
-  (`offline`, `certificate_dates`, `unauthorized`, `write_refused`, `rate_limited` with its reset time,
-  `not_found`, `conflict`, `query_refused`, `internal`) and the message is in plain words. `certificate_dates`
-  says GitHub's certificate isn't valid by this computer's clock, so the user should check the date and time.
+  (`offline`, `certificate_dates`, `no_token`, `unauthorized`, `write_refused`, `rate_limited` with its reset
+  time, `not_found`, `conflict`, `query_refused`, `internal`) and the message is in plain words.
+  `certificate_dates` says GitHub's certificate isn't valid by this computer's clock, so the user should check
+  the date and time. `no_token` says a read of the token found none, which the user can try again, apart from
+  `unauthorized`, a token GitHub refused.
   Details go only to a local log with tokens scrubbed ([ADR 0005](0005-token-stays-in-the-rust-core.md)).
 - The core owns background work and app-wide status: running jobs and their progress, online or offline, token
   problems, the rate limit, each Repository's last sync, and unsent **Pending reviews**. It emits a `status`

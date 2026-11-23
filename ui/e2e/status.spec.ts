@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 import { done, loadedSettings, ok, workbenchPage } from "../src/lib/testing/fixtures.ts";
 import { home, issue, issueView } from "./fixtures.ts";
-import { emitFromCore, mockCore } from "./mock-core.ts";
+import { callsOf, emitFromCore, mockCore } from "./mock-core.ts";
 
 const online = { state: "online", login: "octocat" } as const;
 const offline = { state: "offline" } as const;
@@ -134,6 +134,23 @@ test("a refused token shows the core's words", async ({ page }) => {
   await mockCore(page, { settings: defaults, status: { state: "problem", problem } });
   await page.goto("/");
   await expect(page.getByRole("status")).toHaveText("GitHub refused the token.");
+});
+
+test("a read that found no token offers Try again with no Repository open, until the core reads again", async ({
+  page,
+}) => {
+  const problem = { kind: "no_token", message: "Install `gh` or run `gh auth login`." } as const;
+  await mockCore(page, { settings: defaults, status: { state: "problem", problem } });
+  await page.goto("/");
+  await expect(page.getByRole("status")).toHaveText(problem.message);
+  expect(await callsOf(page, "refresh")).toBe(0);
+  await page.getByRole("button", { name: "Try again" }).click();
+  await expect.poll(() => callsOf(page, "refresh")).toBe(1);
+  await emitFromCore(page, "status-changed", { state: "connecting" });
+  await expect(page.getByRole("status")).toHaveText("Connecting…");
+  await expect(page.getByRole("button", { name: "Try again" })).toHaveCount(0);
+  await emitFromCore(page, "status-changed", online);
+  await expect(page.getByRole("status")).toHaveText("octocat");
 });
 
 test("settings can hide the status bar, and going offline brings it back", async ({ page }) => {

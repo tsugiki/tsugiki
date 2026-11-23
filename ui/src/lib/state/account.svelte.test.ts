@@ -35,6 +35,9 @@ describe("signedIn", () => {
     expect(
       signedIn({ state: "problem", problem: { kind: "unauthorized", message: "Run gh auth login." } }),
     ).toEqual({ note: "Run gh auth login." });
+    expect(signedIn({ state: "problem", problem: { kind: "no_token", message: "Install gh." } })).toEqual({
+      note: "Install gh.",
+    });
     expect(
       signedIn({
         state: "problem",

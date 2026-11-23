@@ -12,7 +12,12 @@ import type { commands } from "../src/lib/data/bindings.ts";
 export type CoreAnswers = { [C in keyof typeof commands]?: Awaited<ReturnType<(typeof commands)[C]>> };
 
 type Listener = (message: { event: string; id: number; payload: unknown }) => void;
-type MockWindow = { mockEventListeners: Record<string, Listener[]>; mockAnswers: Record<string, unknown> };
+type MockWindow = {
+  mockEventListeners: Record<string, Listener[]>;
+  mockAnswers: Record<string, unknown>;
+  /** Each command the page sent, by its name in the bindings, in the order it sent them. */
+  mockCalls: string[];
+};
 
 /** The answers a test gives, and the commands it has reject. */
 type Given = { given: Record<string, unknown>; refused: string[] };
@@ -74,9 +79,11 @@ export const mockCore = (page: Page, answers: CoreAnswers, unanswered: (keyof Co
     };
     const listeners: MockWindow["mockEventListeners"] = {};
     const callbacks = new Map<number, Listener>();
+    const calls: MockWindow["mockCalls"] = [];
     Object.assign(window, {
       mockEventListeners: listeners,
       mockAnswers: answers,
+      mockCalls: calls,
       __TAURI_INTERNALS__: {
         transformCallback: (callback: Listener) => {
           const id = callbacks.size + 1;
@@ -90,6 +97,7 @@ export const mockCore = (page: Page, answers: CoreAnswers, unanswered: (keyof Co
           }
           // The bindings name commands in camelCase, and the core in snake_case.
           const name = command.replace(/_(.)/g, (_, letter: string) => letter.toUpperCase());
+          calls.push(name);
           if (refused.includes(name)) throw new Error(`the core has no answer for ${command}`);
           // Unless the test answers it, a run comes first in the list `recentCommands` answers with, and the
           // run answers with that list too.
@@ -120,6 +128,13 @@ export const changeAnswer = <C extends keyof CoreAnswers>(page: Page, command: C
       (window as unknown as MockWindow).mockAnswers[command as string] = answer;
     },
     [command, answer] as const,
+  );
+
+/** How many times the page has sent `command` since it last loaded. */
+export const callsOf = (page: Page, command: keyof CoreAnswers) =>
+  page.evaluate(
+    (command) => (window as unknown as MockWindow).mockCalls.filter((name) => name === command).length,
+    command,
   );
 
 /** Sends an event to the page, as the core would. */

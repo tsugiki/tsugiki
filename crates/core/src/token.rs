@@ -10,9 +10,10 @@ use crate::error::{Error, ErrorKind};
 use crate::logfile;
 
 /// What Tsugiki does next, and the way past `gh`, which a restart takes, since Tsugiki reads its own
-/// environment, which a later change in the user's shell doesn't reach.
+/// environment, which a later change in the user's shell doesn't reach. Settings › Account shows these words
+/// too, under a dialog that covers the status bar, so they say where Try again is.
 const ASKS_AGAIN: &str =
-    "Tsugiki asks again each minute, and at once when you click an open Repository's sync status.";
+    "Tsugiki asks again each minute, and at once when you click Try again in the status bar.";
 const GH_TOKEN_INSTEAD: &str = "To skip `gh`, set `GH_TOKEN` to a token and restart Tsugiki.";
 
 /// Takes the token from `GH_TOKEN` or asks `gh` for it, as [`TokenReads::read`] says, for a caller that
@@ -58,7 +59,8 @@ impl Failure {
 impl TokenReads {
     /// Takes the token from `GH_TOKEN` or asks `gh` for it, and hands the logger a copy to hide. Without
     /// one, the log says why, unless the last read failed the same way, and the user reads what happened,
-    /// what Tsugiki does next and what they can do.
+    /// what Tsugiki does next and what they can do, in an error of its own kind, which the status bar offers
+    /// Try again beside.
     pub fn read(&mut self, from: TokenFrom) -> Result<Token, Error> {
         #[expect(
             clippy::disallowed_methods,
@@ -78,7 +80,7 @@ impl TokenReads {
                     log::warn!("{warning}");
                 }
                 self.last_failure = Some(failure);
-                Err(Error::new(ErrorKind::Unauthorized, &message))
+                Err(Error::new(ErrorKind::NoToken, &message))
             }
         }
     }

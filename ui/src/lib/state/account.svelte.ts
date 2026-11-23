@@ -9,7 +9,8 @@ import type { Status } from "./status.svelte";
 export type SignedIn = { login: Login; note?: string } | { login?: undefined; note: string };
 
 /** Who the status says is signed in. A problem names nobody, and says what it is only when it is the
- * token's: a refused token is the Account page's business, and a failed read of the disk isn't. */
+ * token's: a refused token or none found is the Account page's business, and a failed read of the disk
+ * isn't. */
 export function signedIn(status: Status | undefined): SignedIn {
   switch (status?.state) {
     case "online":
@@ -24,7 +25,7 @@ export function signedIn(status: Status | undefined): SignedIn {
     case "problem":
       return {
         note:
-          status.problem.kind === "unauthorized"
+          status.problem.kind === "unauthorized" || status.problem.kind === "no_token"
             ? status.problem.message
             : "Not known: GitHub hasn't said who is signed in.",
       };

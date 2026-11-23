@@ -644,6 +644,7 @@ fn hold_after(problem: &Error, next_refresh: Instant) -> Hold {
         }
         ErrorKind::Offline
         | ErrorKind::CertificateDates
+        | ErrorKind::NoToken
         | ErrorKind::Unauthorized
         | ErrorKind::WriteRefused
         | ErrorKind::NotFound
@@ -658,7 +659,8 @@ fn hold_after(problem: &Error, next_refresh: Instant) -> Hold {
 fn counts_toward_tries(kind: ErrorKind) -> bool {
     match kind {
         ErrorKind::RateLimited { .. } | ErrorKind::Offline | ErrorKind::CertificateDates => false,
-        ErrorKind::Unauthorized
+        ErrorKind::NoToken
+        | ErrorKind::Unauthorized
         | ErrorKind::WriteRefused
         | ErrorKind::NotFound
         | ErrorKind::Conflict

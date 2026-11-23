@@ -8,11 +8,14 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
   review rights on one owner's repositories, or classic `public_repo`
   ([ADR 0004](../adr/0004-auth-via-gh-cli-token.md)).
 - After a read that found no token, Tsugiki reads it again about once a minute, with the check of who is
-  signed in, and at once on a click of an open Repository's sync status. A click while a read is out adds
-  no read. Once a read gives a token, Tsugiki connects as it does at start, with no restart, and reads the
-  items on screen at once. A click says "Connecting…" until the read ends; the minute's read leaves the
-  problem up until it has a token. The log gives a failed read's cause once, and again when a read fails
-  another way.
+  signed in, and at once on a click of Try again or of an open Repository's sync status. Try again follows
+  the problem in the status bar on every screen, with or without a Repository open. A click while a read is
+  out adds no read. Once a read gives a token, Tsugiki connects as it does at start, with no restart, and
+  reads the items on screen at once. A click says "Connecting…" until the read ends; the minute's read
+  leaves the problem up until it has a token. Tsugiki waits on `gh` meanwhile and hears no click until the
+  read ends, so a click while it is out reads nothing again: a read that finds no token covers the click,
+  and after one that finds a token, the click asks GitHub as a click on the sync status does. The log gives
+  a failed read's cause once, and again when a read fails another way.
 - Without a token, the status bar says what happened, what Tsugiki does next and what the user can do. With
   no `gh`, or a `gh` that isn't signed in: install `gh` or run `gh auth login`, and Tsugiki asks again. A
   `gh` that doesn't answer within 30 s is installed and may be signed in, so Tsugiki stops it, and the

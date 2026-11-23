@@ -10,6 +10,10 @@ pub enum ErrorKind {
     Offline,
     /// GitHub's certificate isn't valid at this computer's date and time, so no request reaches GitHub.
     CertificateDates,
+    /// A read of the token found none, so Tsugiki asks GitHub nothing until a read finds one. The status bar
+    /// offers Try again beside it, which reads the token at once.
+    NoToken,
+    /// GitHub refused the token.
     Unauthorized,
     WriteRefused,
     RateLimited {
@@ -32,6 +36,7 @@ impl ErrorKind {
             Self::Offline
             | Self::CertificateDates
             | Self::RateLimited { .. }
+            | Self::NoToken
             | Self::Unauthorized => true,
             Self::WriteRefused
             | Self::NotFound

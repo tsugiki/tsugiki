@@ -144,16 +144,15 @@ app-wide status.
    shows. An item that shows again after its minute came round reads at once. The settings owner's thread
    hands the session each Repository's settings a change saves otherwise, with those they replaced, in the
    order it saves them. The session follows the move of Reach between the two in any Repository, opened or
-   not. Those a hand edit changed in a Repository opened since launch, as new Conventions or Filters,
-   announce a `Change` that names no item, and the Repository's lists read their items again. The session
-   keeps no copy of the settings: each sync step, the rules' wants and each move of Reach read them from the
-   owner's `latest` view, where the owner publishes a save and hands it over in one step under the view's
-   lock, so the session reads settings at least as new as every save it has heard of. The view counts the
-   saves handed over. A Mute or an Unmute reads the count with the settings, and first follows the saves
-   counted that it hasn't, which are in its queue by then, so its move of Reach starts where theirs end.
-   The messages it passes keep their order, and each hand edit it follows early announces its `Change`,
-   opened or not, as a Sync it passed may open the Repository. A Repository the settings stop listing goes
-   to the defaults, in the view and in a save.
+   not. Those a hand edit or an Apply changed, as new Conventions, Filters or Read-only, announce a
+   `Change` that names no item, in a Repository opened since launch or not, and the Repository's lists,
+   its views and its page in Settings ask again. The session keeps no copy of the settings: each sync step,
+   the rules' wants and each move of Reach read them from the owner's `latest` view, where the owner
+   publishes a save and hands it over in one step under the view's lock, so the session reads settings at
+   least as new as every save it has heard of. The view counts the saves handed over. A Mute or an Unmute
+   reads the count with the settings, and first follows the saves counted that it hasn't, which are in its
+   queue by then, so its move of Reach starts where theirs end. The messages it passes keep their order. A
+   Repository the settings stop listing goes to the defaults, in the view and in a save.
 
 App-wide status (the connection, the last sync, the hour's GitHub points, the request to GitHub in flight,
 cloning progress, a Mirror's problem, each Mirror's state, whether the Mirror worker holds back git, a newer

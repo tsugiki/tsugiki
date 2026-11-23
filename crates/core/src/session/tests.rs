@@ -2497,11 +2497,15 @@ fn a_hand_edit_to_the_settings_tells_the_window_and_the_windows_own_switch_doesn
         conventions: Conventions::Cpython,
         ..bugs_switched(OnWorkbench::On)
     };
-    let elsewhere = RepositorySettings::new(RepositoryName::parse("a/b").unwrap());
+    let elsewhere = RepositoryName::parse("a/b").unwrap();
 
     let asked = session.fetching();
     asked.sync(gcmon());
-    asked.settings_changed(SettingsSave::new(elsewhere, &[], SavedBy::HandEdit));
+    asked.settings_changed(SettingsSave::new(
+        RepositorySettings::new(elsewhere.clone()),
+        &[],
+        SavedBy::HandEdit,
+    ));
     asked.settings_changed(bugs_saved(OnWorkbench::Off, SavedBy::HandEdit));
     asked.settings_changed(bugs_saved(OnWorkbench::On, SavedBy::Window));
     asked.settings_changed(SettingsSave::new(
@@ -2511,14 +2515,15 @@ fn a_hand_edit_to_the_settings_tells_the_window_and_the_windows_own_switch_doesn
     ));
     session.stop(PLENTY);
 
-    // Nothing for a Repository not opened since launch, or for the window's own save.
-    let gcmon_changed = Change {
-        repository: gcmon(),
+    // A Repository not opened since launch hears of its hand edit too, as its page in Settings follows its
+    // state (#1057). Nothing for the window's own save.
+    let changed = |repository| Change {
+        repository,
         items: vec![],
     };
     assert_eq!(
         changes.try_iter().collect::<Vec<_>>(),
-        [gcmon_changed.clone(), gcmon_changed]
+        [changed(elsewhere), changed(gcmon()), changed(gcmon())]
     );
 }
 
@@ -2649,7 +2654,7 @@ fn a_session_hands_the_mirror_the_heads_a_switch_puts_in_reach_while_offline() {
 }
 
 #[test]
-fn a_filter_a_hand_edit_switches_on_in_a_repository_not_opened_owes_reads_quietly() {
+fn a_filter_a_hand_edit_switches_on_in_a_repository_not_opened_owes_reads_and_tells_the_window() {
     // As the first change since launch, which the settings owner hands over with the settings it replaced.
     let took = session_taking(
         "hand-edit-unopened",
@@ -2664,8 +2669,14 @@ fn a_filter_a_hand_edit_switches_on_in_a_repository_not_opened_owes_reads_quietl
         "{:?}",
         took.handed
     );
-    // The window lists none of gcmon's items, as it hasn't opened gcmon since launch.
-    assert_eq!(took.announced, []);
+    // The window hasn't opened gcmon since launch, but gcmon's page in Settings follows its state (#1057).
+    assert_eq!(
+        took.announced,
+        [Change {
+            repository: gcmon(),
+            items: vec![]
+        }]
+    );
 }
 
 #[test]
@@ -2726,8 +2737,14 @@ fn a_session_with_no_token_follows_the_reach_a_hand_edit_moves() {
         "{:?}",
         took.handed
     );
-    // The window hasn't opened gcmon, so it hears of no hand edit to it, token or not.
-    assert_eq!(took.announced, []);
+    // The window hears of the hand edit to gcmon, opened or not, with a token or without.
+    assert_eq!(
+        took.announced,
+        [Change {
+            repository: gcmon(),
+            items: vec![]
+        }]
+    );
 }
 
 /// Has `store` hold Issue 5, which the user's PR 8 and someone else's PR 9 fix, for the user to mute.

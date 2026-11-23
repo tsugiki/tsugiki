@@ -644,6 +644,51 @@ fn a_repository_added_read_only_is_so_by_choice_until_its_page_s_switch_is_appli
     assert!(!file.contains("read_only"), "{file}");
 }
 
+/// An Apply that switches Read-only on a Repository the window never opened tells the window, whose page of
+/// that Repository in Settings asks for its state again while the dialog stays open (#1057).
+#[test]
+fn an_apply_tells_the_window_of_a_repository_it_never_opened() {
+    let (folders, _root) = temp_folders("wired-apply-unopened");
+    let wired = Wired::start(Ok(folders.clone()), no_network());
+    drop(wired.ask("add_repository", add_cpython()).unwrap());
+    let file = std::fs::read_to_string(folders.settings_file()).unwrap();
+    let peps = "python/peps";
+    let added = format!("{file}\n[[repositories]]\nname = \"{peps}\"\n");
+    std::fs::write(folders.settings_file(), added).unwrap();
+    // The session takes its messages in order, so each mark's change comes after what came before it.
+    let heard_until_marked = |number: u32| {
+        let marked = json!({ "repository": CPYTHON, "number": number });
+        drop(wired.ask("mark_unseen", marked).unwrap());
+        let mut heard = Vec::new();
+        while heard
+            .last()
+            .is_none_or(|change: &Value| change["items"] != json!([number]))
+        {
+            heard.push(wired.workbenches.recv_timeout(PLENTY).unwrap());
+        }
+        heard
+    };
+
+    drop(wired.ask("reread_settings", json!({})).unwrap());
+    drop(heard_until_marked(1));
+    let writes = wired.ask("repository_state", json!({ "repository": peps }));
+    let switch = json!({ "read_only": [{ "repository": peps, "read_only": true }] });
+    drop(wired.ask("apply_settings", json!({ "changes": switch })).unwrap());
+    let heard = heard_until_marked(2);
+    let chosen = wired.ask("repository_state", json!({ "repository": peps }));
+    drop(wired.stop());
+
+    assert_eq!(writes.unwrap()["read_only"], json!([]));
+    assert_eq!(
+        heard,
+        [
+            json!({ "repository": peps, "items": [] }),
+            json!({ "repository": CPYTHON, "items": [2] }),
+        ]
+    );
+    assert_eq!(chosen.unwrap()["read_only"], json!(["chosen"]));
+}
+
 /// Settings › Repositories hears what each Repository has on this machine (#533).
 #[test]
 fn settings_hears_where_each_mirror_gets_its_objects_and_how_much_of_the_disk_it_takes() {
@@ -695,9 +740,11 @@ fn conventions_edited_by_hand_reach_the_window_as_a_change_once_the_settings_are
         reread["settings"]["repositories"][0]["conventions"],
         "github"
     );
+    // The first change is the add's, whose reload of the files takes in any hand edit too.
     assert_eq!(
         heard,
         [
+            json!({ "repository": CPYTHON, "items": [] }),
             json!({ "repository": CPYTHON, "items": [] }),
             json!({ "repository": CPYTHON, "items": [8] }),
         ]
@@ -2823,5 +2870,7 @@ fn stopping_hands_the_session_a_settings_change_that_ends_during_the_stop() {
     letting_go.join().unwrap();
     assert!(saving.join().unwrap().is_ok());
     assert_ne!(edited, file, "{file}");
-    assert_eq!(heard, [json!({ "repository": CPYTHON, "items": [] })]);
+    // The add's change, then the pane layout's, whose reload took in the Conventions.
+    let changed = json!({ "repository": CPYTHON, "items": [] });
+    assert_eq!(heard, [changed.clone(), changed]);
 }

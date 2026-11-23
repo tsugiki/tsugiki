@@ -104,7 +104,7 @@ it("adds by the name GitHub gave and returns what the window opens on", async ()
 });
 
 it("adds a Repository that can write once the user turns Read-only off, and keeps the choice as they type", async () => {
-  const home = { screen: "repository", repository: check.repository, others: [] as string[] } as const;
+  const home = openOn(check.repository);
   vi.mocked(commands.addRepository).mockResolvedValue({ status: "ok", data: home });
   const state = new AddRepositoryState();
 

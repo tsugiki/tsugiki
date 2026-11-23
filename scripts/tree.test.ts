@@ -113,10 +113,10 @@ describe("treeLines", () => {
     ]);
   });
 
-  it("drops the blocker that closes a cycle, walking from the lowest number, and still names it", () => {
+  it("grows a cycle nothing else blocks from its lowest number, and names the blocker it drops", () => {
     expect(treeLines([ticket(2, [1]), ticket(1, [2]), ticket(3)], [])).toEqual([
-      "#2 Ticket 2 (1)  [also #1]",
-      "└─ #1 Ticket 1 (2)",
+      "#1 Ticket 1 (1)  [also #2]",
+      "└─ #2 Ticket 2 (2)",
       "#3 Ticket 3 (1)",
       "max depth: 2",
     ]);
@@ -133,27 +133,55 @@ describe("treeLines", () => {
     ]);
   });
 
-  it("draws a ticket the one named blocks through a cycle, whichever ticket of the cycle is lowest", () => {
-    // 9 is blocked by 1; 1 and 2 block each other, and 5 blocks 1. The walk from the lowest number drops
-    // 2 → 1, but 5 blocks 2 through 1.
+  it("draws each ticket the one named blocks through a cycle, whichever ticket is named", () => {
+    // 9 is blocked by 1; 1 and 2 block each other, and 5 blocks 1. 5 blocks 2 through 1, and 2 blocks 1.
     const tickets = [ticket(9, [1]), ticket(1, [2, 5]), ticket(2, [1]), ticket(5)];
     expect(treeLines(tickets, [5])).toEqual([
       "#5 Ticket 5 (1)",
       "└─ #1 Ticket 1 (2)  [also #2]",
-      "   ├─ #2 Ticket 2 (1)",
+      "   ├─ #2 Ticket 2 (3)",
+      "   └─ #9 Ticket 9 (3)",
+      "max depth: 3",
+    ]);
+    expect(treeLines(tickets, [2])).toEqual([
+      "#2 Ticket 2 (1)  [also #1]",
+      "└─ #1 Ticket 1 (2)  [also #5*]",
       "   └─ #9 Ticket 9 (3)",
       "max depth: 3",
     ]);
   });
 
-  it("hangs a ticket in a cycle under a blocker the walk down reached first, never under its own child", () => {
-    // 1 and 2 block each other, 5 blocks 1, and 3 blocks 2 from outside the tree, so 2 runs deeper than 5.
-    // 1 still goes under 5: under 2 it would hang from its own child.
+  it("hangs a ticket in a cycle under its deepest kept blocker, never under its own child", () => {
+    // 1 and 2 block each other, 5 blocks 1, and 3 blocks 2 from outside the tree. 1 goes under 5: under 2
+    // it would hang from its own child.
     const tickets = [ticket(1, [2, 5]), ticket(2, [1, 3]), ticket(3), ticket(5)];
     expect(treeLines(tickets, [5])).toEqual([
       "#5 Ticket 5 (1)",
-      "└─ #1 Ticket 1 (3)  [also #2]",
-      "   └─ #2 Ticket 2 (2)  [also #3*]",
+      "└─ #1 Ticket 1 (2)  [also #2]",
+      "   └─ #2 Ticket 2 (3)  [also #3*]",
+      "max depth: 3",
+    ]);
+  });
+
+  it("counts the depth of a chain through a cycle along the chain it draws", () => {
+    // 7 blocks 3; 3, 1 and 2 block each other in a ring, and 2 blocks 8.
+    const tickets = [ticket(3, [2, 7]), ticket(1, [3]), ticket(2, [1]), ticket(8, [2]), ticket(7)];
+    expect(treeLines(tickets, [7])).toEqual([
+      "#7 Ticket 7 (1)",
+      "└─ #3 Ticket 3 (2)  [also #2]",
+      "   └─ #1 Ticket 1 (3)",
+      "      └─ #2 Ticket 2 (4)",
+      "         └─ #8 Ticket 8 (5)",
+      "max depth: 5",
+    ]);
+  });
+
+  it("grows a cycle a ticket outside it blocks from that ticket, with none named", () => {
+    // 1 and 2 block each other, and 5 blocks 1.
+    expect(treeLines([ticket(1, [2, 5]), ticket(2, [1]), ticket(5)], [])).toEqual([
+      "#5 Ticket 5 (1)",
+      "└─ #1 Ticket 1 (2)  [also #2]",
+      "   └─ #2 Ticket 2 (3)",
       "max depth: 3",
     ]);
   });
@@ -309,7 +337,7 @@ describe("blockerLines", () => {
   });
 
   it("keeps the blockers of a ticket in a cycle, whichever ticket of it is named", () => {
-    // 1 and 2 block each other, and 5 blocks 1. treeLines' walk from the lowest number drops 2 → 1.
+    // 1 and 2 block each other, and 5 blocks 1.
     expect(blockerLines([ticket(1, [2, 5]), ticket(2, [1]), ticket(5)], [2])).toEqual([
       "#2 Ticket 2 (3)",
       "└─ #1 Ticket 1 (2)  [also #2]",

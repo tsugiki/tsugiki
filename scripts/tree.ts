@@ -102,15 +102,30 @@ function walk(starts: number[], next: (number: number) => number[]): Walked {
   return { edges, order };
 }
 
+/** Each ticket reachable from `starts` along `next`, `starts` included. */
+function reach(starts: number[], next: (number: number) => number[]): Set<number> {
+  const reached = new Set(starts);
+  for (const number of reached) {
+    for (const other of next(number)) {
+      reached.add(other);
+    }
+  }
+  return reached;
+}
+
 /**
- * Each ticket's depth from a walk `up` its open blockers: 1 plus the depth of its deepest blocker the walk
- * kept. A blocker in another repository, or one GitHub didn't list as an open issue here, has no blockers
- * we know of, so it counts 1.
+ * Each ticket's depth: 1 plus the depth of its deepest blocker in `kept`, which names no cycle. `order` lists
+ * each ticket after the blockers `kept` names for it. A blocker in another repository, or one GitHub didn't
+ * list as an open issue here, has no blockers we know of, so it counts 1.
  */
-function depthsOf(up: Walked, byNumber: Map<number, TreeTicket>): (number: number) => number {
+function depthsOf(
+  order: number[],
+  kept: (number: number) => number[],
+  byNumber: Map<number, TreeTicket>,
+): (number: number) => number {
   const depths = new Map<number, number>();
-  for (const number of up.order) {
-    const below = (up.edges.get(number) as number[]).map((blocker) => depths.get(blocker) as number);
+  for (const number of order) {
+    const below = kept(number).map((blocker) => depths.get(blocker) as number);
     const outside = blockedOutside(byNumber.get(number) as TreeTicket, byNumber) ? 1 : 0;
     depths.set(number, 1 + Math.max(outside, ...below));
   }
@@ -177,54 +192,65 @@ function withDepth(drawn: Drawn[]): string[] {
 
 /**
  * The lines `just tree` prints for the open `tickets`: one tree for each ticket `named`, in that order, or
- * with none named, one for each ticket with no open blocker. Each ticket named must be in `tickets`.
+ * with none named, one for each ticket with no open blocker and one for the lowest number of each cycle no
+ * ticket outside it blocks. Each ticket named must be in `tickets`.
  */
 export function treeLines(tickets: TreeTicket[], named: number[]): string[] {
   const byNumber = new Map(tickets.map((ticket) => [ticket.number, ticket]));
-
-  // Each ticket's depth comes from a walk up its open blockers from the lowest number, in the trees or not.
-  // With none named, a tree grows from each ticket that walk kept no blocker for: one with no open blocker,
-  // or the first ticket of a cycle nothing else blocks.
-  const up = walk(
-    tickets.map((ticket) => ticket.number).sort((a, b) => a - b),
-    (number) => blockersHere(byNumber, number),
-  );
-  const depth = depthsOf(up, byNumber);
-  const roots =
-    named.length > 0
-      ? [...new Set(named)]
-      : [...up.edges]
-          .filter(([, blockers]) => blockers.length === 0)
-          .map(([number]) => number)
-          .sort((a, b) => a - b);
-
-  // A walk down from the roots reaches each ticket they block, through a cycle too. The walk up can drop
-  // the edge that leads into the trees, as it starts from the lowest number wherever the trees start.
   const dependents = new Map<number, number[]>();
   for (const ticket of tickets) {
     for (const blocker of blockersHere(byNumber, ticket.number)) {
       dependents.set(blocker, [...(dependents.get(blocker) ?? []), ticket.number]);
     }
   }
-  const down = walk(roots, (number) => dependents.get(number) ?? []);
-  const isRoot = new Set(roots);
-  const inTrees = new Set(down.order);
+  const below = (number: number): number[] => dependents.get(number) ?? [];
 
-  // Each ticket below a root goes under its deepest blocker the walk down kept, the lowest number on a tie.
-  // Those edges hold no cycle, so no ticket hangs from its own child.
-  const parent = new Map<number, number>();
-  for (const [number, below] of down.edges) {
-    for (const child of below.filter((ticket) => !isRoot.has(ticket))) {
-      const best = parent.get(child);
-      const deeper = best === undefined || depth(number) > depth(best);
-      if (deeper || (depth(number) === depth(best) && number < best)) {
-        parent.set(child, number);
+  // The sources: each ticket nothing blocks, and the lowest number of each cycle nothing outside it blocks.
+  // A walk down finishes the last ticket of a cycle after each ticket that cycle blocks. So in reverse order
+  // of finish, a ticket blocked from outside its cycle comes after a ticket of the cycle that blocks it, and
+  // is reached before its turn. Each walk starts in order of number, and nothing outside enters a cycle
+  // nothing blocks, so the walk enters it at its lowest number, which finishes last and comes first.
+  const sources: number[] = [];
+  const reached = new Set<number>();
+  const all = tickets.map((ticket) => ticket.number).sort((a, b) => a - b);
+  for (const number of walk(all, below).order.reverse()) {
+    if (!reached.has(number)) {
+      sources.push(number);
+      for (const blocked of reach([number], below)) {
+        reached.add(blocked);
       }
     }
   }
+  const roots = named.length > 0 ? [...new Set(named)] : sources.sort((a, b) => a - b);
+
+  // One walk down, from the roots and then from the sources, which reach every ticket, keeps the edges that
+  // close no cycle. Each ticket's place and depth come from those edges alone, so a ticket always runs
+  // deeper than the blocker it hangs from. Walking from the roots first keeps each edge out of a root, so
+  // the trees hold each ticket the roots block, through a cycle too.
+  const down = walk([...roots, ...sources], below);
+  const kept = new Map<number, number[]>();
+  for (const [blocker, blocked] of down.edges) {
+    for (const number of blocked) {
+      kept.set(number, [...(kept.get(number) ?? []), blocker]);
+    }
+  }
+  const keptBlockers = (number: number): number[] => kept.get(number) ?? [];
+  const depth = depthsOf([...down.order].reverse(), keptBlockers, byNumber);
+  const isRoot = new Set(roots);
+  const inTrees = reach(roots, below);
+
+  // Each ticket below a root goes under its deepest kept blocker in the trees, the lowest number on a tie.
+  // The walk from the roots reached it through one.
   const children = new Map<number, number[]>();
-  for (const [child, number] of parent) {
-    children.set(number, [...(children.get(number) ?? []), child]);
+  for (const number of inTrees) {
+    if (!isRoot.has(number)) {
+      const parent = keptBlockers(number)
+        .filter((blocker) => inTrees.has(blocker))
+        .reduce((best, blocker) =>
+          depth(blocker) > depth(best) || (depth(blocker) === depth(best) && blocker < best) ? blocker : best,
+        );
+      children.set(parent, [...(children.get(parent) ?? []), number]);
+    }
   }
 
   const drawn = drawTrees(roots, children, depth, (number, above) => {
@@ -251,9 +277,9 @@ function blockerTree(byNumber: Map<number, TreeTicket>, root: number): Drawn {
 
   // A walk up from `root` reaches each open blocker here, and `[also]` names a blocker it dropped. Each
   // ticket's depth comes from this walk, so inside a cycle it can differ from the depth `just tree` prints,
-  // whose walk starts from the lowest number.
+  // whose walk goes down from the tickets named.
   const up = walk([root], (number) => blockersHere(byNumber, number));
-  const depth = depthsOf(up, byNumber);
+  const depth = depthsOf(up.order, (number) => up.edges.get(number) as number[], byNumber);
 
   // Each blocker goes under the ticket it blocks that sits furthest from `root`, the lowest number on a tie,
   // so the tree shows its longest chain. `up.order` reversed reaches each blocker after every ticket it

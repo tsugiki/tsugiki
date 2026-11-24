@@ -57,7 +57,7 @@
 </script>
 
 <h3 class="mono">{repository}</h3>
-{#if parts.length > 0}
+{#if parts.length > 0 || synced !== null}
   <p class="facts">
     {parts.join(" · ")}{#if synced !== null}{parts.length > 0 ? " · " : ""}<span
         title={syncedTip(sync?.last_sync ?? null)}>{synced}</span

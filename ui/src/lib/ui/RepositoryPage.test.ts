@@ -123,6 +123,20 @@ describe("a Repository's page in Settings", () => {
     });
   });
 
+  it("says when it last synced though the core can't say the rest", async () => {
+    catchChanged();
+    catchSyncs();
+    core.repositoryState.mockResolvedValue(refused("The database is locked."));
+    core.repositorySync.mockResolvedValue(ok({ last_sync: "2026-11-05T12:00:00Z", open: null }));
+    show("python/cpython");
+
+    await vi.waitFor(() => {
+      expect(facts()).toBe("Synced 2 min ago");
+    });
+    const line = document.querySelector(".facts span[title]");
+    expect(line?.getAttribute("title")).toBe(`Last synced ${stampOf("2026-11-05T12:00:00Z")}`);
+  });
+
   it("shows no line while the core can't say any of it", async () => {
     catchChanged();
     catchSyncs();

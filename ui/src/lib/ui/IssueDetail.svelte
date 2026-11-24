@@ -12,7 +12,8 @@
   import ReadOnlyNote from "./ReadOnlyNote.svelte";
   import StateIcon from "./StateIcon.svelte";
   import StateWords from "./StateWords.svelte";
-  import { ago, backportWords, commentCount, headline } from "./workbench-row";
+  import { when } from "./time";
+  import { ago, backportWords, commentCount, headline, latestUpdated, updated } from "./workbench-row";
 
   let {
     repository,
@@ -116,8 +117,7 @@
     const who = view.author ?? "deleted user";
     const at = view.content?.opened_at;
     if (!at) return { who, words: "", title: undefined };
-    const title = new Date(at).toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
-    return { who, words: ` opened this ${ago(at, now)}`, title };
+    return { who, words: ` opened this ${ago(at, now)}`, title: when(at) };
   };
 
   /** The rest of the author line: how many comments, once Tsugiki has read them, and whom it is assigned
@@ -225,7 +225,7 @@
                 <code class="branch" title={entry.target_branch}>{entry.target_branch}</code>
                 <button
                   class={["link", "title", { attention: view.needs_attention.includes(entry.number) }]}
-                  title={entry.title}
+                  title={`${entry.title}\n${updated(entry)}`}
                   onclick={openPr(entry.number)}>{@render numbered(entry)}</button
                 >
                 <small class="who">{entry.author ?? "deleted user"}</small>
@@ -239,6 +239,7 @@
                       <StateIcon icon={prIcon(backport)} />
                       <button
                         class={["link", { attention: view.needs_attention.includes(backport.number) }]}
+                        title={updated(backport)}
                         onclick={openPr(backport.number)}>{backportWords(backport)}</button
                       >
                     </span>
@@ -274,7 +275,12 @@
             {@render tree(view.pull_requests, "PRs")}
           {/if}
           {#if view.merged_count > 0}
-            <button class="link fold" aria-expanded={issue.mergedShown} onclick={() => issue.toggleMerged()}>
+            <button
+              class="link fold"
+              aria-expanded={issue.mergedShown}
+              title={latestUpdated(treeRows(view.merged))}
+              onclick={() => issue.toggleMerged()}
+            >
               {mergedWords(issue.mergedShown, view.merged_count)}
             </button>
             {#if issue.mergedShown}

@@ -3,6 +3,7 @@ import { tick } from "svelte";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { Opened } from "$lib/state/home.svelte";
 import HomePage from "./HomePage.svelte";
+import { when } from "./time";
 
 const NOW = new Date("2026-11-23T12:00:00Z");
 
@@ -35,6 +36,16 @@ it("lists each Repository with when the user opened it, and none for one never o
     "python/cpython opened just now",
     "python/peps opened 2 h ago",
     "a/never",
+  ]);
+});
+
+it("gives each Repository's opened time a tooltip with its date and time", () => {
+  shown();
+
+  const opened = [...document.querySelectorAll(".opened")];
+  expect(opened.map((row) => row.getAttribute("title"))).toEqual([
+    when("2026-11-23T11:59:30Z"),
+    when("2026-11-23T10:00:00Z"),
   ]);
 });
 

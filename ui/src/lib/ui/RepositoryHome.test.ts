@@ -12,6 +12,7 @@ import type { MuteAuthor } from "$lib/state/workbench.svelte";
 import { done, inboxPage, ok, readyFiles, refused, workbenchPage, workbenchRow } from "$lib/testing/fixtures";
 import { keydown, nextTask, pressed } from "$lib/testing/helpers";
 import RepositoryHome from "./RepositoryHome.svelte";
+import { when } from "./time";
 
 /** What the page asks the screen for the palette's rows, from the screen's own exports. */
 type PaletteScreen = Pick<
@@ -144,6 +145,7 @@ const issue = {
   title: "GIL drop during collection",
   state: "OPEN",
   people: ["issue-author", "some-author"],
+  issue_updated_at: "2026-10-07T03:14:00Z",
   updated_at: "2026-11-04T10:00:00Z",
   pull_requests: [{ kind: "pr", ...row, backports: [] }],
   seen: {
@@ -294,6 +296,55 @@ it("moves a time on while the window stays open", async () => {
   expect(screen.getByText("4h ago")).toBeTruthy();
   unmount();
   expect(vi.getTimerCount()).toBe(0);
+});
+
+it("follows the system's clock when the window comes back, however long its timer stood still", async () => {
+  // Only these, because the wait for the first answer runs on the real `setTimeout`.
+  vi.useFakeTimers({ toFake: ["Date", "setInterval", "clearInterval"] });
+  vi.setSystemTime("2026-11-04T13:00:00Z");
+  core.workbench.mockResolvedValue(workbenchPage([issue], { count: 1 }));
+  render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onsettings: () => {} });
+  await screen.findByText("3h ago");
+
+  // The WebView can leave a hidden or minimized window's timer unfired, so a day passes without a tick and
+  // the window's clock follows the system's again once the window is back (#1066).
+  vi.setSystemTime("2026-11-05T13:00:00Z");
+  document.dispatchEvent(new Event("visibilitychange"));
+  await tick();
+  expect(screen.getByText("1d ago")).toBeTruthy();
+
+  vi.setSystemTime("2026-11-06T13:00:00Z");
+  window.dispatchEvent(new Event("focus"));
+  await tick();
+  expect(screen.getByText("2d ago")).toBeTruthy();
+});
+
+it("says in a row's hover what its time measures: the Issue's update and each PR's in its tree", async () => {
+  core.workbench.mockResolvedValue(workbenchPage([issue], { count: 1 }));
+  render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onsettings: () => {} });
+
+  const item = await screen.findByRole("listitem");
+  expect(item.querySelector(".age")?.getAttribute("title")).toBe(
+    [`Issue updated ${when("2026-10-07T03:14:00Z")}`, `#160662 updated ${when("2026-11-04T10:00:00Z")}`].join(
+      "\n",
+    ),
+  );
+});
+
+it("gives a PR's row under an Issue its time in a hover alone, with none on the line", async () => {
+  vi.setSystemTime("2026-11-04T13:00:00Z");
+  const attention = { since: "2026-11-04T10:00:00Z", why: [{ kind: "review_requested" }] };
+  core.workbench.mockResolvedValue(workbenchPage([{ ...issue, attention }]));
+  render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onsettings: () => {} });
+  const fold = await screen.findByRole("button", { name: "PRs of #112564", expanded: false });
+
+  await fireEvent.click(fold);
+  const pullRequest = screen.getAllByRole("listitem")[1] as HTMLElement;
+
+  expect(within(pullRequest).queryByText(/ago/)).toBeNull();
+  expect(pullRequest.querySelector(".row")?.getAttribute("title")).toBe(
+    `Updated ${when("2026-11-04T10:00:00Z")}`,
+  );
 });
 
 it("says an Issue has no PR yet, with no count of none", async () => {

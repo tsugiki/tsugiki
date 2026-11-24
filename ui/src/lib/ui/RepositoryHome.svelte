@@ -75,6 +75,8 @@
     preview,
     summary,
     treeCount,
+    updated,
+    updatedWords,
   } from "./workbench-row";
   import { minuteClock } from "./clock.svelte";
 
@@ -1303,10 +1305,11 @@
   </button>
 {/snippet}
 
-<!-- A PR's or a Backport's row in an unfolded tree: its headline, and its facts under it. -->
+<!-- A PR's or a Backport's row in an unfolded tree: its headline, and its facts under it. The row shows no
+     time of its own; its hover gives its latest update with its date and time (#1066). -->
 {#snippet pullRequest(row: WorkbenchRow, issue: number | undefined)}
   {@const stop: Stop = { number: row.number, kind: "pull_request", issue }}
-  <div class={["row", { greyed: greyed(row) }]} data-row={lineName(stop)}>
+  <div class={["row", { greyed: greyed(row) }]} data-row={lineName(stop)} title={updated(row)}>
     <span class="headline">
       {@render line(stop, row, false, prIcon(row))}
     </span>
@@ -1386,7 +1389,7 @@
         {:else if isMuted(item.hidden)}
           <small class="archived">Muted</small>
         {/if}
-        <small class="age">{ago(item.updated_at, now)}</small>
+        <small class="age" title={updatedWords(item)}>{ago(item.updated_at, now)}</small>
         <!-- Only Issues take a pin (#488). -->
         {#if item.kind === "issue"}
           {@render star({ number: item.number, pinned: item.pinned })}

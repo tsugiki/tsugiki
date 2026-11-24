@@ -20,6 +20,10 @@ pub struct IssueItem {
     pub state: Option<IssueState>,
     /// The Issue's author, then the PRs' authors, with each person once and no backport bot.
     pub people: Vec<Login>,
+    /// The Issue's own latest update, which its row's tooltip lists apart from its PRs' (#1066).
+    #[serde(with = "time::serde::rfc3339")]
+    #[specta(type = String)]
+    pub issue_updated_at: OffsetDateTime,
     /// The latest update of the Issue and its PRs.
     #[serde(with = "time::serde::rfc3339")]
     #[specta(type = String)]
@@ -48,16 +52,18 @@ pub(super) fn issue_item(
     let mute_author = MuteAuthor::of(causes, issue.author.as_ref());
     let pinned = causes.is_pinned(issue.number);
     let people = people(&issue, &pull_requests, conventions);
+    let issue_updated_at = issue.updated_at;
     let updated_at = pull_requests
         .iter()
         .flat_map(TreeEntry::rows)
         .map(|row| row.updated_at)
-        .fold(issue.updated_at, Ord::max);
+        .fold(issue_updated_at, Ord::max);
     WorkbenchItem::Issue(IssueItem {
         number: issue.number,
         title: issue.title,
         state: issue.state,
         people,
+        issue_updated_at,
         updated_at,
         pull_requests,
         seen,

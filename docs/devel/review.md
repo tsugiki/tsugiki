@@ -159,4 +159,5 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
 - The Conversation tab shows each **Review** as one block: its author, state, commit and text, then each of
   its threads as one line (file and line, the first words, the replies, Resolved or Outdated) that opens the
   thread in the Files tab. A Review with no text and no threads is one line, such as "some-reviewer approved
-  at abc1234". A thread itself shows only in the Files tab.
+  at abc1234". A thread itself shows only in the Files tab. Each comment's and Review's age carries its
+  date and time in its tooltip, on the Conversation and in a review thread alike.

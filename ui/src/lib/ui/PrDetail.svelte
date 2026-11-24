@@ -24,6 +24,7 @@
   import ReadOnlyNote from "./ReadOnlyNote.svelte";
   import StateIcon from "./StateIcon.svelte";
   import StateWords from "./StateWords.svelte";
+  import { when } from "./time";
   import { PR_UNREAD } from "./unread-words";
   import { ago, headline, staleReviewLine } from "./workbench-row";
 
@@ -170,7 +171,9 @@
         <span aria-hidden="true">›</span>
       {/if}
       {#if pr.view}
-        <span>{`into ${pr.view.target_branch} · updated ${ago(pr.view.updated_at, now)}`}</span>
+        <span title={when(pr.view.updated_at)}
+          >{`into ${pr.view.target_branch} · updated ${ago(pr.view.updated_at, now)}`}</span
+        >
       {/if}
     </p>
   {/if}

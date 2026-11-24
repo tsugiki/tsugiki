@@ -258,7 +258,9 @@ describe("the Settings dialog", () => {
     await go("python/cpython");
     const repository = screen.getByRole("region", { name: "python/cpython" });
     expect(within(repository).getByRole("heading", { name: "python/cpython" })).toBeTruthy();
-    expect(await within(repository).findByText("Can write · Not synced yet")).toBeTruthy();
+    expect((await within(repository).findByText("Not synced yet")).closest(".facts")?.textContent).toBe(
+      "Can write · Not synced yet",
+    );
     expect(core.repositorySync).toHaveBeenCalledWith("python/cpython");
     expect(within(nav()).getByRole("button", { name: "python/cpython" }).getAttribute("aria-current")).toBe(
       "page",

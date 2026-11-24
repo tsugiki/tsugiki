@@ -16,7 +16,7 @@ import {
   type YourReview,
 } from "$lib/state/workbench.svelte";
 import { counted } from "$lib/state/counted";
-import { elapsed } from "./time";
+import { elapsed, when } from "./time";
 
 const REASONS: Record<WorkReason, string> = {
   review_request: "Review request",
@@ -90,6 +90,32 @@ const AGO_UNITS = { minute: "m", hour: "h", day: "d" } as const;
 export function ago(updatedAt: string, now: Date): string {
   const time = elapsed(updatedAt, now);
   return time.unit === "now" ? "just now" : `${String(time.count)}${AGO_UNITS[time.unit]} ago`;
+}
+
+/** A PR's or a Backport's own latest update, with its date and time, for the hover of a line that shows no
+ * time on itself. */
+export const updated = (row: { updated_at: string }) => `Updated ${when(row.updated_at)}`;
+
+/** The latest update of the PRs `rows` hold, with its date and time, for the hover of the line that folds
+ * the merged ones (#588). Nothing when there's none to fold. */
+export function latestUpdated(rows: WorkbenchRow[]): string | undefined {
+  const times = rows.map((row) => Date.parse(row.updated_at));
+  if (times.length === 0) return undefined;
+  return updated({ updated_at: new Date(Math.max(...times)).toISOString() });
+}
+
+/** The hover of a row's age, saying what it measures with each update's date and time: an Issue lists its
+ * own update and each PR's in its tree, so the user can see which update put the item in the list, and
+ * when; a Standalone PR or Backport names its own update alone. */
+export function updatedWords(item: ListedItem): string {
+  if (item.kind !== "issue") {
+    const what = item.kind === "standalone_backport" ? "Backport" : "PR";
+    return `${what} updated ${when(item.updated_at)}`;
+  }
+  const rows = treeRows(item.pull_requests).map(
+    (row) => `#${String(row.number)} updated ${when(row.updated_at)}`,
+  );
+  return [`Issue updated ${when(item.issue_updated_at)}`, ...rows].join("\n");
 }
 
 /** How many comments an Issue, a PR or a review thread has. */

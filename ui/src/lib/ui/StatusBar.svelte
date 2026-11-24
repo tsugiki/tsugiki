@@ -23,6 +23,7 @@
     pausedWords,
     pointsBackWords,
     questionWords,
+    syncedWhen,
     syncedWords,
     syncingWords,
   } from "./synced";
@@ -254,7 +255,9 @@
   <!-- Outside the live region, or a screen reader would read this out each minute, and each page of a
        sync. -->
   {#if lastSync !== null && showStatus}
-    <button class:offline onclick={onrefresh}>{syncWords}</button>
+    <button class:offline onclick={onrefresh} title={syncing === null ? syncedWhen(lastSync.at) : undefined}
+      >{syncWords}</button
+    >
   {/if}
   <!-- Outside the live region too, as it changes with each answer from GitHub. A screen reader can't reach a
        tooltip, so it reads the words and the tooltip from a copy of its own, once. -->

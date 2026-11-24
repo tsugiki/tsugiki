@@ -1,18 +1,29 @@
 import { expect, it } from "vitest";
-import type { CantCheck, IssueItem, WorkbenchRow, Why, YourReview } from "$lib/state/workbench.svelte";
+import type {
+  CantCheck,
+  IssueItem,
+  ListedItem,
+  WorkbenchRow,
+  Why,
+  YourReview,
+} from "$lib/state/workbench.svelte";
 import { workbenchRow } from "$lib/testing/fixtures";
+import { when } from "./time";
 import {
   ago,
   backportWords,
   details,
   detailWords,
   headline,
+  latestUpdated,
   peopleOf,
   preview,
   prStateWords,
   staleReviewLine,
   summary,
   treeCount,
+  updated,
+  updatedWords,
 } from "./workbench-row";
 
 /** The commit the user's Review covered. */
@@ -36,12 +47,13 @@ const row: WorkbenchRow = workbenchRow(160662, {
 });
 
 const issue: IssueItem = {
-  number: 112564,
-  title: "GIL drop during collection",
+  number: 7,
+  title: "It crashes",
   state: "OPEN",
   people: ["issue-author", "some-author"],
   mute_author: { kind: "mute", login: "issue-author" },
   pinned: false,
+  issue_updated_at: "2026-11-04T10:00:00Z",
   updated_at: "2026-11-04T10:00:00Z",
   pull_requests: [
     { kind: "pr", ...row, backports: [] },
@@ -178,7 +190,7 @@ it("counts one PR in the singular", () => {
 });
 
 it("starts an Issue with its number and title", () => {
-  expect(headline(issue)).toBe("#112564 GIL drop during collection");
+  expect(headline(issue)).toBe("#7 It crashes");
 });
 
 it("names the people an Issue involves, or a PR's author", () => {
@@ -396,4 +408,46 @@ it.each([
 
 it("names a Backport by its branch and state", () => {
   expect(backportWords({ ...row, state: "MERGED", target_branch: "3.14" })).toBe("3.14 Merged");
+});
+
+it("says when a PR or a Backport last moved, for the hover of a line that shows no time on itself", () => {
+  expect(updated(row)).toBe(`Updated ${when("2026-11-04T10:00:00Z")}`);
+});
+
+it("names the latest update of the PRs a fold holds, and nothing when it holds none", () => {
+  const moved = { ...row, number: 160663, updated_at: "2026-11-05T08:00:00Z" };
+  expect(latestUpdated([row, moved])).toBe(`Updated ${when("2026-11-05T08:00:00Z")}`);
+  expect(latestUpdated([])).toBeUndefined();
+});
+
+it("lists an Issue's own update and each PR's in its tree, each with its date and time", () => {
+  const backport = { ...row, number: 160664, updated_at: "2026-11-05T08:00:00Z", backport: "bot" as const };
+  const lone = { ...backport, number: 160665 };
+  const tree: ListedItem = {
+    ...unmarked,
+    kind: "issue",
+    ...issue,
+    issue_updated_at: "2026-10-07T03:14:00Z",
+    pull_requests: [
+      { kind: "pr", ...row, backports: [backport] },
+      { kind: "backport", ...lone },
+    ],
+  };
+
+  expect(updatedWords(tree)).toBe(
+    [
+      `Issue updated ${when("2026-10-07T03:14:00Z")}`,
+      `#160662 updated ${when("2026-11-04T10:00:00Z")}`,
+      `#160664 updated ${when("2026-11-05T08:00:00Z")}`,
+      `#160665 updated ${when("2026-11-05T08:00:00Z")}`,
+    ].join("\n"),
+  );
+});
+
+it("names a Standalone PR's or Backport's own update alone, for the hover of its row", () => {
+  const pr: ListedItem = { ...unmarked, ...row, kind: "standalone_pr", backports: [] };
+  expect(updatedWords(pr)).toBe(`PR updated ${when("2026-11-04T10:00:00Z")}`);
+
+  const backport: ListedItem = { ...unmarked, ...row, kind: "standalone_backport", backport: "bot" };
+  expect(updatedWords(backport)).toBe(`Backport updated ${when("2026-11-04T10:00:00Z")}`);
 });

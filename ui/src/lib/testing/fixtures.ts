@@ -110,6 +110,7 @@ export const listedIssue = (
   title: `Issue ${String(number)}`,
   state: "OPEN",
   people: [],
+  issue_updated_at: "2026-11-04T10:00:00Z",
   updated_at: "2026-11-04T10:00:00Z",
   pull_requests: [],
   seen: { mark: { numbers: [number], up_to: null, findings: [] }, state: "seen" },

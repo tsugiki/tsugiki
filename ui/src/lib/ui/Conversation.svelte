@@ -5,6 +5,7 @@
   import type { PullRequestContent, Review, ReviewState, ThreadLine } from "$lib/state/pr-view.svelte";
   import { REASONS } from "./hidden";
   import RenderedHtml from "./RenderedHtml.svelte";
+  import { when } from "./time";
   import { ago } from "./workbench-row";
 
   // An Issue's or a PR's description, then its recent comments and a PR's Reviews in time order (#156). A
@@ -92,8 +93,9 @@
 
 <!-- A Review's author, its state as a chip, then the rest: the words read as one line, as before. -->
 {#snippet reviewLine(review: Review)}<b>{review.author ?? "deleted user"}</b>
-  <span class={["chip", review.state.toLowerCase()]}>{DID[review.state]}</span><span class="muted"
-    >{reviewRest(review)}</span
+  <span class={["chip", review.state.toLowerCase()]}>{DID[review.state]}</span><span
+    class="muted"
+    title={when(review.submitted_at)}>{reviewRest(review)}</span
   >{/snippet}
 
 <div class="conversation">
@@ -116,8 +118,9 @@
     {#if entry.kind === "comment"}
       <article>
         <header>
-          <b>{entry.comment.author ?? "deleted user"}</b><span class="muted"
-            >{` · ${ago(entry.comment.created_at, now)}`}</span
+          <b>{entry.comment.author ?? "deleted user"}</b><span
+            class="muted"
+            title={when(entry.comment.created_at)}>{` · ${ago(entry.comment.created_at, now)}`}</span
           >
         </header>
         <div class="body">{@render body(entry.id, entry.comment.body_html, entry.comment.hidden)}</div>

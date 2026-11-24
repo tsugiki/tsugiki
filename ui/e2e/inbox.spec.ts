@@ -25,6 +25,7 @@ const issue = (number: number): ListedItem => {
     people: ["issue-author"],
     mute_author: { kind: "mute", login: "issue-author" },
     pinned: false,
+    issue_updated_at: updated_at,
     updated_at,
     pull_requests: [
       {

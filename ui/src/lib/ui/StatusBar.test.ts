@@ -1,8 +1,9 @@
-import { fireEvent, render, screen } from "@testing-library/svelte";
+import { cleanup, fireEvent, render, screen } from "@testing-library/svelte";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { openLink } from "$lib/state/browser";
 import { HOUR_POINTS, OCTOCAT_ONLINE, statusOf } from "$lib/testing/fixtures";
 import StatusBar from "./StatusBar.svelte";
+import { when } from "./time";
 
 vi.mock("$lib/state/browser", () => ({ openLink: vi.fn() }));
 
@@ -36,6 +37,22 @@ describe("StatusBar's last sync", () => {
     render(StatusBar, { status: online, lastSync });
     await vi.advanceTimersByTimeAsync(60_000);
     expect(screen.getByRole("button").textContent).toBe("Synced 3 min ago");
+  });
+
+  it("gives the last sync a tooltip with its date and time, and none while one is under way", () => {
+    vi.useFakeTimers({ now: new Date("2026-11-05T12:02:00Z") });
+    const lastSync = { repository, at: "2026-11-05T12:00:00Z" };
+    render(StatusBar, { status: online, lastSync });
+    expect(screen.getByRole("button").getAttribute("title")).toBe(when("2026-11-05T12:00:00Z"));
+    cleanup();
+
+    const underWay = {
+      open: { repository, part: "trees" as const, pages: 1 },
+      paused_until: null,
+      elsewhere: [],
+    };
+    render(StatusBar, { status: online, lastSync, syncActivity: underWay });
+    expect(screen.getByRole("button").getAttribute("title")).toBeNull();
   });
 
   it("stops its clock when it goes", () => {

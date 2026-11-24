@@ -3,6 +3,7 @@ import { expect, it, vi } from "vitest";
 import type { IssueContent } from "$lib/state/issue-view.svelte";
 import type { PullRequestContent, Review, ThreadLine } from "$lib/state/pr-view.svelte";
 import Conversation from "./Conversation.svelte";
+import { when } from "./time";
 
 const NOW = new Date("2026-11-04T12:00:00Z");
 
@@ -125,6 +126,29 @@ it("shows each Review as a block in time order among the comments, with a line f
     "Lib/ast.py:12 Why not a set? 2 replies Resolved",
     "Lib/test/test_ast.py Why not a set? 1 reply Outdated",
   ]);
+});
+
+it("gives each comment's and each Review's time a tooltip with its date and time", () => {
+  const container = shown(
+    reviewed([review({ state: "APPROVED", commit: null, submitted_at: "2026-11-04T09:00:00Z" })], {
+      comments: [
+        {
+          id: 1,
+          author: "pr-author",
+          created_at: "2026-11-04T09:30:00Z",
+          body_html: "<p>Which one?</p>",
+          hidden: null,
+        },
+      ],
+    }),
+  );
+
+  expect(container.querySelector("p.review .muted")?.getAttribute("title")).toBe(
+    when("2026-11-04T09:00:00Z"),
+  );
+  expect(container.querySelector("article header .muted")?.getAttribute("title")).toBe(
+    when("2026-11-04T09:30:00Z"),
+  );
 });
 
 it("opens a thread from its place, for a PR", async () => {

@@ -1862,6 +1862,8 @@ export type IssueItem_Deserialize = {
 	state?: IssueState | null,
 	/**  The Issue's author, then the PRs' authors, with each person once and no backport bot. */
 	people: Login[],
+	/**  The Issue's own latest update, which its row's tooltip lists apart from its PRs' (#1066). */
+	issue_updated_at: string,
 	/**  The latest update of the Issue and its PRs. */
 	updated_at: string,
 	pull_requests: TreeEntry_Deserialize[],
@@ -1881,6 +1883,8 @@ export type IssueItem_Serialize = {
 	state: IssueState | null,
 	/**  The Issue's author, then the PRs' authors, with each person once and no backport bot. */
 	people: Login[],
+	/**  The Issue's own latest update, which its row's tooltip lists apart from its PRs' (#1066). */
+	issue_updated_at: string,
 	/**  The latest update of the Issue and its PRs. */
 	updated_at: string,
 	pull_requests: TreeEntry_Serialize[],

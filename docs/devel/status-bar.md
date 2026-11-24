@@ -50,7 +50,8 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
     answers or the request fails, and the status shows a failure, such as Offline. While Tsugiki asks `gh`
     for the token, which no request can go without, it says "Waiting for gh to give the token, 4 s" in
     the same place ([token.md](token.md)).
-  - Sync status, which a click refreshes: "Synced 2 min ago" or "Not synced yet" for the open Repository,
+  - Sync status, which a click refreshes: "Synced 2 min ago", with the date and time of the last sync in
+    its tooltip, or "Not synced yet" for the open Repository,
     and a first sync's part and progress in its place ([sync.md](sync.md)). The background work follows
     ("· python/peps syncing", "· Cloning python/cpython 42%", "· Cloning python/cpython starts once GitHub
     answers"). It shows once a Repository is open.

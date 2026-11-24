@@ -27,3 +27,7 @@ export function agoWords(since: string, now: Date): string {
   const time = elapsed(since, now);
   return time.unit === "now" ? "just now" : `${String(time.count)} ${AGO_UNITS[time.unit]} ago`;
 }
+
+/** The date and time of `at`, as the tooltip of a time on show gives them: "Nov 23, 2026, 1:20 AM". */
+export const when = (at: string) =>
+  new Date(at).toLocaleString([], { dateStyle: "medium", timeStyle: "short" });

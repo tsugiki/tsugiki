@@ -6,6 +6,7 @@ import { PanesState } from "$lib/state/panes.svelte";
 import { PrViewState, type PrView } from "$lib/state/pr-view.svelte";
 import { done, ok, readyFiles, refused, workbenchRow } from "$lib/testing/fixtures";
 import PrDetail from "./PrDetail.svelte";
+import { when } from "./time";
 
 const core = vi.hoisted(() => ({
   pullRequest: vi.fn(),
@@ -81,19 +82,20 @@ const NOW = new Date("2026-11-04T11:00:00Z");
 /** The PR on show, which stops after each test, as its Files tab loads once it shows. */
 let onShow: PrViewState | undefined;
 
-/** Shows the PR as opened from Issue `issue`, in the panes laid out as `panes` says. */
+/** Shows the PR as opened from Issue `issue`, in the panes laid out as `panes` say, at `now`. */
 const shown = async (
   answer: PrView | null,
   issue: number | undefined,
   onback = vi.fn(),
   onmark = vi.fn(),
   panes = new PanesState(),
+  now: Date = NOW,
 ) => {
   core.pullRequest.mockResolvedValue(ok(answer));
   const state = new PrViewState("python/cpython", 11, issue, panes);
   onShow = state;
   await state.load();
-  render(PrDetail, { repository: "python/cpython", pr: state, panes, now: NOW, onback, onmark });
+  render(PrDetail, { repository: "python/cpython", pr: state, panes, now, onback, onmark });
   return state;
 };
 
@@ -138,6 +140,23 @@ it("says over the title which Issue the PR is under, where it goes and when it c
   );
   expect(document.querySelector("p.byline")?.textContent).toBe(
     `pr-author ${document.querySelector(".words")?.textContent ?? ""}`,
+  );
+});
+
+it("gives the PR's updated time in a tooltip with its date and time", async () => {
+  await shown(view, 10);
+
+  const updated = [...document.querySelectorAll(".crumb span")].find((span) =>
+    span.textContent?.includes("updated"),
+  );
+  expect(updated?.getAttribute("title")).toBe(when("2026-11-04T10:00:00Z"));
+});
+
+it("says how long ago the PR moved once the clock has moved on by a day", async () => {
+  await shown(view, 10, vi.fn(), vi.fn(), new PanesState(), new Date("2026-11-05T11:00:00Z"));
+
+  expect(document.querySelector(".crumb")?.textContent.replace(/\s+/g, " ").trim()).toBe(
+    "gh-10 › into main · updated 1d ago",
   );
 });
 

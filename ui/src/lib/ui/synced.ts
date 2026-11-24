@@ -2,7 +2,7 @@
 // Repositories syncing, and for a mirror's clone and what keeps one from starting.
 import { counted } from "$lib/state/counted";
 import type { Cloning, MirrorProblem, RepositoryMirror, SyncActivity } from "$lib/state/status.svelte";
-import { agoWords } from "./time";
+import { agoWords, when } from "./time";
 
 type OpenSync = NonNullable<SyncActivity["open"]>;
 
@@ -14,6 +14,10 @@ type CloneUnderWay = Exclude<Cloning["progress"], { stage: "starting" }>;
 export function syncedWords(at: string | null, now: Date): string {
   return at === null ? "Not synced yet" : `Synced ${agoWords(at, now)}`;
 }
+
+/** The date and time that last sync happened, for the tooltip of the words above, or nothing before the
+ * first one. */
+export const syncedWhen = (at: string | null) => (at === null ? undefined : when(at));
 
 const PART_WORDS = {
   your_work: "Syncing your work",

@@ -5,6 +5,7 @@ import { settingsAsk } from "$lib/state/settings-ask.svelte";
 import type { TreeEntry } from "$lib/state/workbench.svelte";
 import { done, ok, refused, workbenchRow } from "$lib/testing/fixtures";
 import IssueDetail from "./IssueDetail.svelte";
+import { when } from "./time";
 
 const core = vi.hoisted(() => ({
   issue: vi.fn(),
@@ -48,6 +49,7 @@ const view: IssueView = {
   people: ["issue-author"],
   mute_author: { kind: "mute", login: "issue-author" },
   pinned: false,
+  issue_updated_at: "2026-11-04T10:00:00Z",
   updated_at: "2026-11-04T10:00:00Z",
   author: "issue-author",
   assignees: [],
@@ -290,6 +292,37 @@ it("shows each Origin PR's state, CI and review state, and folds its Backports i
   const backports = screen.getByText(/Backports:/);
   expect(backports.textContent).toContain("3.14 Merged");
   expect(backports.textContent).toContain("3.13 Open");
+});
+
+it("gives each PR's line in the tree its time in a tooltip, Backports included", async () => {
+  await shown(view);
+
+  const title = screen.getByRole("button", { name: "#10 gh-7: Fix it" }).getAttribute("title");
+  expect(title).toBe(["gh-7: Fix it", `Updated ${when("2026-11-04T10:00:00Z")}`].join("\n"));
+  expect(screen.getByRole("button", { name: "3.13 Open" }).getAttribute("title")).toBe(
+    `Updated ${when("2026-11-04T10:00:00Z")}`,
+  );
+});
+
+it("gives the folded line the latest update of the PRs it folds", async () => {
+  const later = "2026-11-05T08:00:00Z";
+  await shown({
+    ...withMerged,
+    merged: [
+      {
+        kind: "pr",
+        ...row(20),
+        title: "gh-7: First fix",
+        updated_at: later,
+        backports: [{ ...row(21), target_branch: "3.14", backport: "bot" }],
+      },
+      { kind: "pr", ...row(22), title: "gh-7: Second fix", backports: [] },
+    ],
+  });
+
+  expect(screen.getByRole("button", { name: "Show 3 merged PRs" }).getAttribute("title")).toBe(
+    `Updated ${when(later)}`,
+  );
 });
 
 it("shows a Stale review in the danger tone, with the files changed since the Review in its hover", async () => {

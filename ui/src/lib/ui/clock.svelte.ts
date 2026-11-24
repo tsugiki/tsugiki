@@ -33,16 +33,28 @@ export function secondClock(since: () => string | null, after: number): { readon
 }
 
 /** The time now, set again each minute while the component that calls this as it starts is on screen, so
- * words such as "3m ago" move on between syncs. */
+ * words such as "3m ago" move on between syncs. A window left open, hidden or minimized, can have its
+ * timers throttled or stopped by the WebView, so the clock also follows the system's each time the window
+ * comes back into view or takes the focus (#1066). */
 export function minuteClock(): Date {
   // SvelteDate extends the Date there was at import, so a test's fake clock reaches it only through `now()`.
   const now = new SvelteDate(Date.now());
   $effect(() => {
-    const ticking = setInterval(() => {
+    const tick = () => {
       now.setTime(Date.now());
-    }, MINUTE_MS);
+    };
+    const ticking = setInterval(tick, MINUTE_MS);
+    // The window's own returns: a hidden window's visibility becomes "visible" again, and a minimized
+    // one takes the focus.
+    const back = () => {
+      if (!document.hidden) tick();
+    };
+    document.addEventListener("visibilitychange", back);
+    window.addEventListener("focus", back);
     return () => {
       clearInterval(ticking);
+      document.removeEventListener("visibilitychange", back);
+      window.removeEventListener("focus", back);
     };
   });
   return now;

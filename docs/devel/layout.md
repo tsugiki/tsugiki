@@ -26,6 +26,9 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
     - the Issue's number and title, with the number of PRs and the time of the last update
     - a preview of what is waiting on the user
 
+    The list, and the rest of the window, show a time as "… ago", with its date and time in a tooltip
+    ([#1066](https://github.com/tsugiki/tsugiki/issues/1066)).
+
     A header over the list names the view on show. In the Workbench, a Built-in view, a Filter or Pinned
     issues, a switch at the header's far end, or "Sort by Attention" and "Sort by Last Update" in the command
     palette, picks one of two orders, and `machine.toml` keeps the choice:
@@ -176,9 +179,7 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
         line sits indented on the panel colour.
       - The description, each comment and each Review with a body sit in a box with 6 px corners: a 13 px
         header on the panel colour with the author, the age and a Review's state chip, green for an
-        approval and red for changes requested, then the body. Every time the window shows as "… ago" keeps
-        that short form, and gives its date and time in a tooltip
-        ([#1066](https://github.com/tsugiki/tsugiki/issues/1066)).
+        approval and red for changes requested, then the body.
       - A PR's state words are 11.5 px, joined by a muted "·": a Review request in the accent colour at
         weight 600, failed CI in the danger colour and passed CI in green.
       - In a description or comment, code sits on the panel colour, a quote has a muted line on its left,

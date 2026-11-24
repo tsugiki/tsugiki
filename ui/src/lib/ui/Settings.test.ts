@@ -259,9 +259,8 @@ describe("the Settings dialog", () => {
     const repository = screen.getByRole("region", { name: "python/cpython" });
     expect(within(repository).getByRole("heading", { name: "python/cpython" })).toBeTruthy();
     expect(
-      await within(repository).findByText(
-        (_, element) =>
-          Boolean(element?.matches("p.facts")) && element?.textContent?.includes("Not synced yet"),
+      await within(repository).findByText((_, element) =>
+        Boolean(element?.matches("p.facts") && element.textContent?.includes("Not synced yet")),
       ),
     ).toBeTruthy();
     expect(core.repositorySync).toHaveBeenCalledWith("python/cpython");

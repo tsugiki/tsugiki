@@ -97,14 +97,20 @@ function rowsOf(entry: TreeEntry): WorkbenchRow[] {
   return entry.kind === "pr" ? [entry, ...entry.backports] : [entry];
 }
 
-/** The latest update of the PRs `entries` hold, or nothing while they hold none (#1066). */
-export function latestUpdateOf(entries: TreeEntry[]): string | undefined {
-  return entries
-    .flatMap((entry) => rowsOf(entry).map((row) => row.updated_at))
-    .reduce<string | undefined>(
-      (latest, at) => (latest === undefined || Date.parse(at) > Date.parse(latest) ? at : latest),
-      undefined,
-    );
+/**
+ * The latest update of the PRs `entries` hold (#1066). The fold of the merged PRs shows only when it holds
+ * some, so the caller knows they hold at least one.
+ */
+export function latestUpdateOf(entries: TreeEntry[]): string {
+  let latest = "";
+  for (const entry of entries) {
+    for (const row of rowsOf(entry)) {
+      if (latest === "" || Date.parse(row.updated_at) > Date.parse(latest)) {
+        latest = row.updated_at;
+      }
+    }
+  }
+  return latest;
 }
 
 /**

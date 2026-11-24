@@ -275,11 +275,10 @@
             {@render tree(view.pull_requests, "PRs")}
           {/if}
           {#if view.merged_count > 0}
-            {@const mergedTip = latestUpdateOf(view.merged)}
             <button
               class="link fold"
               aria-expanded={issue.mergedShown}
-              title={mergedTip === undefined ? undefined : tip("Updated", mergedTip)}
+              title={tip("Updated", latestUpdateOf(view.merged))}
               onclick={() => issue.toggleMerged()}
             >
               {mergedWords(issue.mergedShown, view.merged_count)}

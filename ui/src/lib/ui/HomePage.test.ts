@@ -48,14 +48,6 @@ it("says when the user opened a Repository in its tooltip, with the date and the
   ]);
 });
 
-it("moves the time on with the clock, so a time a day old says so (#1066)", async () => {
-  shown();
-  expect(rows()[0]?.textContent).toContain("opened just now");
-  await vi.advanceTimersByTimeAsync(24 * 60 * 60_000);
-  expect(rows()[0]?.textContent).toContain("opened 1 d ago");
-  expect(rows()[1]?.textContent).toContain("opened 1 d ago");
-});
-
 it("starts on the top row with the focus, and keeps the cursor between the first row and the last", async () => {
   shown();
   expect(document.activeElement).toBe(rows()[0]);

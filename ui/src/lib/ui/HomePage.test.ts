@@ -38,6 +38,18 @@ it("lists each Repository with when the user opened it, and none for one never o
   ]);
 });
 
+it("gives each opened time its date and time in the tooltip", () => {
+  shown();
+  const opened = rows().map((row) => row.querySelector(".opened")?.getAttribute("title") ?? null);
+  expect(opened[1]).toBe(
+    new Date("2026-11-23T10:00:00Z").toLocaleString([], {
+      dateStyle: "medium",
+      timeStyle: "short",
+    }),
+  );
+  expect(opened[2]).toBeNull();
+});
+
 it("starts on the top row with the focus, and keeps the cursor between the first row and the last", async () => {
   shown();
   expect(document.activeElement).toBe(rows()[0]);

@@ -173,6 +173,29 @@ it("shows a Review with no body and no threads as one line", () => {
   ]);
 });
 
+it("gives a comment's and a Review's age their dates and times in the tooltips", () => {
+  const container = shown(
+    reviewed([review({ state: "APPROVED", commit: null })], {
+      comments: [
+        {
+          id: 1,
+          author: "pr-author",
+          created_at: "2026-11-04T10:00:00Z",
+          body_html: "<p>Done</p>",
+          hidden: null,
+        },
+      ],
+    }),
+  );
+
+  const when = new Date("2026-11-04T10:00:00Z").toLocaleString([], {
+    dateStyle: "medium",
+    timeStyle: "short",
+  });
+  expect(container.querySelector("article header .muted")?.getAttribute("title")).toBe(when);
+  expect(container.querySelector("p.review .muted")?.getAttribute("title")).toBe(when);
+});
+
 it("says a dismissed Review was dismissed when GitHub no longer has its commit", () => {
   const container = shown(reviewed([review({ state: "DISMISSED", commit: null })]));
 

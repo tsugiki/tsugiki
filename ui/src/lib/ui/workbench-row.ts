@@ -16,7 +16,7 @@ import {
   type YourReview,
 } from "$lib/state/workbench.svelte";
 import { counted } from "$lib/state/counted";
-import { elapsed } from "./time";
+import { elapsed, whenWords } from "./time";
 
 const REASONS: Record<WorkReason, string> = {
   review_request: "Review request",
@@ -91,6 +91,31 @@ export function ago(updatedAt: string, now: Date): string {
   const time = elapsed(updatedAt, now);
   return time.unit === "now" ? "just now" : `${String(time.count)}${AGO_UNITS[time.unit]} ago`;
 }
+
+/** One line of a row's age tooltip: which item it names, then the date and time it last moved. */
+const updatedLine = (item: string, at: string) => `${item} last updated ${whenWords(at)}`;
+
+/** A row's age tooltip (#1066): the update the age measures, then each update it covers, each with its date
+ * and time, so the user can see which one put the item in the list. An Issue's row lists its tree, Backports
+ * included; a PR's lists its Backports. */
+export function ageTitle(item: ListedItem): string {
+  const rest =
+    item.kind === "issue"
+      ? treeRows(item.pull_requests)
+      : item.kind === "standalone_pr"
+        ? item.backports
+        : [];
+  return [
+    updatedLine(
+      item.kind === "issue" ? `Issue #${String(item.number)}` : `PR #${String(item.number)}`,
+      item.updated_at,
+    ),
+    ...rest.map((row) => updatedLine(`PR #${String(row.number)}`, row.updated_at)),
+  ].join("\n");
+}
+
+/** A PR's own time, for a tooltip on a line that shows no age: the date and time it last moved. */
+export const updatedTitle = (row: { updated_at: string }) => `last updated ${whenWords(row.updated_at)}`;
 
 /** How many comments an Issue, a PR or a review thread has. */
 export const commentCount = (count: number) => counted(count, "comment", "comments");

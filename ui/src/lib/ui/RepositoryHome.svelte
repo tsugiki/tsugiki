@@ -68,6 +68,7 @@
   import UnstoredDetail from "./UnstoredDetail.svelte";
   import {
     ago,
+    ageTitle,
     detailWords,
     headline,
     offersMarkSeen,
@@ -75,6 +76,7 @@
     preview,
     summary,
     treeCount,
+    updatedTitle,
   } from "./workbench-row";
   import { minuteClock } from "./clock.svelte";
 
@@ -1303,14 +1305,15 @@
   </button>
 {/snippet}
 
-<!-- A PR's or a Backport's row in an unfolded tree: its headline, and its facts under it. -->
+<!-- A PR's or a Backport's row in an unfolded tree: its headline, and its facts under it, whose hover gives
+     the time the PR last moved (#1066), as its line shows none. -->
 {#snippet pullRequest(row: WorkbenchRow, issue: number | undefined)}
   {@const stop: Stop = { number: row.number, kind: "pull_request", issue }}
   <div class={["row", { greyed: greyed(row) }]} data-row={lineName(stop)}>
     <span class="headline">
       {@render line(stop, row, false, prIcon(row))}
     </span>
-    <small class="facts">{@render facts(row)}</small>
+    <small class="facts" title={updatedTitle(row)}>{@render facts(row)}</small>
   </div>
 {/snippet}
 
@@ -1386,7 +1389,8 @@
         {:else if isMuted(item.hidden)}
           <small class="archived">Muted</small>
         {/if}
-        <small class="age">{ago(item.updated_at, now)}</small>
+        <!-- The age's hover says what it measures and when each update it covers happened (#1066). -->
+        <small class="age" title={ageTitle(item)}>{ago(item.updated_at, now)}</small>
         <!-- Only Issues take a pin (#488). -->
         {#if item.kind === "issue"}
           {@render star({ number: item.number, pinned: item.pinned })}

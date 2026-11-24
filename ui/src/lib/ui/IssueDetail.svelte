@@ -12,7 +12,13 @@
   import ReadOnlyNote from "./ReadOnlyNote.svelte";
   import StateIcon from "./StateIcon.svelte";
   import StateWords from "./StateWords.svelte";
-  import { ago, backportWords, commentCount, headline } from "./workbench-row";
+  import { whenWords } from "./time";
+  import { ago, backportWords, commentCount, headline, updatedTitle } from "./workbench-row";
+
+  /** The hover of the line the fully merged PRs fold into: the latest update of the PRs it folds (#588,
+   * #1066). An Issue whose PRs have all merged still has one, so the fold is never empty here. */
+  const mergedTitle = (view: IssueView) =>
+    updatedTitle(view.merged.reduce((latest, row) => (row.updated_at > latest.updated_at ? row : latest)));
 
   let {
     repository,
@@ -116,8 +122,7 @@
     const who = view.author ?? "deleted user";
     const at = view.content?.opened_at;
     if (!at) return { who, words: "", title: undefined };
-    const title = new Date(at).toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
-    return { who, words: ` opened this ${ago(at, now)}`, title };
+    return { who, words: ` opened this ${ago(at, now)}`, title: whenWords(at) };
   };
 
   /** The rest of the author line: how many comments, once Tsugiki has read them, and whom it is assigned
@@ -219,7 +224,9 @@
       {#snippet tree(entries: TreeEntry[], name: string)}
         <ul role="list" aria-label={name}>
           {#each entries as entry (entry.number)}
-            <li>
+            <!-- The PR's time sits in the line's hover (#1066), as the line shows none. A child's own hover,
+                 the branch's or the title's, stands while the pointer is on it. -->
+            <li title={updatedTitle(entry)}>
               <span class="pr">
                 <StateIcon icon={prIcon(entry)} />
                 <code class="branch" title={entry.target_branch}>{entry.target_branch}</code>
@@ -235,7 +242,7 @@
                 <small class="backports">
                   Backports:
                   {#each entry.backports as backport (backport.number)}
-                    <span>
+                    <span title={updatedTitle(backport)}>
                       <StateIcon icon={prIcon(backport)} />
                       <button
                         class={["link", { attention: view.needs_attention.includes(backport.number) }]}
@@ -274,7 +281,12 @@
             {@render tree(view.pull_requests, "PRs")}
           {/if}
           {#if view.merged_count > 0}
-            <button class="link fold" aria-expanded={issue.mergedShown} onclick={() => issue.toggleMerged()}>
+            <button
+              class="link fold"
+              aria-expanded={issue.mergedShown}
+              title={mergedTitle(view)}
+              onclick={() => issue.toggleMerged()}
+            >
               {mergedWords(issue.mergedShown, view.merged_count)}
             </button>
             {#if issue.mergedShown}

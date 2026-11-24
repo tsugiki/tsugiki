@@ -23,7 +23,8 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
   - **Issue list** (middle): one item per Issue for whatever is selected in the Sidebar, laid out like mail.
     **Standalone PRs** and **Dependency updates** are items of their own beside the Issues. Each item shows:
     - the people involved
-    - the Issue's number and title, with the number of PRs and the time of the last update
+    - the Issue's number and title, with the number of PRs and the time of the last update, which measures
+      GitHub's last change to the item and the PRs in its tree
     - a preview of what is waiting on the user
 
     A header over the list names the view on show. In the Workbench, a Built-in view, a Filter or Pinned
@@ -145,7 +146,10 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
       place; a state at 0 shows in muted colour. The count of PRs that Need attention comes last,
       after "Bold" in bold. A screen reader reads the row as a list named "PR counts", each entry its word
       and count, "Open, 1" or "Needs attention, 1", and skips the icons, the dots and "Bold". Each PR's line
-      starts with its branch and ends with its author, and a PR that Needs attention shows in bold. The
+      starts with its branch and ends with its author, and a PR that Needs attention shows in bold. Each
+      PR's line, Backports included, keeps its last update in its tooltip, with no time on the line, and the
+      line the fully merged PRs fold into gives the latest update of the PRs it folds in its tooltip
+      ([#588](https://github.com/tsugiki/tsugiki/issues/588)). The
       worklist's line for an Issue still says "2 open of 3 PRs", as it has no room for five counts.
     - The PR view shows Conversation and Files as tabs, and opens on Conversation. `Ctrl+PageDown` and
       `Ctrl+PageUp` switch tabs, and so does `Enter` on the PR's row once the PR is open.
@@ -164,8 +168,9 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
       drops the fetch's answer, though the database still keeps what it brought.
     - **Look**, which the prototype settled, with colours from the Theme's tokens ([themes.md](themes.md)):
       - A muted 12 px line over the title gives the Issue's state, or the Issue a PR was opened under, the
-        branch it goes into and when it changed. The title is 18 px. The 13 px line under it names the
-        author in the text colour at weight 600, and a PR's state words follow.
+        branch it goes into and when it changed, with the date and time of the change in the tooltip
+        ([#1066](https://github.com/tsugiki/tsugiki/issues/1066)). The title is 18 px. The 13 px line under it
+        names the author in the text colour at weight 600, and a PR's state words follow.
       - The Issue view keeps to 900 px and the Conversation to 860 px, so lines stay short in a wide
         window. Section headings, "Origin PRs" and "Description", are 13 px with 18 px above.
       - The PR tree is a box with 6 px corners and a line between rows. Each row is 13 px, with the number
@@ -173,7 +178,8 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
         line sits indented on the panel colour.
       - The description, each comment and each Review with a body sit in a box with 6 px corners: a 13 px
         header on the panel colour with the author, the age and a Review's state chip, green for an
-        approval and red for changes requested, then the body.
+        approval and red for changes requested, then the body. The age keeps the date and time in its
+        tooltip ([#1066](https://github.com/tsugiki/tsugiki/issues/1066)).
       - A PR's state words are 11.5 px, joined by a muted "·": a Review request in the accent colour at
         weight 600, failed CI in the danger colour and passed CI in green.
       - In a description or comment, code sits on the panel colour, a quote has a muted line on its left,
@@ -241,7 +247,12 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
       13 px, 7 px above and below, with a line between items: the people; the state icon, the number in the
       code font, the title, then the PR count and the age in muted 12 px; and the preview in muted 12 px.
       An Issue with nothing waiting on the user counts its open PRs on the third line, or says it has none
-      yet, and a PR gives its facts there. An ellipsis cuts a long title, people or preview.
+      yet, and a PR gives its facts there. An ellipsis cuts a long title, people or preview. The age keeps
+      its short form, and its tooltip says what it measures and when: an Issue's row lists the update of the
+      Issue and of each PR in its tree, Backports included, each with its date and time, so the user can see
+      which update put the item in the list, and when. A PR's row under an unfolded Issue shows no time on
+      its line and gives its time in its tooltip alone
+      ([#1066](https://github.com/tsugiki/tsugiki/issues/1066)).
     - An item that Needs attention looks like unread mail: a 3 px accent bar on its left edge, the title in
       the accent colour at weight 600, the people at weight 600 and the age in the accent colour.
     - The row under the cursor takes the selected tint, and a row under the pointer a light tint of the

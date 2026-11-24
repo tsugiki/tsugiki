@@ -64,6 +64,11 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
     this machine, so it survives a restart, and an item muted on its own stays out whatever it says. The
     checkbox shows the switch as the Inbox read after its save holds it, and takes no click while it saves.
 - Every row in every Issue list has an Issue or PR icon coloured by state.
+- A row's time is GitHub's last change to the item, its `updatedAt`
+  ([#1066](https://github.com/tsugiki/tsugiki/issues/1066)): the latest update of the Issue and of each PR in
+  its tree, which some events, such as a commit that references the Issue, don't move — those events' own
+  times are [#1067](https://github.com/tsugiki/tsugiki/issues/1067)'s. The age's tooltip names each update it
+  covers, with its date and time, and a PR's row under an unfolded Issue gives its time in the tooltip alone.
 - The Sidebar shows counts the way a mail client shows unread counts. For the Workbench, the Filters switched
   on and the Pinned issues, the count is how many Issues Need attention. For a Filter switched off, it is how
   many items its search found, as its view lists them, less the Archived and Muted ones. For Stale reviews,

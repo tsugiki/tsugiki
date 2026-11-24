@@ -25,6 +25,7 @@
   import StateIcon from "./StateIcon.svelte";
   import StateWords from "./StateWords.svelte";
   import { PR_UNREAD } from "./unread-words";
+  import { whenWords } from "./time";
   import { ago, headline, staleReviewLine } from "./workbench-row";
 
   let {
@@ -170,7 +171,10 @@
         <span aria-hidden="true">›</span>
       {/if}
       {#if pr.view}
-        <span>{`into ${pr.view.target_branch} · updated ${ago(pr.view.updated_at, now)}`}</span>
+        <!-- The time since the PR moved keeps its date in the hover (#1066). -->
+        <span title={whenWords(pr.view.updated_at)}
+          >{`into ${pr.view.target_branch} · updated ${ago(pr.view.updated_at, now)}`}</span
+        >
       {/if}
     </p>
   {/if}

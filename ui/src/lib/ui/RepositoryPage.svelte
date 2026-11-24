@@ -12,6 +12,7 @@
   import { openWords, writeWords } from "./repository-header";
   import StoredIn from "./StoredIn.svelte";
   import { syncedWords } from "./synced";
+  import { whenWords } from "./time";
 
   let { dialog, repository }: { dialog: SettingsDialog; repository: string } = $props();
 
@@ -33,12 +34,13 @@
   // "Synced 2 min ago" has to move on by itself between syncs.
   const now = minuteClock();
   const sync = $derived(syncView?.state);
+  /** The moment of the last sync, whose hover gives its date and time (#1066). */
+  const lastSyncAt = $derived(sync?.last_sync ?? null);
+  const synced = $derived(sync === undefined ? null : syncedWords(lastSyncAt, now));
   const parts = $derived(
-    [
-      writeWords(stateView?.state, repository),
-      sync?.open ? openWords(sync.open) : null,
-      sync === undefined ? null : syncedWords(sync.last_sync, now),
-    ].filter((part) => part !== null),
+    [writeWords(stateView?.state, repository), sync?.open ? openWords(sync.open) : null].filter(
+      (part) => part !== null,
+    ),
   );
 
   /** Whether this page has Read-only on, once the dialog has read the files (#915). */
@@ -57,8 +59,16 @@
 </script>
 
 <h3 class="mono">{repository}</h3>
-{#if parts.length > 0}
-  <p class="facts">{parts.join(" · ")}</p>
+{#if parts.length > 0 || synced !== null}
+  <!-- The last sync's words keep the moment of the sync in the hover (#1066). One expression chain, as
+       Svelte compiles `{a} {b}` with branches no test can reach. -->
+  <p class="facts">
+    {parts.length > 0 ? parts.join(" · ") : ""}{parts.length > 0 && synced !== null
+      ? " · "
+      : ""}{#if synced !== null}<span title={lastSyncAt === null ? undefined : whenWords(lastSyncAt)}
+        >{synced}</span
+      >{/if}
+  </p>
 {/if}
 
 <div class="row">

@@ -21,13 +21,16 @@ describe("StatusBar's last sync", () => {
     expect(screen.queryByRole("button")).toBeNull();
   });
 
-  it("says when the Repository last synced, outside the live region", () => {
+  it("says when the Repository last synced, outside the live region, with the moment in the tooltip", () => {
     vi.useFakeTimers({ now: new Date("2026-11-05T12:02:00Z") });
     const lastSync = { repository, at: "2026-11-05T12:00:00Z" };
     render(StatusBar, { status: online, lastSync });
     expect(screen.getByRole("button").textContent).toBe("Synced 2 min ago");
     expect(bar().textContent).not.toContain("Synced");
     expect(screen.getByRole("button").parentElement).toBe(bar().parentElement);
+    expect(screen.getByRole("button").title).toBe(
+      new Date("2026-11-05T12:00:00Z").toLocaleString([], { dateStyle: "medium", timeStyle: "short" }),
+    );
   });
 
   it("moves on by itself", async () => {

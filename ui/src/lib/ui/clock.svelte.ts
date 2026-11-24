@@ -1,5 +1,4 @@
 // Clocks that move words such as "3m ago" and "4 s" on by themselves.
-import { SvelteDate } from "svelte/reactivity";
 import { MINUTE_MS, SECOND_MS } from "./time";
 
 /** The time now in milliseconds, set as the moment `since` gives changes, then again `after` milliseconds
@@ -32,17 +31,40 @@ export function secondClock(since: () => string | null, after: number): { readon
   };
 }
 
-/** The time now, set again each minute while the component that calls this as it starts is on screen, so
- * words such as "3m ago" move on between syncs. */
+/** The window's clock. Its time is always the system's: each read takes `Date.now()`, so however long the
+ * window has been open, hidden or minimized, an age reads against the time the reader asked. `wake` only
+ * wakes the readers, as a sync or any other change on screen does too; it never hands out a time. */
+export class SystemClock extends Date {
+  /** How often the clock has woken its readers. Each read takes it, so a wake re-renders every age on
+   * screen. */
+  #woken = $state(0);
+
+  /** Wakes the readers, which then read the system's time afresh. */
+  wake(): void {
+    this.#woken += 1;
+  }
+
+  override getTime(): number {
+    void this.#woken;
+    return Date.now();
+  }
+}
+
+/** The time now, woken each minute and each time the window returns, so words such as "3m ago" move on
+ * between syncs and are true the moment the window shows again. A hidden or minimized window's timers the
+ * WebView may throttle or stop: a wake from the window's return catches up at once, and every read of the
+ * clock between wakes is the system's own. */
 export function minuteClock(): Date {
-  // SvelteDate extends the Date there was at import, so a test's fake clock reaches it only through `now()`.
-  const now = new SvelteDate(Date.now());
+  const now = new SystemClock();
   $effect(() => {
-    const ticking = setInterval(() => {
-      now.setTime(Date.now());
-    }, MINUTE_MS);
+    const wake = () => now.wake();
+    const ticking = setInterval(wake, MINUTE_MS);
+    document.addEventListener("visibilitychange", wake);
+    window.addEventListener("focus", wake);
     return () => {
       clearInterval(ticking);
+      document.removeEventListener("visibilitychange", wake);
+      window.removeEventListener("focus", wake);
     };
   });
   return now;

@@ -1,7 +1,9 @@
 import { fireEvent, render, screen } from "@testing-library/svelte";
+import { tick } from "svelte";
 import { expect, it, vi } from "vitest";
 import type { DiffThread } from "$lib/state/pr-files.svelte";
 import { diffThread, reviewComment } from "$lib/testing/fixtures";
+import { SystemClock } from "./clock.svelte";
 import ReviewThread from "./ReviewThread.svelte";
 
 const NOW = new Date("2026-11-04T12:00:00Z");
@@ -23,6 +25,28 @@ const shown = (shown: DiffThread, folded = false) => {
 };
 
 const head = () => screen.getAllByRole("button")[0];
+
+it("gives a comment's age its date and time in the tooltip, and says the time since once the clock has caught up after a day", async () => {
+  const now = new SystemClock();
+  vi.setSystemTime("2026-11-04T12:00:00Z");
+  render(ReviewThread, { thread: thread(), folded: false, now, ontoggle: vi.fn(), onlink: vi.fn() });
+
+  const when = new Date("2026-11-04T10:00:00Z").toLocaleString([], {
+    dateStyle: "medium",
+    timeStyle: "short",
+  });
+  const by = () => document.querySelector("article .by");
+  expect(by()?.textContent).toBe("some-reviewer · 2h ago");
+  expect(by()?.querySelector("span")?.title).toBe(when);
+
+  // A day later, the comment says the time since, not "just now" (#1066). The wake is what a window's
+  // return, a minute's tick or any other change on screen gives the clock's readers.
+  vi.setSystemTime("2026-11-05T12:00:00Z");
+  now.wake();
+  await tick();
+
+  expect(by()?.textContent).toBe("some-reviewer · 1d ago");
+});
 
 it("shows who started a thread and its comments, oldest first, and folds on a click on its first line", async () => {
   const { ontoggle } = shown(

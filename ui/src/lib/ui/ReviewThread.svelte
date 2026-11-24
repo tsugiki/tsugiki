@@ -9,6 +9,7 @@
   import { REASONS } from "./hidden";
   import RenderedHtml from "./RenderedHtml.svelte";
   import ThreadCode from "./ThreadCode.svelte";
+  import { whenWords } from "./time";
   import { ago, commentCount } from "./workbench-row";
 
   let {
@@ -80,7 +81,10 @@
   {#each thread.comments as comment, at (at)}
     <article>
       <p class="by">
-        {`${comment.author ?? "deleted user"} · ${ago(comment.created_at, now)}`}{#if comment.submission === "pending"}<span
+        <!-- The age keeps its date and time in the hover (#1066). -->
+        {`${comment.author ?? "deleted user"} · `}<span title={whenWords(comment.created_at)}
+          >{ago(comment.created_at, now)}</span
+        >{#if comment.submission === "pending"}<span
             class="chip pending"
             title="Only you see it until you submit your review on github.com.">Pending, yours</span
           >{/if}

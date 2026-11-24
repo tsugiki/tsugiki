@@ -27,3 +27,9 @@ export function agoWords(since: string, now: Date): string {
   const time = elapsed(since, now);
   return time.unit === "now" ? "just now" : `${String(time.count)} ${AGO_UNITS[time.unit]} ago`;
 }
+
+/** The date and time `at` names, in the system's format, for a tooltip beside an age: "4 Nov 2026, 09:00".
+ * The one copy every tooltip with a date takes. */
+export function whenWords(at: string): string {
+  return new Date(at).toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
+}

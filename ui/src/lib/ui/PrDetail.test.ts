@@ -5,6 +5,7 @@ import { remapKeys } from "$lib/state/keymap.svelte";
 import { PanesState } from "$lib/state/panes.svelte";
 import { PrViewState, type PrView } from "$lib/state/pr-view.svelte";
 import { done, ok, readyFiles, refused, workbenchRow } from "$lib/testing/fixtures";
+import { SystemClock } from "./clock.svelte";
 import PrDetail from "./PrDetail.svelte";
 
 const core = vi.hoisted(() => ({
@@ -138,6 +139,37 @@ it("says over the title which Issue the PR is under, where it goes and when it c
   );
   expect(document.querySelector("p.byline")?.textContent).toBe(
     `pr-author ${document.querySelector(".words")?.textContent ?? ""}`,
+  );
+  const when = new Date("2026-11-04T10:00:00Z").toLocaleString([], {
+    dateStyle: "medium",
+    timeStyle: "short",
+  });
+  expect(screen.getByText(/into main · updated/)?.title).toBe(when);
+});
+
+it("says the time since the PR moved once the clock has caught up after a day", async () => {
+  // Only `Date`, because the read of the PR runs on the real `setTimeout`.
+  vi.useFakeTimers({ toFake: ["Date"] });
+  const now = new SystemClock();
+  vi.setSystemTime("2026-11-04T11:00:00Z");
+  const panes = new PanesState();
+  core.pullRequest.mockResolvedValue(ok(view));
+  const state = new PrViewState("python/cpython", 11, 10, panes);
+  onShow = state;
+  await state.load();
+  render(PrDetail, { repository: "python/cpython", pr: state, panes, now, onback: vi.fn(), onmark: vi.fn() });
+  expect(document.querySelector(".crumb")?.textContent?.replace(/\s+/g, " ").trim()).toBe(
+    "gh-10 › into main · updated 1h ago",
+  );
+
+  // A day later, the header says the time since, not "just now" (#1066). The wake is what a window's
+  // return, a minute's tick or any other change on screen gives the clock's readers.
+  vi.setSystemTime("2026-11-05T11:00:00Z");
+  now.wake();
+  await tick();
+
+  expect(document.querySelector(".crumb")?.textContent?.replace(/\s+/g, " ").trim()).toBe(
+    "gh-10 › into main · updated 1d ago",
   );
 });
 

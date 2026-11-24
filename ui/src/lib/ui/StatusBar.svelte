@@ -26,6 +26,7 @@
     syncedWords,
     syncingWords,
   } from "./synced";
+  import { whenWords } from "./time";
   import { minuteClock, secondClock } from "./clock.svelte";
   import { inFlightWords, SLOW_MS } from "./in-flight";
 
@@ -252,9 +253,13 @@
     >
   {/if}
   <!-- Outside the live region, or a screen reader would read this out each minute, and each page of a
-       sync. -->
+       sync. The hover gives the moment of the last sync (#1066). -->
   {#if lastSync !== null && showStatus}
-    <button class:offline onclick={onrefresh}>{syncWords}</button>
+    <button
+      class:offline
+      onclick={onrefresh}
+      title={lastSync.at === null ? undefined : whenWords(lastSync.at)}>{syncWords}</button
+    >
   {/if}
   <!-- Outside the live region too, as it changes with each answer from GitHub. A screen reader can't reach a
        tooltip, so it reads the words and the tooltip from a copy of its own, once. -->

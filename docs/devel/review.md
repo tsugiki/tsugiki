@@ -148,7 +148,8 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
 - A thread on a whole file sits at the top of that file, above its Outdated threads, marked "on the file".
 - A thread is matched to a file by its path, as the file's name or its name before a rename. A thread that
   matches no file in the diff, because a later commit took the file's change back out, goes in "On files no
-  longer in the diff" at the end of the Files tab, shown like an Outdated thread.
+  longer in the diff" at the end of the Files tab, shown like an Outdated thread. Each comment's age keeps
+  the date and time in its tooltip ([#1066](https://github.com/tsugiki/tsugiki/issues/1066)).
 - A resolved thread folds to one line under its code: the first commenter, the number of comments and
   "Resolved". `Enter` or a click opens it. `F8` and `Shift+F8` go through the unresolved threads: in each file
   the threads on the file first, then the Outdated ones, then those in the diff, and last the threads on files

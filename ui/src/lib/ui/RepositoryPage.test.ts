@@ -80,6 +80,10 @@ describe("a Repository's page in Settings", () => {
     await vi.waitFor(() => {
       expect(facts()).toBe("Can write · 1,204 open Issues · 1 open PR · Synced 2 min ago");
     });
+    // The hover gives the moment of the last sync (#1066).
+    expect(document.querySelector(".facts span")?.getAttribute("title")).toBe(
+      new Date("2026-11-05T12:00:00Z").toLocaleString([], { dateStyle: "medium", timeStyle: "short" }),
+    );
     expect(core.repositoryState).toHaveBeenCalledWith("python/cpython");
     expect(core.repositorySync).toHaveBeenCalledWith("python/cpython");
   });

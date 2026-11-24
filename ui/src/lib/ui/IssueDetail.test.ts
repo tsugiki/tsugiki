@@ -449,6 +449,31 @@ it("folds the fully merged PRs into one line that unfolds and folds them again",
   expect(line.textContent?.trim()).toBe("Show 3 merged PRs");
 });
 
+it("gives each Origin PR's time in its line's tooltip only, with no time on the line", async () => {
+  await shown(view);
+
+  const tree = screen.getByRole("list", { name: "PRs" });
+  const when = new Date("2026-11-04T10:00:00Z").toLocaleString([], {
+    dateStyle: "medium",
+    timeStyle: "short",
+  });
+  for (const line of within(tree).getAllByRole("listitem")) {
+    expect(line.title).toBe(`last updated ${when}`);
+  }
+  expect(tree.querySelector(".backports span")?.getAttribute("title")).toBe(`last updated ${when}`);
+  expect(tree.textContent).not.toContain("ago");
+});
+
+it("gives the folded merged PRs' latest update in the fold line's tooltip", async () => {
+  await shown(withMerged);
+
+  const when = new Date("2026-11-04T10:00:00Z").toLocaleString([], {
+    dateStyle: "medium",
+    timeStyle: "short",
+  });
+  expect(screen.getByRole("button", { name: "Show 3 merged PRs" }).title).toBe(`last updated ${when}`);
+});
+
 it("shows only the line for an Issue whose PRs have all merged, and names one PR as one", async () => {
   await shown({ ...withMerged, pull_requests: [], merged: withMerged.merged.slice(1), merged_count: 1 });
 

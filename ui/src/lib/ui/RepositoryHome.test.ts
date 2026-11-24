@@ -296,6 +296,57 @@ it("moves a time on while the window stays open", async () => {
   expect(vi.getTimerCount()).toBe(0);
 });
 
+it("catches up on the time once the window returns after a day", async () => {
+  // Only these, because the wait for the first answer runs on the real `setTimeout`.
+  vi.useFakeTimers({ toFake: ["Date", "setInterval", "clearInterval"] });
+  vi.setSystemTime("2026-11-04T13:00:00Z");
+  core.workbench.mockResolvedValue(workbenchPage([issue], { count: 1 }));
+  const { unmount } = render(RepositoryHome, {
+    name: "python/cpython",
+    onpick: () => {},
+    onsettings: () => {},
+  });
+  await screen.findByText("3h ago");
+
+  // A hidden or minimized window's timers the WebView may throttle or stop (#1066), so the window's return
+  // wakes the clock, and each read of it takes the system's time.
+  vi.setSystemTime("2026-11-05T13:00:00Z");
+  await fireEvent(document, new Event("visibilitychange"));
+
+  expect(screen.getByText("1d ago")).toBeTruthy();
+  unmount();
+  expect(vi.getTimerCount()).toBe(0);
+});
+
+it("gives an Issue row's age a tooltip that says what it measures, with each PR's update", async () => {
+  vi.setSystemTime("2026-11-04T13:00:00Z");
+  answering({ ...issue, pull_requests: [{ kind: "pr", ...row, backports: [backportRow] }] });
+  render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onsettings: () => {} });
+
+  const item = await screen.findByRole("listitem");
+  const when = (at: string) => new Date(at).toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
+  expect(item.querySelector(".age")?.getAttribute("title")?.split("\n")).toEqual([
+    `Issue #112564 last updated ${when("2026-11-04T10:00:00Z")}`,
+    `PR #160662 last updated ${when("2026-11-04T10:00:00Z")}`,
+    `PR #160700 last updated ${when("2026-11-04T10:00:00Z")}`,
+  ]);
+});
+
+it("gives a PR's time in its row's tooltip only, with no time on the line", async () => {
+  vi.setSystemTime("2026-11-04T13:00:00Z");
+  answering({ ...issue, pull_requests: [{ kind: "pr", ...row, backports: [] }] });
+  render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onsettings: () => {} });
+  await unfoldAll();
+
+  const pullRequest = screen.getAllByRole("listitem")[1];
+  const when = new Date("2026-11-04T10:00:00Z").toLocaleString([], {
+    dateStyle: "medium",
+    timeStyle: "short",
+  });
+  expect(pullRequest?.querySelector(".facts")?.getAttribute("title")).toBe(`last updated ${when}`);
+  expect(pullRequest?.textContent).not.toContain("ago");
+});
+
 it("says an Issue has no PR yet, with no count of none", async () => {
   core.workbench.mockResolvedValue(
     workbenchPage([{ ...issue, people: [], pull_requests: [] }], { count: 1 }),

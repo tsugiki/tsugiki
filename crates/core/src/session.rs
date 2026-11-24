@@ -244,15 +244,6 @@ impl Telling {
     }
 }
 
-/// Which Repositories' hand edits to the settings the window hears of.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum HandEdits {
-    /// Those whose lists the window shows: the Repositories it opened since launch.
-    Listed,
-    /// Every Repository's.
-    Every,
-}
-
 /// The session thread's queue and what it keeps: the user's marks, the settings owner's saves, the patch-ids
 /// the Mirror worker reads and the refill of the links, none of which needs GitHub. It passes the rest to the
 /// GitHub thread.
@@ -272,7 +263,7 @@ struct Keeper {
     /// no message waits.
     links: RefCell<LinkRefill>,
     /// The Repositories the window opened since launch, as their Syncs passed through this queue, which the
-    /// GitHub thread's syncs take after. A hand edit to the settings of one of them reaches the window.
+    /// GitHub thread's syncs take after.
     opened: RefCell<Vec<RepositoryName>>,
     telling: Telling,
     /// How many of the user's refreshes the session passed to the GitHub thread.
@@ -330,7 +321,7 @@ impl Keeper {
             SessionMessage::Stop => return ControlFlow::Break(()),
             SessionMessage::Mark(marked) => self.mark(store, marked),
             SessionMessage::SettingsChanged(save) => {
-                self.follow_settings(store, &save, HandEdits::Listed);
+                self.follow_settings(store, &save);
             }
             SessionMessage::Patched(repository, patches) => {
                 keep_patches(telling, store, &repository, patches);
@@ -444,24 +435,21 @@ impl Keeper {
     }
 
     /// Has the Mirror worker follow the move of Reach `save` makes, counts it as followed, and tells the
-    /// window of a hand edit to a Repository whose lists it shows, or to any, as `edits` says.
-    fn follow_settings(&self, store: &Store, save: &SettingsSave, edits: HandEdits) {
+    /// window of a hand edit, an Apply's included, in a Repository opened since launch or not. A
+    /// Repository's page in Settings follows its state either way (#1057), and a Sync this queue passes may
+    /// open the Repository, whose lists the window read before the edit.
+    fn follow_settings(&self, store: &Store, save: &SettingsSave) {
         self.saves_taken.set(self.saves_taken.get() + 1);
         follow_save(&self.fetching, store, save);
-        let repository = &save.saved().name;
-        if edits == HandEdits::Every || self.shows(repository) {
-            announce_settings(&self.telling, repository, save.by());
-        }
+        announce_settings(&self.telling, &save.saved().name, save.by());
     }
 
     /// Follows each save among the first `told` the owner handed over that the session hasn't, taking it
     /// from the queue now. The owner counts a save in the view in one step with handing it over, so each
     /// is in the queue. The messages it passes keep their order, in the backlog.
     ///
-    /// It tells the window of each hand edit it follows, in a Repository opened since launch or not: a Sync
-    /// it passes may open the Repository, whose lists the window read before the edit. A save missing from
-    /// the queue is logged once, and the count goes on from `told`, so a later mark takes no save that only
-    /// a later view counts.
+    /// A save missing from the queue is logged once, and the count goes on from `told`, so a later mark takes
+    /// no save that only a later view counts.
     fn follow_saves_told(&self, store: &Store, told: usize) {
         let owed = told.saturating_sub(self.saves_taken.get());
         if owed == 0 {
@@ -484,7 +472,7 @@ impl Keeper {
             saves
         };
         for save in &saves {
-            self.follow_settings(store, save, HandEdits::Every);
+            self.follow_settings(store, save);
         }
         // `log::error!` evaluates a call among its arguments only while a logger listens.
         let found = saves.len();
@@ -577,6 +565,10 @@ fn run(database: Database, threads: Threads, keeper: &Keeper) {
     };
     thread::scope(|scope| {
         let shared = &store;
+        // The `move` closure owns `refreshes`, so the queue's receiver drops when the thread stops, however
+        // it stops. Each request waiting there for a reply, and each sent later, then gets the answer for a
+        // stopped GitHub thread at once, in place of waiting for good (#1076). Borrowing `refreshes` from
+        // outside the closure would keep the receiver until the scope ends.
         #[expect(
             unused_results,
             reason = "the scope joins the GitHub thread, which catches its own panics"

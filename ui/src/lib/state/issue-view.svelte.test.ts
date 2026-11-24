@@ -6,7 +6,11 @@ import { IssueViewState, type IssueView } from "./issue-view.svelte";
 
 vi.mock("$lib/data/bindings", () => ({
   commands: { issue: vi.fn(), openIssue: vi.fn(), hideItem: vi.fn(), showItem: vi.fn(), closeItem: vi.fn() },
-  events: { changed: { listen: vi.fn() }, readFailed: { listen: vi.fn(async () => () => {}) } },
+  events: {
+    acted: { listen: vi.fn() },
+    changed: { listen: vi.fn() },
+    readFailed: { listen: vi.fn(async () => () => {}) },
+  },
 }));
 
 const view = (title: string): IssueView => ({

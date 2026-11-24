@@ -11,7 +11,11 @@ import {
 
 vi.mock("$lib/data/bindings", () => ({
   commands: { repositoryState: vi.fn() },
-  events: { changed: { listen: vi.fn() }, statusChanged: { listen: vi.fn() } },
+  events: {
+    acted: { listen: vi.fn() },
+    changed: { listen: vi.fn() },
+    statusChanged: { listen: vi.fn() },
+  },
 }));
 
 const writable: RepositoryState = { read_only: [], connection: "online" };

@@ -65,6 +65,9 @@ const core = vi.hoisted(() => ({
   textSearch: vi.fn(),
   textSearchState: vi.fn(),
   listen: vi.fn(),
+  /** The listener the page starts for the answers to its actions (#1052). */
+  actedListen: vi.fn(),
+  actedStop: vi.fn(),
   stopListening: vi.fn(),
 }));
 
@@ -111,6 +114,7 @@ vi.mock("$lib/data/bindings", async () => {
     },
     events: {
       ...prFilesEvents(() => core.listen),
+      acted: { listen: core.actedListen },
       textSearchChanged: { listen: core.listen },
     },
   };
@@ -168,6 +172,7 @@ const DEFAULT_LAYOUT = {
 beforeEach(() => {
   vi.resetAllMocks();
   core.listen.mockResolvedValue(core.stopListening);
+  core.actedListen.mockResolvedValue(core.actedStop);
   core.openIssue.mockResolvedValue(done);
   core.openPullRequest.mockResolvedValue(done);
   for (const move of [core.hideItem, core.showItem, core.closeItem]) move.mockResolvedValue(done);
@@ -542,6 +547,7 @@ it("opens the other Repository's Workbench and stops listening for the last", as
     expect(core.workbench).toHaveBeenLastCalledWith("tsugiki/tsugiki", { kind: "whole" });
   });
   expect(core.stopListening).toHaveBeenCalledOnce();
+  expect(core.actedStop).toHaveBeenCalledOnce();
 });
 
 it("stops listening when it goes", async () => {
@@ -553,6 +559,7 @@ it("stops listening when it goes", async () => {
   await screen.findByText(/Nothing here yet/);
   unmount();
   expect(core.stopListening).toHaveBeenCalledOnce();
+  expect(core.actedStop).toHaveBeenCalledOnce();
 });
 
 const answering = (...items: unknown[]) => {
@@ -721,6 +728,29 @@ const catchEveryListener = () => {
     for (const callback of callbacks) callback({ payload: { repository, items } });
   };
 };
+
+/** Catches the listener the page starts for the answers to the actions it makes, so a test can answer one
+ * as the core would, with the list it showed once it kept the action (#1052). The answer stays untyped, as
+ * the mocked event checks nothing. */
+const catchActed = () => {
+  let send: (answer: unknown) => void = () => {};
+  core.actedListen.mockImplementation((callback: (event: { payload: unknown }) => void) => {
+    send = (answer) => callback({ payload: answer });
+    return Promise.resolve(core.actedStop);
+  });
+  return (answer: unknown) => send(answer);
+};
+
+/** The number the action sent to the last of `commands`, or nothing before one. */
+const lastAsked = (...commands: unknown[]) =>
+  Math.max(
+    0,
+    ...commands.map((command) => {
+      const calls = (command as { mock: { calls: unknown[][] } }).mock.calls;
+      const asked = calls.at(-1)?.at(-1) as { id?: number } | undefined;
+      return asked?.id ?? 0;
+    }),
+  ) || undefined;
 
 it("opens an Issue in the Detail pane on a click, and tells the core", async () => {
   const { issueRow } = await listing();
@@ -2072,10 +2102,14 @@ it("marks the line under the cursor on Q and Shift+Q, and the Detail pane's item
   await fireEvent.keyDown(issueRow, { key: "Q", shiftKey: true, repeat: true });
 
   expect(core.markSeen.mock.calls).toEqual([
-    ["python/cpython", row.seen.mark],
-    ["python/cpython", laterMark],
+    ["python/cpython", row.seen.mark, expect.anything()],
+    ["python/cpython", laterMark, expect.anything()],
   ]);
-  expect(core.markUnseen).toHaveBeenCalledExactlyOnceWith("python/cpython", 160662, null);
+  expect(core.markUnseen).toHaveBeenCalledExactlyOnceWith(
+    "python/cpython",
+    { number: 160662, archived: null },
+    expect.anything(),
+  );
 });
 
 /** A window on three Standalone PRs that Need attention, #5, #6 and #8, the cursor on #5 and #5 on show, in
@@ -2084,9 +2118,11 @@ it("marks the line under the cursor on Q and Shift+Q, and the Detail pane's item
  * names `items`; with `number`, it does so for that item, the first of `items` if they name one. `tookAway`
  * answers as it does once it saved Archive or Mute on #5, or on item `number`, which takes it off the
  * list. `synced` answers as for a sync that changed none of them, and `redrawn` as for a change that left
- * #5 in its place with `fields` changed. */
+ * #5 in its place with `fields` changed. Each answer to an action comes after its change's, as the core's
+ * does (#1052). */
 const threeAlone = async ({ inbox = false } = {}) => {
   const send = catchEveryListener();
+  const sendActed = catchActed();
   const alone = (number: number, title: string) => ({
     ...standalone,
     number,
@@ -2106,6 +2142,16 @@ const threeAlone = async ({ inbox = false } = {}) => {
     core.workbench.mockResolvedValue(workbenchPage(items, { count: items.length }));
     core.inbox.mockResolvedValue(pageOf(items));
   };
+  /** The list `items` as the page the window asked about, for the answer to its action. */
+  const page = (items: object[]) =>
+    inbox
+      ? { kind: "inbox" as const, inbox: pageOf(items).data }
+      : { kind: "workbench" as const, workbench: workbenchPage(items, { count: items.length }).data };
+  /** Answers the action the last of `commands` named, with `items` as the list it left, if it made one. */
+  const answered = (items: object[], ...commands: unknown[]) => {
+    const id = lastAsked(...commands);
+    if (id !== undefined) sendActed({ id, repository: "python/cpython", page: page(items) });
+  };
   answer([first, next, last]);
   const { component } = render(RepositoryHome, {
     name: "python/cpython",
@@ -2121,12 +2167,16 @@ const threeAlone = async ({ inbox = false } = {}) => {
   const markedSeen = (items = [5], number = items[0] ?? 5) => {
     const all = [first, next, last];
     const quiet = all.filter((one) => one.number === number).map((one) => ({ ...one, attention: null }));
-    answer([...all.filter((one) => one.number !== number), ...quiet]);
+    const listed = [...all.filter((one) => one.number !== number), ...quiet];
+    answer(listed);
     send("python/cpython", items);
+    answered(listed, core.markSeen);
   };
   const tookAway = (number = 5) => {
-    answer([first, next, last].filter((one) => one.number !== number));
+    const listed = [first, next, last].filter((one) => one.number !== number);
+    answer(listed);
     send("python/cpython", [number]);
+    answered(listed, core.archive, core.mute);
   };
   const synced = () => {
     answer([first, next, last]);
@@ -2151,6 +2201,19 @@ it("moves the cursor and the focus to the next row once Q drops the row under th
     expect(document.activeElement).toBe(landed);
   });
   expect(landed.getAttribute("aria-current")).toBe("true");
+});
+
+it("keeps the cursor and the Detail pane where the mark failed, and moves nothing (#1052)", async () => {
+  core.markSeen.mockResolvedValue(refused("no database"));
+  const { marked } = await threeAlone();
+  marked.focus();
+
+  await fireEvent.keyDown(marked, { key: "q" });
+  await screen.findByText(/no database/);
+  await tick();
+
+  await rowFocused("#5 Alone");
+  expect(screen.getByRole("heading", { name: /PR 5/ })).toBeTruthy();
 });
 
 it("moves the focus to the next row after Q on the page, where nothing held the focus", async () => {
@@ -2329,13 +2392,20 @@ it("opens the next item once the header's Mark Seen marks the item on show", asy
 
 it("opens the item after the Issue once E in the view of a PR from its tree archives the Issue", async () => {
   const changed = catchEveryListener();
+  const acted = catchActed();
   const { treeRow } = await listing();
   await fireEvent.click(treeRow);
   const view = await screen.findByRole("region", { name: "PR view" });
 
   await fireEvent.keyDown(view, { key: "e" });
-  core.workbench.mockResolvedValue(workbenchPage([{ ...standalone, attention: null }]));
+  const after = workbenchPage([{ ...standalone, attention: null }]);
+  core.workbench.mockResolvedValue(after);
   changed("python/cpython", issue.seen.mark.numbers);
+  acted({
+    id: lastAsked(core.archive) ?? 0,
+    repository: "python/cpython",
+    page: { kind: "workbench", workbench: after.data },
+  });
 
   expect(await screen.findByRole("heading", { name: /PR 5/ })).toBeTruthy();
   expect(core.pullRequest).toHaveBeenLastCalledWith("python/cpython", 5);
@@ -2372,9 +2442,27 @@ it("opens the last row once the user takes the last item out from the Detail pan
   expect(screen.getByRole("button", { name: "#6 Next" }).getAttribute("aria-current")).toBe("true");
 });
 
+it("leaves the pane as it is when the mark lands on the row it already shows (#1052)", async () => {
+  const { markedSeen } = await threeAlone();
+  const row = screen.getByRole("button", { name: "#8 Last" });
+  await fireEvent.click(row);
+  await screen.findByRole("heading", { name: /PR 8/ });
+  const conversation = await screen.findByRole("tab", { name: "Conversation" });
+  expect(conversation.getAttribute("aria-selected")).toBe("true");
+
+  await fireEvent.keyDown(row, { key: "q" });
+  markedSeen([8]);
+
+  await rowFocused("#8 Last");
+  // Opening the row again would switch its tab.
+  expect(screen.getByRole("tab", { name: "Conversation" }).getAttribute("aria-selected")).toBe("true");
+  expect(screen.getByRole("heading", { name: /PR 8/ })).toBeTruthy();
+});
+
 it("shows nothing open, with no row under the cursor, once the user takes the only item out, and Alt+← opens it again", async () => {
   vi.spyOn(navigator, "platform", "get").mockReturnValue("Win32");
   const send = catchEveryListener();
+  const acted = catchActed();
   core.workbench.mockResolvedValue(workbenchPage([{ ...standalone, attention: null }]));
   render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onsettings: () => {} });
   const row = await screen.findByRole("button", { name: "#5 Alone" });
@@ -2383,24 +2471,30 @@ it("shows nothing open, with no row under the cursor, once the user takes the on
   row.focus();
 
   await fireEvent.keyDown(row, { key: "e" });
+  const after = workbenchPage([], { count: 0 });
+  core.workbench.mockResolvedValue(after);
+  send("python/cpython", [5]);
+  acted({
+    id: lastAsked(core.archive) ?? 0,
+    repository: "python/cpython",
+    page: { kind: "workbench", workbench: after.data },
+  });
+
+  await vi.waitFor(() => {
+    expect(itemOrder()).toEqual([]);
+  });
   await tick();
   const current = document.querySelectorAll('.list [aria-current="true"]').length;
   expect(document.activeElement, "the focus leaves the row with the cursor, for the list").toBe(
     document.body,
   );
-  core.workbench.mockResolvedValue(workbenchPage([], { count: 0 }));
-  send("python/cpython", [5]);
-
-  await vi.waitFor(() => {
-    expect(itemOrder()).toEqual([]);
-  });
   expect(screen.queryByRole("region", { name: "PR view" })).toBeNull();
   expect(current).toBe(0);
   await press("ArrowLeft", { altKey: true });
   expect(await screen.findByRole("heading", { name: /PR 5/ })).toBeTruthy();
 });
 
-it("leaves the Detail pane as it is on Q on a row it doesn't show", async () => {
+it("opens the row the cursor moved to on Q on a row the Detail pane doesn't show (#1052)", async () => {
   const { marked, markedSeen } = await threeAlone();
   marked.focus();
   await fireEvent.keyDown(marked, { key: "ArrowDown" });
@@ -2412,7 +2506,7 @@ it("leaves the Detail pane as it is on Q on a row it doesn't show", async () => 
 
   await rowFocused("#8 Last");
   expect(core.markSeen).toHaveBeenCalledOnce();
-  expect(screen.getByRole("heading", { name: /PR 5/ })).toBeTruthy();
+  expect(await screen.findByRole("heading", { name: /PR 8/ })).toBeTruthy();
 });
 
 it("opens the next item once Archive takes the item off the list, though a sync answered between the core's reply and its write", async () => {
@@ -2462,18 +2556,6 @@ it("opens the next item once Mark Seen takes effect, though the order changed in
   markedSeen();
 
   expect(await screen.findByRole("heading", { name: /PR 6/ })).toBeTruthy();
-});
-
-it("keeps the cursor and the Detail pane where the keypress put them when the user's mark fails (#1052)", async () => {
-  core.markSeen.mockResolvedValue(refused("no database"));
-  const { marked } = await threeAlone();
-  marked.focus();
-
-  await fireEvent.keyDown(marked, { key: "q" });
-  await screen.findByText(/no database/);
-
-  await rowFocused("#6 Next");
-  expect(screen.getByRole("heading", { name: /PR 6/ })).toBeTruthy();
 });
 
 it("leaves the Issue on show as it is on Q on a PR's row in its tree, though the Issue stops waiting", async () => {
@@ -2592,14 +2674,21 @@ it("keeps the focus the Detail pane took for the next item through another app i
 it("opens the next item once E on the row of an Issue whose view hasn't arrived archives it", async () => {
   core.issue.mockReturnValue(new Promise(() => {}));
   const changed = catchEveryListener();
+  const acted = catchActed();
   const { issueRow } = await listing();
   await fireEvent.click(issueRow);
   await screen.findByRole("region", { name: "Issue view" });
   issueRow.focus();
 
   await fireEvent.keyDown(issueRow, { key: "e" });
-  core.workbench.mockResolvedValue(workbenchPage([{ ...standalone, attention: null }]));
+  const after = workbenchPage([{ ...standalone, attention: null }]);
+  core.workbench.mockResolvedValue(after);
   changed("python/cpython", issue.seen.mark.numbers);
+  acted({
+    id: lastAsked(core.archive) ?? 0,
+    repository: "python/cpython",
+    page: { kind: "workbench", workbench: after.data },
+  });
 
   expect(await screen.findByRole("heading", { name: /PR 5/ })).toBeTruthy();
 });
@@ -2626,11 +2715,18 @@ it("keeps the last item on show once Mark Seen leaves it last, where the cursor 
 
 it("opens the next item at E in the Issue view, and keeps a PR of the Issue's tree opened after it once the Archive lands (#1052)", async () => {
   const changed = catchEveryListener();
+  const acted = catchActed();
   const { issueRow } = await listing();
   await fireEvent.click(issueRow);
   const view = await screen.findByRole("region", { name: "Issue view" });
 
   await fireEvent.keyDown(view, { key: "e" });
+  const after = workbenchPage([{ ...standalone, attention: null }]);
+  acted({
+    id: lastAsked(core.archive) ?? 0,
+    repository: "python/cpython",
+    page: { kind: "workbench", workbench: after.data },
+  });
   await screen.findByRole("heading", { name: /PR 5/ });
   await fireEvent.click(
     await within(issueList() as HTMLElement).findByRole("button", {
@@ -2848,6 +2944,7 @@ it("marks nothing on Q and Shift+Q with no line under the cursor, or with the li
 
 it("archives on E the item that holds the line under the cursor, and the cursor lands on the next row", async () => {
   const changed = catchEveryListener();
+  const acted = catchActed();
   const { treeRow } = await listing();
   treeRow.focus();
   await fireEvent.keyDown(treeRow, { key: "ArrowDown" });
@@ -2855,10 +2952,20 @@ it("archives on E the item that holds the line under the cursor, and the cursor 
 
   await fireEvent.keyDown(treeRow, { key: "e" });
   await fireEvent.keyDown(treeRow, { key: "e", repeat: true });
-  core.workbench.mockResolvedValue(workbenchPage([{ ...standalone, attention: null }]));
+  const after = workbenchPage([{ ...standalone, attention: null }]);
+  core.workbench.mockResolvedValue(after);
   changed("python/cpython", issue.seen.mark.numbers);
+  acted({
+    id: lastAsked(core.archive) ?? 0,
+    repository: "python/cpython",
+    page: { kind: "workbench", workbench: after.data },
+  });
 
-  expect(core.archive).toHaveBeenCalledExactlyOnceWith("python/cpython", issue.key, issue.seen.mark);
+  expect(core.archive).toHaveBeenCalledExactlyOnceWith(
+    "python/cpython",
+    { key: issue.key, mark: issue.seen.mark },
+    expect.anything(),
+  );
   const landed = await screen.findByRole("button", { name: "#5 Alone" });
   await vi.waitFor(() => {
     expect(landed.getAttribute("aria-current")).toBe("true");
@@ -2874,7 +2981,11 @@ it("archives on E with the list hidden the item of the PR on show, and nothing o
   await fireEvent.keyDown(window, { key: "b", code: "KeyB", ctrlKey: true, altKey: true });
 
   await press("e");
-  expect(core.archive).toHaveBeenCalledExactlyOnceWith("python/cpython", issue.key, issue.seen.mark);
+  expect(core.archive).toHaveBeenCalledExactlyOnceWith(
+    "python/cpython",
+    { key: issue.key, mark: issue.seen.mark },
+    expect.anything(),
+  );
   core.archive.mockClear();
   cleanup();
   await listing();
@@ -2893,7 +3004,11 @@ it("archives on E the Issue on show while the Detail pane holds the focus", asyn
 
   await fireEvent.keyDown(view, { key: "e" });
 
-  expect(core.archive).toHaveBeenCalledExactlyOnceWith("python/cpython", issue.key, issue.seen.mark);
+  expect(core.archive).toHaveBeenCalledExactlyOnceWith(
+    "python/cpython",
+    { key: issue.key, mark: issue.seen.mark },
+    expect.anything(),
+  );
 });
 
 it("archives nothing on E in the Detail pane before the Issue's view arrives", async () => {
@@ -2909,20 +3024,31 @@ it("archives nothing on E in the Detail pane before the Issue's view arrives", a
 
 it("archives the Issue on show from its button, opens the next item, and Alt+← comes back to the Issue, which offers Unarchive", async () => {
   const changed = catchEveryListener();
+  const acted = catchActed();
   const { issueRow } = await listing();
   await fireEvent.click(issueRow);
 
   await fireEvent.click(await screen.findByRole("button", { name: "Archive" }));
-  expect(core.archive).toHaveBeenCalledExactlyOnceWith("python/cpython", issue.key, issue.seen.mark);
+  expect(core.archive).toHaveBeenCalledExactlyOnceWith(
+    "python/cpython",
+    { key: issue.key, mark: issue.seen.mark },
+    expect.anything(),
+  );
   const shown = await core.issue.mock.results[0]?.value;
   core.issue.mockResolvedValue({ ...shown, data: { ...shown.data, hidden: "archived" } });
-  core.workbench.mockResolvedValue(workbenchPage([{ ...standalone, attention: null }]));
+  const after = workbenchPage([{ ...standalone, attention: null }]);
+  core.workbench.mockResolvedValue(after);
   changed("python/cpython", issue.seen.mark.numbers);
+  acted({
+    id: lastAsked(core.archive) ?? 0,
+    repository: "python/cpython",
+    page: { kind: "workbench", workbench: after.data },
+  });
   await screen.findByRole("region", { name: "PR view" });
   await press("ArrowLeft", { altKey: true });
   await fireEvent.click(await screen.findByRole("button", { name: "Unarchive" }));
 
-  expect(core.unarchive).toHaveBeenCalledExactlyOnceWith("python/cpython", issue.key);
+  expect(core.unarchive).toHaveBeenCalledExactlyOnceWith("python/cpython", issue.key, expect.anything());
   const list = within(issueList() as HTMLElement);
   expect(list.queryByRole("button", { name: "#112564 GIL drop during collection" })).toBeNull();
 });
@@ -2947,8 +3073,8 @@ it("keeps an Archived item Archived on Mark Seen, from its row and from the Issu
   await fireEvent.keyDown(row, { key: "q" });
   expect(core.keepArchived).toHaveBeenCalledExactlyOnceWith(
     "python/cpython",
-    standalone.key,
-    standalone.seen.mark,
+    { key: standalone.key, mark: standalone.seen.mark },
+    expect.anything(),
   );
   core.keepArchived.mockClear();
   cleanup();
@@ -2958,7 +3084,11 @@ it("keeps an Archived item Archived on Mark Seen, from its row and from the Issu
   await fireEvent.click(issueRow);
   await fireEvent.click(await screen.findByRole("button", { name: "Mark Seen" }));
 
-  expect(core.keepArchived).toHaveBeenCalledExactlyOnceWith("python/cpython", issue.key, issue.seen.mark);
+  expect(core.keepArchived).toHaveBeenCalledExactlyOnceWith(
+    "python/cpython",
+    { key: issue.key, mark: issue.seen.mark },
+    expect.anything(),
+  );
   expect(core.archive).not.toHaveBeenCalled();
   expect(core.markSeen).not.toHaveBeenCalled();
 });
@@ -2989,8 +3119,8 @@ it("pins and unpins an Issue from the ★ on its row, which a Standalone PR's ro
   const unpin = screen.getByRole("button", { name: "Unpin #7" });
   await fireEvent.click(unpin);
 
-  expect(core.pin).toHaveBeenCalledExactlyOnceWith("python/cpython", 112564);
-  expect(core.unpin).toHaveBeenCalledExactlyOnceWith("python/cpython", 7);
+  expect(core.pin).toHaveBeenCalledExactlyOnceWith("python/cpython", 112564, expect.anything());
+  expect(core.unpin).toHaveBeenCalledExactlyOnceWith("python/cpython", 7, expect.anything());
   expect([screen.getByRole("button", { name: "Pin #112564" }).textContent, unpin.textContent]).toEqual([
     "☆",
     "★",
@@ -3006,7 +3136,7 @@ it("pins on Ctrl+K P and the palette the Issue that holds the line under the cur
   await fireEvent.keyDown(treeRow, { key: "ArrowUp" });
 
   component.runChord("pin", chordEnd());
-  expect(core.pin).toHaveBeenCalledExactlyOnceWith("python/cpython", issue.number);
+  expect(core.pin).toHaveBeenCalledExactlyOnceWith("python/cpython", issue.number, expect.anything());
   expect(paletteRow(component, "pin")?.title).toBe("Pin or Unpin");
   prRow.focus();
   await fireEvent.keyDown(prRow, { key: "ArrowDown" });
@@ -3041,14 +3171,14 @@ it("unpins on Ctrl+K P with the list hidden the Issue the PR on show came from, 
   await toggleList();
 
   component.runChord("pin", chordEnd());
-  expect(core.unpin).toHaveBeenCalledExactlyOnceWith("python/cpython", issue.number);
+  expect(core.unpin).toHaveBeenCalledExactlyOnceWith("python/cpython", issue.number, expect.anything());
   await toggleList();
   await fireEvent.click(await screen.findByRole("button", { name: "#112564 GIL drop during collection" }));
   const view = await screen.findByRole("region", { name: "Issue view" });
   await screen.findByRole("button", { name: "☆ Pin" });
   paletteRow(component, "pin", view)?.run();
 
-  expect(core.pin).toHaveBeenCalledExactlyOnceWith("python/cpython", issue.number);
+  expect(core.pin).toHaveBeenCalledExactlyOnceWith("python/cpython", issue.number, expect.anything());
 });
 
 it("pins on Ctrl+K P in the Detail pane the Issue on show before its view arrives, from the list's row", async () => {
@@ -3059,7 +3189,7 @@ it("pins on Ctrl+K P in the Detail pane the Issue on show before its view arrive
 
   paletteRow(component, "pin", view)?.run();
 
-  expect(core.pin).toHaveBeenCalledExactlyOnceWith("python/cpython", issue.number);
+  expect(core.pin).toHaveBeenCalledExactlyOnceWith("python/cpython", issue.number, expect.anything());
 });
 
 it("pins nothing on Ctrl+K P with the list hidden on a Standalone PR, or with nothing open", async () => {
@@ -3081,6 +3211,7 @@ it("pins nothing on Ctrl+K P with the list hidden on a Standalone PR, or with no
 
 it("mutes on M the item that holds the line under the cursor, and the cursor lands on the next row", async () => {
   const changed = catchEveryListener();
+  const acted = catchActed();
   const { treeRow } = await listing();
   treeRow.focus();
   await fireEvent.keyDown(treeRow, { key: "ArrowDown" });
@@ -3088,10 +3219,20 @@ it("mutes on M the item that holds the line under the cursor, and the cursor lan
 
   await fireEvent.keyDown(treeRow, { key: "m" });
   await fireEvent.keyDown(treeRow, { key: "m", repeat: true });
-  core.workbench.mockResolvedValue(workbenchPage([{ ...standalone, attention: null }]));
+  const after = workbenchPage([{ ...standalone, attention: null }]);
+  core.workbench.mockResolvedValue(after);
   changed("python/cpython", issue.seen.mark.numbers);
+  acted({
+    id: lastAsked(core.mute) ?? 0,
+    repository: "python/cpython",
+    page: { kind: "workbench", workbench: after.data },
+  });
 
-  expect(core.mute).toHaveBeenCalledExactlyOnceWith("python/cpython", issue.key, issue.seen.mark);
+  expect(core.mute).toHaveBeenCalledExactlyOnceWith(
+    "python/cpython",
+    { key: issue.key, mark: issue.seen.mark },
+    expect.anything(),
+  );
   const landed = await screen.findByRole("button", { name: "#5 Alone" });
   await vi.waitFor(() => {
     expect(landed.getAttribute("aria-current")).toBe("true");
@@ -3107,20 +3248,35 @@ it("mutes on M with the list hidden the item of the PR on show", async () => {
 
   await press("m");
 
-  expect(core.mute).toHaveBeenCalledExactlyOnceWith("python/cpython", issue.key, issue.seen.mark);
+  expect(core.mute).toHaveBeenCalledExactlyOnceWith(
+    "python/cpython",
+    { key: issue.key, mark: issue.seen.mark },
+    expect.anything(),
+  );
 });
 
 it("mutes the Issue on show from its button, the list follows, and back on the Issue the button reads Unmute", async () => {
   const changed = catchEveryListener();
+  const acted = catchActed();
   const { issueRow } = await listing();
   await fireEvent.click(issueRow);
 
   await fireEvent.click(await screen.findByRole("button", { name: "Mute" }));
-  expect(core.mute).toHaveBeenCalledExactlyOnceWith("python/cpython", issue.key, issue.seen.mark);
+  expect(core.mute).toHaveBeenCalledExactlyOnceWith(
+    "python/cpython",
+    { key: issue.key, mark: issue.seen.mark },
+    expect.anything(),
+  );
   const shown = await core.issue.mock.results[0]?.value;
   core.issue.mockResolvedValue({ ...shown, data: { ...shown.data, hidden: "muted" } });
-  core.workbench.mockResolvedValue(workbenchPage([{ ...standalone, attention: null }]));
+  const after = workbenchPage([{ ...standalone, attention: null }]);
+  core.workbench.mockResolvedValue(after);
   changed("python/cpython", issue.seen.mark.numbers);
+  acted({
+    id: lastAsked(core.mute) ?? 0,
+    repository: "python/cpython",
+    page: { kind: "workbench", workbench: after.data },
+  });
   // Mute opened the next item (#982), and the history goes back to the Issue.
   await screen.findByRole("region", { name: "PR view" });
   await press("ArrowLeft", { altKey: true });
@@ -3167,21 +3323,28 @@ it("mutes from the palette the author of the line under the cursor, a PR's autho
   const onIssue = paletteRow(component, "mute_author", treeRow);
 
   expect(onPr?.title).toBe("Mute Author");
-  expect(core.muteAuthor).toHaveBeenCalledExactlyOnceWith("python/cpython", "some-author");
+  expect(core.muteAuthor).toHaveBeenCalledExactlyOnceWith("python/cpython", "some-author", expect.anything());
   expect(onIssue?.title).toBe("Mute Author");
   onIssue?.run();
-  expect(core.muteAuthor).toHaveBeenLastCalledWith("python/cpython", "issue-author");
+  expect(core.muteAuthor).toHaveBeenLastCalledWith("python/cpython", "issue-author", expect.anything());
 });
 
 it("lands the cursor on the next row once Mute author takes the item under it away", async () => {
   const changed = catchEveryListener();
+  const acted = catchActed();
   const { component, issueRow } = await listing();
   issueRow.focus();
   await fireEvent.keyDown(issueRow, { key: "ArrowDown" });
 
   paletteRow(component, "mute_author", issueRow)?.run();
-  core.workbench.mockResolvedValue(workbenchPage([{ ...standalone, attention: null }]));
+  const after = workbenchPage([{ ...standalone, attention: null }]);
+  core.workbench.mockResolvedValue(after);
   changed("python/cpython", issue.seen.mark.numbers);
+  acted({
+    id: lastAsked(core.muteAuthor) ?? 0,
+    repository: "python/cpython",
+    page: { kind: "workbench", workbench: after.data },
+  });
 
   const landed = await screen.findByRole("button", { name: "#5 Alone" });
   await vi.waitFor(() => {
@@ -3251,19 +3414,30 @@ it("leaves Mute Author out of the palette on the user's own row", async () => {
 
 it("mutes the author of the Issue on show from its button, the list follows, and back on the Issue the button reads Unmute", async () => {
   const changed = catchEveryListener();
+  const acted = catchActed();
   const { issueRow } = await listing();
   await fireEvent.click(issueRow);
 
   await fireEvent.click(await screen.findByRole("button", { name: "Mute issue-author" }));
-  expect(core.muteAuthor).toHaveBeenCalledExactlyOnceWith("python/cpython", "issue-author");
+  expect(core.muteAuthor).toHaveBeenCalledExactlyOnceWith(
+    "python/cpython",
+    "issue-author",
+    expect.anything(),
+  );
   const shown = await core.issue.mock.results[0]?.value;
   const unmute: MuteAuthor = { kind: "unmute", login: "issue-author" };
   core.issue.mockResolvedValue({
     ...shown,
     data: { ...shown.data, hidden: "muted_author", mute_author: unmute },
   });
-  core.workbench.mockResolvedValue(workbenchPage([{ ...standalone, attention: null }]));
+  const after = workbenchPage([{ ...standalone, attention: null }]);
+  core.workbench.mockResolvedValue(after);
   changed("python/cpython", issue.seen.mark.numbers);
+  acted({
+    id: lastAsked(core.muteAuthor) ?? 0,
+    repository: "python/cpython",
+    page: { kind: "workbench", workbench: after.data },
+  });
   // Mute author finished the Issue its author opened, so the next item opened (#1052).
   await screen.findByRole("region", { name: "PR view" });
   await press("ArrowLeft", { altKey: true });
@@ -3342,18 +3516,25 @@ it("lists the Archived view with Unarchive on each row and no switch of order", 
   expect(screen.queryByRole("button", { name: /⇅/ })).toBeNull();
   const titles = component.paletteCommands().map((command) => command.title);
   expect(titles.filter((title) => title.startsWith("Sort by"))).toEqual([]);
-  expect(core.unarchive).toHaveBeenCalledExactlyOnceWith("python/cpython", standalone.key);
+  expect(core.unarchive).toHaveBeenCalledExactlyOnceWith("python/cpython", standalone.key, expect.anything());
 });
 
 it("unarchives on E in the Archived view the item that holds the line under the cursor, which lands on the next row", async () => {
+  const acted = catchActed();
   const { changed, issueRow } = await archivedView();
   await fireEvent.keyDown(issueRow, { key: "ArrowDown" });
 
   await fireEvent.keyDown(issueRow, { key: "e" });
-  core.workbench.mockResolvedValue(workbenchPage([{ ...standalone, attention: null, hidden: "archived" }]));
+  const after = workbenchPage([{ ...standalone, attention: null, hidden: "archived" }]);
+  core.workbench.mockResolvedValue(after);
   changed("python/cpython", [112564]);
+  acted({
+    id: lastAsked(core.unarchive) ?? 0,
+    repository: "python/cpython",
+    page: { kind: "workbench", workbench: after.data },
+  });
 
-  expect(core.unarchive).toHaveBeenCalledExactlyOnceWith("python/cpython", issue.key);
+  expect(core.unarchive).toHaveBeenCalledExactlyOnceWith("python/cpython", issue.key, expect.anything());
   expect(core.archive).not.toHaveBeenCalled();
   const landed = await screen.findByRole("button", { name: "#5 Alone" });
   await vi.waitFor(() => {
@@ -3362,14 +3543,25 @@ it("unarchives on E in the Archived view the item that holds the line under the 
 });
 
 it("marks a line of the Archived view unseen on Shift+Q, which unarchives the item, and the cursor moves on", async () => {
+  const acted = catchActed();
   const { changed, issueRow } = await archivedView();
   await fireEvent.keyDown(issueRow, { key: "ArrowDown" });
 
   await fireEvent.keyDown(issueRow, { key: "Q", shiftKey: true });
-  core.workbench.mockResolvedValue(workbenchPage([{ ...standalone, attention: null, hidden: "archived" }]));
+  const after = workbenchPage([{ ...standalone, attention: null, hidden: "archived" }]);
+  core.workbench.mockResolvedValue(after);
   changed("python/cpython", [160662, 112564]);
+  acted({
+    id: lastAsked(core.markUnseen) ?? 0,
+    repository: "python/cpython",
+    page: { kind: "workbench", workbench: after.data },
+  });
 
-  expect(core.markUnseen).toHaveBeenCalledExactlyOnceWith("python/cpython", 160662, issue.key);
+  expect(core.markUnseen).toHaveBeenCalledExactlyOnceWith(
+    "python/cpython",
+    { number: 160662, archived: issue.key },
+    expect.anything(),
+  );
   expect(core.unarchive).not.toHaveBeenCalled();
   const landed = await screen.findByRole("button", { name: "#5 Alone" });
   await vi.waitFor(() => {
@@ -3427,6 +3619,7 @@ it("offers the palette Pinned Issues, which shows the list with that view, and n
 
 it("opens the next item once the Issue on show, unpinned from its view, leaves the Pinned issues", async () => {
   const changed = catchEveryListener();
+  const acted = catchActed();
   const kept = { ...issue, number: 7, title: "Kept", key: { kind: "issue", number: 7 }, pinned: true };
   core.workbench.mockResolvedValue(
     workbenchPage([
@@ -3442,10 +3635,16 @@ it("opens the next item once the Issue on show, unpinned from its view, leaves t
   await fireEvent.click(await screen.findByRole("button", { name: "#112564 GIL drop during collection" }));
 
   await fireEvent.click(await screen.findByRole("button", { name: "★ Unpin" }));
-  core.workbench.mockResolvedValue(workbenchPage([{ ...kept, attention: null }]));
+  const after = workbenchPage([{ ...kept, attention: null }]);
+  core.workbench.mockResolvedValue(after);
   changed("python/cpython", [issue.number]);
+  acted({
+    id: lastAsked(core.unpin) ?? 0,
+    repository: "python/cpython",
+    page: { kind: "workbench", workbench: after.data },
+  });
 
-  expect(core.unpin).toHaveBeenCalledExactlyOnceWith("python/cpython", issue.number);
+  expect(core.unpin).toHaveBeenCalledExactlyOnceWith("python/cpython", issue.number, expect.anything());
   await vi.waitFor(() => {
     expect(core.issue.mock.calls.at(-1)?.[1]).toBe(7);
   });
@@ -3462,7 +3661,11 @@ it("offers Mark Unseen in the header of an item with nothing new, and the button
 
   await fireEvent.click(await screen.findByRole("button", { name: "Mark Unseen" }));
 
-  expect(core.markUnseen).toHaveBeenCalledExactlyOnceWith("python/cpython", 5, null);
+  expect(core.markUnseen).toHaveBeenCalledExactlyOnceWith(
+    "python/cpython",
+    { number: 5, archived: null },
+    expect.anything(),
+  );
   expect(core.markSeen).not.toHaveBeenCalled();
 });
 
@@ -3495,7 +3698,7 @@ it("marks from the palette the item as it is when the row runs, after a sync tha
   markSeen?.run();
 
   await vi.waitFor(() => {
-    expect(core.markSeen).toHaveBeenCalledExactlyOnceWith("python/cpython", laterMark);
+    expect(core.markSeen).toHaveBeenCalledExactlyOnceWith("python/cpython", laterMark, expect.anything());
   });
 });
 
@@ -3550,11 +3753,15 @@ it("marks from the palette what Q and Shift+Q mark where the focus was: the line
 
   expect(nothing).toBeUndefined();
   await vi.waitFor(() => {
-    expect(core.markUnseen).toHaveBeenCalledExactlyOnceWith("python/cpython", 160662, null);
+    expect(core.markUnseen).toHaveBeenCalledExactlyOnceWith(
+      "python/cpython",
+      { number: 160662, archived: null },
+      expect.anything(),
+    );
   });
   expect(core.markSeen.mock.calls).toEqual([
-    ["python/cpython", row.seen.mark],
-    ["python/cpython", laterMark],
+    ["python/cpython", row.seen.mark, expect.anything()],
+    ["python/cpython", laterMark, expect.anything()],
   ]);
 });
 
@@ -3565,7 +3772,7 @@ it("marks the item on show from its header's button, and says why the core refus
 
   await fireEvent.click(await screen.findByRole("button", { name: "Mark Seen" }));
 
-  expect(core.markSeen).toHaveBeenCalledExactlyOnceWith("python/cpython", issue.seen.mark);
+  expect(core.markSeen).toHaveBeenCalledExactlyOnceWith("python/cpython", issue.seen.mark, expect.anything());
   expect((await screen.findByText(/couldn't mark/)).textContent).toBe(
     "Tsugiki couldn't mark this item: no database",
   );
@@ -5085,6 +5292,7 @@ it("switches Show muted atop the Inbox, which greys each row a Muted author wrot
 
 it("opens the next item once the Issue on show, pinned from its view, leaves the Inbox", async () => {
   const changed = catchEveryListener();
+  const acted = catchActed();
   core.workbench.mockResolvedValue(workbenchPage([]));
   core.inbox.mockResolvedValue(
     pageOf([
@@ -5097,10 +5305,16 @@ it("opens the next item once the Issue on show, pinned from its view, leaves the
   await fireEvent.click(await screen.findByRole("button", { name: "#112564 GIL drop during collection" }));
 
   await fireEvent.click(await screen.findByRole("button", { name: "☆ Pin" }));
-  core.inbox.mockResolvedValue(pageOf([{ ...standalone, attention: null }]));
+  const after = pageOf([{ ...standalone, attention: null }]);
+  core.inbox.mockResolvedValue(after);
   changed("python/cpython", [issue.number]);
+  acted({
+    id: lastAsked(core.pin) ?? 0,
+    repository: "python/cpython",
+    page: { kind: "inbox", inbox: after.data },
+  });
 
-  expect(core.pin).toHaveBeenCalledExactlyOnceWith("python/cpython", issue.number);
+  expect(core.pin).toHaveBeenCalledExactlyOnceWith("python/cpython", issue.number, expect.anything());
   expect(await screen.findByRole("heading", { name: /PR 5/ })).toBeTruthy();
 });
 

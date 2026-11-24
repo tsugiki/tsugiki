@@ -1,6 +1,7 @@
 //! The Workbench's view model (ADR 0008), worked out from stored facts when the window asks (ADR 0010). Each
 //! item is an Issue with the PRs that fix it and their Backports, or a PR outside any Issue (ADR 0011).
 
+mod acted;
 mod attention;
 mod backports;
 mod filters;
@@ -15,6 +16,7 @@ pub mod quick_open;
 mod rows;
 mod trees;
 
+pub use acted::{Answered, Asked, Listing, Page};
 pub use attention::{Attention, Seen, SeenState};
 pub use filters::FilterLine;
 pub use issues::IssueItem;
@@ -285,8 +287,8 @@ impl ListedItem {
     }
 }
 
-/// An unpin's effect on a listed item on the Workbench (#488), which the window reads to move the cursor on
-/// at the keypress (#1052).
+/// An unpin's effect on a listed item on the Workbench (#488), which the window reads to judge whether the
+/// unpin finishes the item (#1052).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Type)]
 #[serde(rename_all = "snake_case")]
 pub enum Unpin {

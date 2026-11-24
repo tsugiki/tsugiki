@@ -21,7 +21,7 @@ use tsugiki_core::status::{Change, Status, StatusBoard};
 
 use crate::first_frame;
 use crate::{
-    Changed, CloningChanged, FailedHeads, HeadsFetchFailed, HeadsFetched, HourPointsChanged,
+    Acted, Changed, CloningChanged, FailedHeads, HeadsFetchFailed, HeadsFetched, HourPointsChanged,
     InFlightChanged, LanguageServersChanged, LastSyncChanged, MirrorProblemChanged,
     MirrorQuestionChanged, MirrorStatesChanged, MirrorsHeld, MirrorsHeldChanged, NewVersionFound,
     PickPath, Picker, PointsBackChanged, ReadFailed, RepositorySyncChanged, StatusChanged,
@@ -115,6 +115,7 @@ fn status_board<R: Runtime>(app: &AppHandle<R>, following: MirrorRequests) -> St
     let mut back_state = WindowState::manage(app, None, "the time the points come back");
     let mut in_flight_state = WindowState::manage(app, None, "the request in flight");
     let changes_handle = app.clone();
+    let acted_handle = app.clone();
     let failed_reads_handle = app.clone();
     let repository_syncs_handle = app.clone();
     StatusBoard::new(Box::new(move |status| {
@@ -123,6 +124,9 @@ fn status_board<R: Runtime>(app: &AppHandle<R>, following: MirrorRequests) -> St
     }))
     .with_changes(Box::new(move |change| {
         log_if_unsent(Changed(change.clone()).emit(&changes_handle));
+    }))
+    .with_acted(Box::new(move |answered| {
+        log_if_unsent(Acted(answered.clone()).emit(&acted_handle));
     }))
     // Only a view that is listening asks for a read, so a window that starts late has missed nothing.
     .with_failed_reads(Box::new(move |failed| {

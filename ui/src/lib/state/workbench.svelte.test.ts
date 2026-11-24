@@ -34,7 +34,7 @@ vi.mock("$lib/data/bindings", () => ({
     putFilterOnWorkbench: vi.fn(),
     switchShowMuted: vi.fn(),
   },
-  events: { changed: { listen: vi.fn() } },
+  events: { acted: { listen: vi.fn() }, changed: { listen: vi.fn() } },
 }));
 
 /** The mark that Mark Seen sends for `numbers`, with nothing new on them. */
@@ -82,6 +82,20 @@ const issueWith = (number: number, pr: number): ListedItem => ({
   updated_at: "2026-11-04T10:00:00Z",
   pull_requests: [{ ...row, kind: "pr", number: pr, seen: seen(pr), backports: [] }],
   seen: seen(number, pr),
+});
+
+/** The core's answer to action `id`, with the Workbench page `page` it left (#1052). */
+const answered = (id: number, page: ReturnType<typeof workbenchPage>) => ({
+  id,
+  repository: "python/cpython",
+  page: { kind: "workbench" as const, workbench: page.data },
+});
+
+/** The core's answer to action `id`, with the Inbox page `page` it left (#1052). */
+const answeredInbox = (id: number, page: ReturnType<typeof inboxPage>) => ({
+  id,
+  repository: "python/cpython",
+  page: { kind: "inbox" as const, inbox: page.data },
 });
 
 describe("WorkbenchState", () => {
@@ -458,7 +472,7 @@ describe("WorkbenchState", () => {
   });
 
   it("moves the cursor on from a muted item with the Muted items shown, and closes them once they empty", async () => {
-    const { send } = catchChanged();
+    const { send, answer: acted } = catchChanged();
     vi.mocked(commands.mute).mockResolvedValue(done);
     const muted = (number: number): ListedItem => ({ ...item(number), hidden: "muted" });
     vi.mocked(commands.workbench).mockResolvedValueOnce(
@@ -479,6 +493,7 @@ describe("WorkbenchState", () => {
     };
 
     await state.mute({ key: item(5).key, mark: item(5).seen.mark });
+    acted(answered(1, workbenchPage([item(6)], { muted: [muted(5), muted(9)] })));
     const muting = [state.cursor?.number, state.mutedShown];
     await answer([6], [5, 9]);
     await answer([5, 6, 9], []);
@@ -879,7 +894,8 @@ describe("WorkbenchState", () => {
     const state = new WorkbenchState("python/cpython");
     await state.load();
     state.stop();
-    expect(stop).toHaveBeenCalledOnce();
+    // The changes' listener and the answers' (#1052).
+    expect(stop).toHaveBeenCalledTimes(2);
   });
 
   it("stops listening and asks nothing if stopped before it could listen", async () => {
@@ -888,7 +904,8 @@ describe("WorkbenchState", () => {
     const loading = state.load();
     state.stop();
     await loading;
-    expect(stop).toHaveBeenCalledOnce();
+    // The changes' listener and the answers' (#1052).
+    expect(stop).toHaveBeenCalledTimes(2);
     expect(commands.workbench).not.toHaveBeenCalled();
   });
 
@@ -957,7 +974,11 @@ describe("WorkbenchState", () => {
     expect(state.hiddenHolding({ number: 1, kind: "issue", issue: undefined }, "archived")).toBeUndefined();
     expect(await state.mute({ key, mark: muted.seen.mark })).toBeUndefined();
     expect(await state.unmute(key)).toBe("no database");
-    expect(commands.mute).toHaveBeenCalledWith("python/cpython", key, muted.seen.mark);
+    expect(commands.mute).toHaveBeenCalledWith(
+      "python/cpython",
+      { key, mark: muted.seen.mark },
+      expect.anything(),
+    );
     expect(commands.unmute).toHaveBeenCalledWith("python/cpython", key);
     state.stop();
   });
@@ -971,8 +992,12 @@ describe("WorkbenchState", () => {
     expect(await state.markSeen(undefined, mark)).toBeUndefined();
     expect(await state.markUnseen(7)).toBe("no database");
 
-    expect(commands.markSeen).toHaveBeenCalledWith("python/cpython", mark);
-    expect(commands.markUnseen).toHaveBeenCalledWith("python/cpython", 7, null);
+    expect(commands.markSeen).toHaveBeenCalledWith("python/cpython", mark, expect.anything());
+    expect(commands.markUnseen).toHaveBeenCalledWith(
+      "python/cpython",
+      { number: 7, archived: null },
+      expect.anything(),
+    );
   });
 
   /** Item `number`, with a Review request waiting on the user. */
@@ -991,78 +1016,69 @@ describe("WorkbenchState", () => {
   /** A list of the waiting `items` with the cursor on its line `at`, counted from the top, what it calls
    * each time the cursor lands, and the order the window holds, which a test may change. */
   const listingWithCursor = async (items: number[], at: number) => {
-    const { send } = catchChanged();
+    const { send, answer: acted } = catchChanged();
     answering(items);
     const landed = vi.fn();
     const order = { now: "attention" as ListOrder };
     const state = new WorkbenchState("python/cpython", { landed, order: () => order.now });
     await state.load();
     for (let step = 0; step <= at; step++) state.moveCursor(1);
-    return { state, send, landed, order };
+    return { state, send, acted, landed, order };
   };
 
   describe("the cursor rule (#1052)", () => {
     /** The line of item `number`, a Standalone PR. */
     const at = (number: number): Stop => ({ number, kind: "pull_request", issue: undefined });
 
-    it("moves the cursor on at Archive's keypress, before the core answers, and leaves it there as the item goes", async () => {
-      const { state, send, landed } = await listingWithCursor([4, 3, 2, 1], 1);
-      const archiving = Promise.withResolvers<typeof done>();
-      vi.mocked(commands.archive).mockReturnValue(archiving.promise);
+    it("moves the cursor on once the core has kept Archive, with the list the action left", async () => {
+      const { state, acted, landed } = await listingWithCursor([4, 3, 2, 1], 1);
+      vi.mocked(commands.archive).mockResolvedValue(done);
 
       const problem = state.archive({ key: waiting(3).key, mark: waiting(3).seen.mark });
-      const atKeypress = state.cursor;
-      // A sync's answer that comes before the archive's own still lists the item.
-      send("python/cpython");
-      await vi.waitFor(() => {
-        expect(commands.workbench).toHaveBeenCalledTimes(2);
-      });
-      await nextTask();
-      const beforeTheReply = state.cursor;
-      archiving.resolve(done);
+      expect(state.cursor, "nothing moves before the core answers").toEqual(at(3));
       expect(await problem).toBeUndefined();
-      answering([4, 2, 1]);
-      send("python/cpython");
-      await vi.waitFor(() => {
-        expect(numbers(state)).toEqual([4, 2, 1]);
-      });
+      acted(answered(1, workbenchPage([4, 2, 1].map(item))));
 
-      expect([atKeypress, beforeTheReply, state.cursor]).toEqual([at(2), at(2), at(2)]);
-      expect(landed).toHaveBeenCalledExactlyOnceWith({ from: waiting(3).key, was: at(3), to: at(2) });
+      expect(state.cursor).toEqual(at(2));
+      expect(landed).toHaveBeenCalledExactlyOnceWith({ was: at(3), to: at(2) });
       state.stop();
     });
 
-    it("leaves the cursor where the keypress put it when the action fails", async () => {
+    it("leaves the cursor where it was when the action fails, and no answer comes", async () => {
       const { state, landed } = await listingWithCursor([4, 3, 2, 1], 1);
       vi.mocked(commands.mute).mockResolvedValue(refused("no database"));
 
       expect(await state.mute({ key: waiting(3).key, mark: waiting(3).seen.mark })).toBe("no database");
 
-      expect(state.cursor).toEqual(at(2));
-      expect(landed).toHaveBeenCalledOnce();
+      expect(state.cursor).toEqual(at(3));
+      expect(landed).not.toHaveBeenCalled();
       state.stop();
     });
 
-    it("moves on once for two actions on the item before either answers, whichever of them fails", async () => {
-      const { state, landed } = await listingWithCursor([4, 3, 2, 1], 1);
+    it("moves once for two actions on the item before either answers, whichever of them fails", async () => {
+      const { state, acted, landed } = await listingWithCursor([4, 3, 2, 1], 1);
       vi.mocked(commands.archive).mockResolvedValue(refused("no database"));
       vi.mocked(commands.markSeen).mockResolvedValue(done);
       const archiving = state.archive({ key: waiting(3).key, mark: waiting(3).seen.mark });
 
-      // The Detail pane's Mark Seen on the same item, which the cursor has left.
+      // The Detail pane's Mark Seen on the same item, which the cursor hasn't left yet.
       const marking = state.markSeen(at(3), waiting(3).seen.mark);
 
       expect([await archiving, await marking]).toEqual(["no database", undefined]);
+      // The core answers the action it kept second only, which says the first failed, and moves once.
+      acted(answered(2, workbenchPage([4, 2, 1].map(item))));
+
       expect(state.cursor).toEqual(at(2));
       expect(landed).toHaveBeenCalledOnce();
       state.stop();
     });
 
     it("moves nothing for an action on an item the cursor isn't on, as from the Detail pane", async () => {
-      const { state, landed } = await listingWithCursor([4, 3, 2, 1], 1);
+      const { state, acted, landed } = await listingWithCursor([4, 3, 2, 1], 1);
       vi.mocked(commands.archive).mockResolvedValue(done);
 
       await state.archive({ key: waiting(4).key, mark: waiting(4).seen.mark });
+      acted(answered(1, workbenchPage([3, 2, 1].map(item))));
 
       expect(state.cursor).toEqual(at(3));
       expect(landed).not.toHaveBeenCalled();
@@ -1070,7 +1086,7 @@ describe("WorkbenchState", () => {
     });
 
     it("moves past the whole Issue from a PR's line in its tree, as Archive acts on the Issue", async () => {
-      catchChanged();
+      const { answer: acted } = catchChanged();
       const issue = issueWith(7, 8);
       vi.mocked(commands.workbench).mockResolvedValue(workbenchPage([issue, item(3)]));
       vi.mocked(commands.archive).mockResolvedValue(done);
@@ -1081,13 +1097,14 @@ describe("WorkbenchState", () => {
       state.moveTo(onEight);
 
       await state.archive({ key: issue.key, mark: issue.seen.mark });
+      acted(answered(1, workbenchPage([item(3)])));
 
-      expect(landed).toHaveBeenCalledExactlyOnceWith({ from: issue.key, was: onEight, to: at(3) });
+      expect(landed).toHaveBeenCalledExactlyOnceWith({ was: onEight, to: at(3) });
       state.stop();
     });
 
     it("moves to the last line, under an unfolded Issue, when nothing comes after the item, and off the list once no other line is left", async () => {
-      const { send } = catchChanged();
+      const { send, answer: acted } = catchChanged();
       const issue = issueWith(7, 8);
       vi.mocked(commands.workbench).mockResolvedValue(workbenchPage([issue, item(3)]));
       vi.mocked(commands.archive).mockResolvedValue(done);
@@ -1099,6 +1116,7 @@ describe("WorkbenchState", () => {
       const onEight = { number: 8, kind: "pull_request" as const, issue: 7 };
 
       await state.archive({ key: item(3).key, mark: item(3).seen.mark });
+      acted(answered(1, workbenchPage([issue])));
       expect(state.cursor).toEqual(onEight);
       vi.mocked(commands.workbench).mockResolvedValue(workbenchPage([issue]));
       send("python/cpython");
@@ -1106,40 +1124,38 @@ describe("WorkbenchState", () => {
         expect(numbers(state)).toEqual([7]);
       });
       await state.archive({ key: issue.key, mark: issue.seen.mark });
+      acted(answered(2, workbenchPage([])));
 
       expect(state.cursor).toBeUndefined();
-      expect(landed.mock.calls).toEqual([
-        [{ from: item(3).key, was: at(3), to: onEight }],
-        [{ from: issue.key, was: onEight, to: undefined }],
-      ]);
+      expect(landed.mock.calls).toEqual([[{ was: at(3), to: onEight }], [{ was: onEight, to: undefined }]]);
       state.stop();
     });
 
     it("moves on at Mark Seen on the selected item's own line, by last update too, while the item waits or has something new", async () => {
-      const { state, landed, order } = await listingWithCursor([4, 3, 2, 1], 1);
+      const { state, acted, landed, order } = await listingWithCursor([4, 3, 2, 1], 1);
       vi.mocked(commands.markSeen).mockResolvedValue(done);
       order.now = "last_update";
       await state.reorder();
 
       await state.markSeen(at(3), waiting(3).seen.mark);
+      acted(answered(1, workbenchPage([4, 2, 1].map(item))));
       const news = { ...item(1), seen: { ...item(1).seen, state: "new_activity" as const } };
       vi.mocked(commands.workbench).mockResolvedValue(workbenchPage([news, item(5), item(6)]));
       await state.reorder();
       state.moveTo(at(1));
       await state.markSeen(at(1), news.seen.mark);
+      acted(answered(2, workbenchPage([item(1), item(5), item(6)])));
       // Nothing waits on item 5 and nothing on it is new, so Mark Seen changes nothing.
       await state.markSeen(at(5), item(5).seen.mark);
+      acted(answered(3, workbenchPage([item(1), item(5), item(6)])));
 
       expect(state.cursor).toEqual(at(5));
-      expect(landed.mock.calls).toEqual([
-        [{ from: waiting(3).key, was: at(3), to: at(2) }],
-        [{ from: news.key, was: at(1), to: at(5) }],
-      ]);
+      expect(landed.mock.calls).toEqual([[{ was: at(3), to: at(2) }], [{ was: at(1), to: at(5) }]]);
       state.stop();
     });
 
     it("keeps the cursor on a PR in a tree that Mark Seen marks alone, and on the last item, which Mark Seen leaves in the list", async () => {
-      catchChanged();
+      const { answer: acted } = catchChanged();
       const issue = { ...issueWith(7, 8), attention: waiting(7).attention };
       vi.mocked(commands.workbench).mockResolvedValue(workbenchPage([issue, waiting(3)]));
       vi.mocked(commands.markSeen).mockResolvedValue(done);
@@ -1150,17 +1166,19 @@ describe("WorkbenchState", () => {
       state.moveTo(onEight);
 
       await state.markSeen(onEight, seen(8).mark);
+      acted(answered(1, workbenchPage([issue, waiting(3)])));
       const onPr = state.cursor;
       state.moveTo(at(3));
       await state.markSeen(at(3), waiting(3).seen.mark);
+      acted(answered(2, workbenchPage([issue, waiting(3)])));
 
       expect([onPr, state.cursor]).toEqual([onEight, at(3)]);
-      expect(landed).not.toHaveBeenCalled();
+      expect(landed).toHaveBeenCalledExactlyOnceWith({ was: at(3), to: at(3) });
       state.stop();
     });
 
     it("moves on from an item a Filter's view keeps Archived, but stays on it as the last, where any other view moves up", async () => {
-      catchChanged();
+      const { answer: acted } = catchChanged();
       vi.mocked(commands.archive).mockResolvedValue(done);
       vi.mocked(commands.workbench).mockResolvedValue(answer(5, 6));
       const state = new WorkbenchState("python/cpython");
@@ -1171,11 +1189,14 @@ describe("WorkbenchState", () => {
       await state.select(onlyMine);
       state.moveTo(at(5));
       await archive(5);
+      acted(answered(1, answer(5, 6)));
       const inFilter = [state.cursor];
       await archive(6);
+      acted(answered(2, answer(5, 6)));
       inFilter.push(state.cursor);
       await state.select(whole);
       await archive(6);
+      acted(answered(3, answer(5)));
 
       expect(inFilter).toEqual([at(6), at(6)]);
       expect(state.cursor).toEqual(at(5));
@@ -1183,28 +1204,29 @@ describe("WorkbenchState", () => {
     });
 
     it("moves on at Mute, and leaves a Filter's Muted items folded as the item goes into them", async () => {
-      const { send } = catchChanged();
+      const { send, answer: acted } = catchChanged();
       vi.mocked(commands.mute).mockResolvedValue(done);
       vi.mocked(commands.workbench).mockResolvedValueOnce(answer(5, 6, 7));
       const state = new WorkbenchState("python/cpython");
       await state.load();
       state.moveCursor(1);
+      const page = workbenchPage([6, 7].map(item), { muted: [{ ...item(5), hidden: "muted" }] });
 
       await state.mute({ key: item(5).key, mark: item(5).seen.mark });
-      const atKeypress = state.cursor;
-      const page = workbenchPage([6, 7].map(item), { muted: [{ ...item(5), hidden: "muted" }] });
+      acted(answered(1, page));
+      const beforeTheChange = state.cursor;
       vi.mocked(commands.workbench).mockResolvedValueOnce(page);
       send("python/cpython");
       await vi.waitFor(() => {
         expect(numbers(state)).toEqual([6, 7]);
       });
 
-      expect([atKeypress, state.cursor, state.mutedShown]).toEqual([at(6), at(6), false]);
+      expect([beforeTheChange, state.cursor, state.mutedShown]).toEqual([at(6), at(6), false]);
       state.stop();
     });
 
     it("moves on at Mute author from the item its author opened, and stays on another's", async () => {
-      catchChanged();
+      const { answer: acted } = catchChanged();
       vi.mocked(commands.muteAuthor).mockResolvedValue(done);
       vi.mocked(commands.workbench).mockResolvedValue(answer(5, 6, 7));
       const landed = vi.fn();
@@ -1213,16 +1235,51 @@ describe("WorkbenchState", () => {
       state.moveTo(at(5));
 
       await state.muteAuthor("someone-else", at(5));
+      acted(answered(1, answer(5, 6, 7)));
       const another = state.cursor;
       await state.muteAuthor("pr-author", at(5));
+      acted(answered(2, answer(6, 7)));
 
       expect([another, state.cursor]).toEqual([at(5), at(6)]);
       expect(landed).toHaveBeenCalledOnce();
       state.stop();
     });
 
+    it("moves to the first row the answer still lists when the action takes several rows out (#1052)", async () => {
+      const { state, acted } = await listingWithCursor([4, 3, 2, 1, 0], 1);
+      vi.mocked(commands.muteAuthor).mockResolvedValue(done);
+
+      // Mute author takes every item by that author, so the row after the item and the one after that go.
+      await state.muteAuthor("someone-else", at(3));
+      acted(answered(1, workbenchPage([4, 1, 0].map(item))));
+
+      expect(state.cursor).toEqual(at(1));
+      state.stop();
+    });
+
+    it("moves past the Issue when Mute author on a PR's row takes its whole item out (#1089)", async () => {
+      const { answer: acted } = catchChanged();
+      const issue = issueWith(7, 8);
+      vi.mocked(commands.workbench).mockResolvedValue(workbenchPage([issue, item(3)]));
+      vi.mocked(commands.muteAuthor).mockResolvedValue(done);
+      const landed = vi.fn();
+      const state = new WorkbenchState("python/cpython", { landed });
+      await state.load();
+      const onEight = { number: 8, kind: "pull_request" as const, issue: 7 };
+      state.moveTo(onEight);
+
+      // The PR's author wrote the PR, not the Issue, so the action keeps the item until the answer says
+      // nothing else keeps the Issue listed.
+      await state.muteAuthor("pr-author", onEight);
+      acted(answered(1, workbenchPage([item(3)])));
+
+      expect(state.cursor).toEqual(at(3));
+      expect(landed).toHaveBeenCalledExactlyOnceWith({ was: onEight, to: at(3) });
+      state.stop();
+    });
+
     it("moves on at Unarchive and at Mark Unseen of an Archived item only in the Archived view, which they take it out of", async () => {
-      catchChanged();
+      const { answer: acted } = catchChanged();
       vi.mocked(commands.unarchive).mockResolvedValue(done);
       vi.mocked(commands.markUnseen).mockResolvedValue(done);
       vi.mocked(commands.workbench).mockResolvedValue(answer(5, 6));
@@ -1232,21 +1289,25 @@ describe("WorkbenchState", () => {
 
       // From the Issue view's button, while the Workbench lists the item it brings back.
       await state.unarchive(item(5).key);
+      acted(answered(1, answer(5, 6)));
       const onWorkbench = state.cursor;
       vi.mocked(commands.workbench).mockResolvedValue(answer(7, 8, 9));
       await state.select({ kind: "archived" });
       state.moveTo(at(7));
       await state.unarchive(item(7).key);
+      acted(answered(2, answer(8, 9)));
       const unarchived = state.cursor;
       await state.markUnseen(8, item(8).key);
+      acted(answered(3, answer(9)));
       const unseen = state.cursor;
       await state.markUnseen(10);
+      acted(answered(4, answer(9)));
 
       expect([onWorkbench, unarchived, unseen, state.cursor]).toEqual([at(5), at(8), at(9), at(9)]);
       state.stop();
     });
 
-    it("leaves no wait behind an action that changes nothing, so the item leaving later takes the cursor off the list", async () => {
+    it("leaves no wait behind an action that fails, so the item leaving later takes the cursor off the list", async () => {
       const { send } = catchChanged();
       vi.mocked(commands.unarchive).mockResolvedValue(refused("no database"));
       vi.mocked(commands.workbench).mockResolvedValue(answer(5, 6));
@@ -1718,7 +1779,7 @@ describe("WorkbenchState's Inbox", () => {
     listedIssue(number, { pinned: true, unpin });
 
   it("moves the cursor on at a pin in the Inbox or Archived, which it takes the Issue out of, and stays on the Workbench (#1052)", async () => {
-    const { send } = catchChanged();
+    const { send, answer: acted } = catchChanged();
     vi.mocked(commands.pin).mockResolvedValue(done);
     vi.mocked(commands.workbench).mockResolvedValue(workbenchPage([5, 6].map((n) => listedIssue(n))));
     const issues = (...numbers: number[]) => inboxPage(numbers.map((n) => listedIssue(n)));
@@ -1727,17 +1788,20 @@ describe("WorkbenchState's Inbox", () => {
     state.moveTo(issueAt(3));
 
     await state.pin(3);
+    acted(answeredInbox(1, issues(2, 1)));
     const inInbox = state.cursor;
     // A pin unarchives its Issue, which leaves the Archived view as on Unarchive.
     vi.mocked(commands.workbench).mockResolvedValue(workbenchPage([7, 8].map((n) => listedIssue(n))));
     await state.select({ kind: "archived" });
     state.moveTo(issueAt(7));
     await state.pin(7);
+    acted(answered(2, workbenchPage([listedIssue(8)])));
     const inArchived = state.cursor;
     vi.mocked(commands.workbench).mockResolvedValue(workbenchPage([5, 6].map((n) => listedIssue(n))));
     await state.select(whole);
     state.moveTo(issueAt(5));
     await state.pin(5);
+    acted(answered(3, workbenchPage([pinned(5), listedIssue(6)])));
     vi.mocked(commands.workbench).mockResolvedValue(workbenchPage([pinned(5), listedIssue(6)]));
     send("python/cpython");
     await vi.waitFor(() => {
@@ -1745,12 +1809,12 @@ describe("WorkbenchState's Inbox", () => {
     });
 
     expect([inInbox, inArchived, state.cursor]).toEqual([issueAt(2), issueAt(8), issueAt(5)]);
-    expect(commands.pin).toHaveBeenLastCalledWith("python/cpython", 5);
+    expect(commands.pin).toHaveBeenLastCalledWith("python/cpython", 5, expect.anything());
     state.stop();
   });
 
   it("moves the cursor on at an unpin in the Pinned issues, and on the Workbench while only the pin keeps the Issue there or the unpin archives it (#1052)", async () => {
-    const { send } = catchChanged();
+    const { send, answer: acted } = catchChanged();
     vi.mocked(commands.unpin).mockResolvedValue(done);
     vi.mocked(commands.workbench).mockResolvedValue(workbenchPage([pinned(5), pinned(6), pinned(7)]));
     const state = new WorkbenchState("python/cpython");
@@ -1758,6 +1822,7 @@ describe("WorkbenchState's Inbox", () => {
     await state.select({ kind: "pinned" });
     state.moveTo(issueAt(5));
     await state.unpin(5);
+    acted(answered(1, workbenchPage([pinned(6), pinned(7)])));
     const inPinned = state.cursor;
 
     const onWorkbench = [pinned(6, "leaves"), pinned(7), pinned(8, "archives"), listedIssue(9)];
@@ -1765,11 +1830,14 @@ describe("WorkbenchState's Inbox", () => {
     await state.select(whole);
     state.moveTo(issueAt(6));
     await state.unpin(6);
+    acted(answered(2, workbenchPage([pinned(7), pinned(8, "archives"), listedIssue(9)])));
     const alone = state.cursor;
     await state.unpin(7);
+    acted(answered(3, workbenchPage([pinned(7), pinned(8, "archives"), listedIssue(9)])));
     const kept = state.cursor;
     state.moveTo(issueAt(8));
     await state.unpin(8);
+    acted(answered(4, workbenchPage([pinned(7), listedIssue(9)])));
     const closed = state.cursor;
     vi.mocked(commands.workbench).mockResolvedValue(workbenchPage([listedIssue(7), listedIssue(9)]));
     send("python/cpython");
@@ -1779,16 +1847,15 @@ describe("WorkbenchState's Inbox", () => {
 
     expect([inPinned, alone, kept, closed]).toEqual([issueAt(6), issueAt(7), issueAt(7), issueAt(9)]);
     expect(state.cursor).toEqual(issueAt(9));
-    expect(commands.unpin).toHaveBeenLastCalledWith("python/cpython", 8);
+    expect(commands.unpin).toHaveBeenLastCalledWith("python/cpython", 8, expect.anything());
     state.stop();
   });
 
   it("moves the cursor on at an unpin in the Stale reviews only for a pin the unpin archives, which they leave out (#1052)", async () => {
-    catchChanged();
+    const { answer: acted } = catchChanged();
     vi.mocked(commands.unpin).mockResolvedValue(done);
-    vi.mocked(commands.workbench).mockResolvedValue(
-      workbenchPage([pinned(5, "leaves"), pinned(6, "archives"), listedIssue(7)]),
-    );
+    const listed = [pinned(5, "leaves"), pinned(6, "archives"), listedIssue(7)];
+    vi.mocked(commands.workbench).mockResolvedValue(workbenchPage(listed));
     const state = new WorkbenchState("python/cpython");
     await state.load();
     await state.select({ kind: "stale_reviews" });
@@ -1796,16 +1863,18 @@ describe("WorkbenchState's Inbox", () => {
 
     // The Stale reviews list the Issue for its PR's Stale review, pinned or not.
     await state.unpin(5);
+    acted(answered(1, workbenchPage(listed)));
     const kept = state.cursor;
     state.moveTo(issueAt(6));
     await state.unpin(6);
+    acted(answered(2, workbenchPage([pinned(5, "leaves"), listedIssue(7)])));
 
     expect([kept, state.cursor]).toEqual([issueAt(5), issueAt(7)]);
     state.stop();
   });
 
   it("keeps the cursor where an unpin in the Pinned issues put it, though a sync first lists the pin still, Archived (#1052)", async () => {
-    const { send } = catchChanged();
+    const { send, answer: acted } = catchChanged();
     vi.mocked(commands.unpin).mockResolvedValue(done);
     const archived = { ...pinned(5), hidden: "archived" as const };
     vi.mocked(commands.workbench).mockResolvedValue(workbenchPage([archived, pinned(6)]));
@@ -1822,6 +1891,7 @@ describe("WorkbenchState's Inbox", () => {
     };
 
     await state.unpin(5);
+    acted(answered(1, workbenchPage([pinned(6)])));
     // The core replies before it writes, so a sync's answer can still list the pin, drawn Archived.
     await reload(archived, pinned(6), pinned(7));
     const before = state.cursor;

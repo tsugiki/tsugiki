@@ -7,7 +7,7 @@ use std::collections::VecDeque;
 use std::num::NonZeroU32;
 
 use crate::repository::RepositoryName;
-use crate::status::{Change, Changes};
+use crate::status::{Announced, Change};
 use crate::store::Store;
 
 /// How many PRs a step works out the links of, at most. The step keeps the session's thread from its next
@@ -91,7 +91,7 @@ impl LinkRefill {
     /// refill. Its batch keeps the links it would replace, and the names stay, for the next launch to refill
     /// every Repository. The earlier batches of its Repository keep what they saved, so the window hears of
     /// the Repository then too.
-    pub(super) fn step(&mut self, board: &Changes, store: &Store) {
+    pub(super) fn step(&mut self, board: &Announced<Change>, store: &Store) {
         let Some(left) = &mut self.left else {
             return;
         };
@@ -106,7 +106,7 @@ impl LinkRefill {
                     left.push_front(Left { repository, from });
                     return;
                 }
-                Ok(None) => board.changed(&changed(repository)),
+                Ok(None) => board.announce(&changed(repository)),
                 Err(problem) => {
                     log::warn!(
                         "Tsugiki couldn't work out the links of {repository} again, and tries at the \
@@ -115,7 +115,7 @@ impl LinkRefill {
                     );
                     // A batch from the first number up is the Repository's first.
                     if next.from > 0 {
-                        board.changed(&changed(repository));
+                        board.announce(&changed(repository));
                     }
                     self.left = None;
                     return;

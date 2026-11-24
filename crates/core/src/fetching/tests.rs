@@ -4,6 +4,7 @@ use crate::facts::CommitSha;
 use crate::repository_settings::{RepositorySettings, SavedBy};
 use crate::status::ItemUnread;
 use crate::testing::cpython;
+use crate::work::Unseen;
 
 fn head(number: u32) -> PrHead {
     PrHead {
@@ -140,7 +141,14 @@ fn the_users_demands_of_github_reach_the_session_in_the_order_asked() {
     let saved = |by| SettingsSave::new(RepositorySettings::new(cpython()), &[], by);
     fetching.settings_changed(saved(SavedBy::HandEdit));
     fetching.settings_changed(saved(SavedBy::Window));
-    fetching.mark_unseen(cpython(), 9, None);
+    fetching.mark_unseen(
+        cpython(),
+        Unseen {
+            number: 9,
+            archived: None,
+        },
+        None,
+    );
     fetching.sync(cpython());
     fetching.stop_session();
 

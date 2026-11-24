@@ -33,13 +33,13 @@ use crate::patch_ids::PatchReads;
 use crate::repository::RepositoryName;
 use crate::repository_settings::{RepositorySettings, SavedBy, SettingsSave};
 use crate::settings::SettingsView;
-use crate::status::{Change, Changes, Shown, StatusBoard};
+use crate::status::{Announced, Change, Shown, StatusBoard};
 use crate::store::{
     self, Archiving, AuthorMuting, Flagging, Muting, OpenReader, ReaderToOpen, Seeing, Store,
     StoreReader,
 };
 use crate::work::{MirrorWork, ReachFrom, SeenMark, checks_to_keep, findings_to_keep, moved};
-use crate::workbench::{Authored, authored_by};
+use crate::workbench::{Answered, Asked, Authored, Page, authored_by};
 use github_thread::{GitHubMessage, Refreshes};
 use refill::LinkRefill;
 
@@ -119,12 +119,17 @@ impl Session {
         let database = Database { folders, to_open };
         let (refreshes, refreshes_done) =
             Refreshes::new(intervals, github_queue, fetching.clone(), settings.clone());
+        let reads = Reads {
+            settings,
+            reader: reader.clone(),
+        };
         let keeper = Keeper::new(
             incoming,
             fetching.clone(),
-            settings,
+            reads,
             Telling {
                 changes: board.changes(),
+                acted: board.acted(),
                 github: to_github,
                 shown: shown.clone(),
                 refreshes_done,
@@ -218,7 +223,9 @@ struct Threads {
 /// hears of each change, and the status bar, which the GitHub thread writes, of a problem. The board's copy
 /// says whether GitHub can be asked now, and the thread's how many of the user's refreshes it has done.
 struct Telling {
-    changes: Changes,
+    changes: Announced<Change>,
+    /// Each action's effect on the list the user saw when they made it (#1052).
+    acted: Announced<Answered>,
     github: Sender<GitHubMessage>,
     shown: LatestReader<Shown>,
     refreshes_done: LatestReader<u64>,
@@ -226,7 +233,12 @@ struct Telling {
 
 impl Telling {
     fn changed(&self, change: &Change) {
-        self.changes.changed(change);
+        self.changes.announce(change);
+    }
+
+    /// Tells the window what the action `answered` names did to the list it showed.
+    fn answered(&self, answered: Answered) {
+        self.acted.announce(&answered);
     }
 
     /// Has the GitHub thread show `problem` on the status bar, once it has answered the request it waits on.
@@ -244,6 +256,13 @@ impl Telling {
     }
 }
 
+/// The settings owner's view, at least as new as every save the session has heard of, and the read-only
+/// connection it reads a list from for the window's answer (#1052).
+struct Reads {
+    settings: LatestReader<SettingsView>,
+    reader: StoreReader,
+}
+
 /// The session thread's queue and what it keeps: the user's marks, the settings owner's saves, the patch-ids
 /// the Mirror worker reads and the refill of the links, none of which needs GitHub. It passes the rest to the
 /// GitHub thread.
@@ -256,6 +275,9 @@ struct Keeper {
     /// The settings owner's view. The owner publishes each save there and hands it to the session in one
     /// step, so a read finds settings at least as new as every save the session has heard of.
     settings: LatestReader<SettingsView>,
+    /// Reads the list an action left for the answer the window waits on (#1052). It reads what the store
+    /// kept, which this thread has already written, and never waits on a sync (ADR 0018).
+    reader: StoreReader,
     /// How many saves of a Repository's settings the session has followed, to tell from the view's count
     /// those in its queue.
     saves_taken: Cell<usize>,
@@ -274,14 +296,16 @@ impl Keeper {
     fn new(
         incoming: Receiver<SessionMessage>,
         fetching: Fetching,
-        settings: LatestReader<SettingsView>,
+        reads: Reads,
         telling: Telling,
     ) -> Self {
+        let Reads { settings, reader } = reads;
         Self {
             incoming,
             backlog: RefCell::new(VecDeque::new()),
             fetching,
             settings,
+            reader,
             saves_taken: Cell::new(0),
             links: RefCell::new(LinkRefill::default()),
             opened: RefCell::new(Vec::new()),
@@ -319,7 +343,7 @@ impl Keeper {
         let telling = &self.telling;
         match message {
             SessionMessage::Stop => return ControlFlow::Break(()),
-            SessionMessage::Mark(marked) => self.mark(store, marked),
+            SessionMessage::Mark { marked, asked } => self.mark(store, marked, asked),
             SessionMessage::SettingsChanged(save) => {
                 self.follow_settings(store, &save);
             }
@@ -493,26 +517,45 @@ impl Keeper {
 
     /// Keeps what the user marked, has the Mirror worker follow the move of Reach the mark makes, under the
     /// Repository's settings now, if the store kept it, and tells the window, whose lists go by the mark.
+    /// With an `asked`, it also answers that action with the list it left (#1052).
     ///
     /// A mark that moves Reach first follows each save counted in the view it reads the settings from, as
     /// those settings hold them. The saves' moves of Reach then end where the mark's starts, and the two
     /// chain. Without, a save that comes after the mark moves Reach on the facts after it, and a PR that only
     /// the pair puts in Reach is owed by neither.
-    fn mark(&self, store: &Store, marked: Marked) {
+    fn mark(&self, store: &Store, marked: Marked, asked: Option<Asked>) {
         let repository = marked.repository().clone();
         let (told, settings) =
-            (self.settings).read(|view| (view.saves_told, view.repository(repository)));
+            (self.settings).read(|view| (view.saves_told, view.repository(repository.clone())));
         if marked.moves_reach() {
             self.follow_saves_told(store, told);
         }
         let moved = ReachMove::of(&marked, store, &settings);
         let (saved, change) = keep_mark(store, &settings, marked);
-        if saved.is_ok()
-            && let Some(moved) = moved
-        {
+        let kept = saved.is_ok();
+        if kept && let Some(moved) = moved {
             moved.follow(&self.fetching, store);
         }
         tell_marked(&self.telling, saved, &change);
+        if kept && let Some(asked) = asked {
+            self.answered(&repository, asked);
+        }
+    }
+
+    /// Reads the list the action's `asked` names, as the store holds it once it kept the action, and tells
+    /// the window, which moves the cursor and the Detail pane by that answer alone (#1052). A list the
+    /// database can't read leaves the cursor where it was, and the status bar says why.
+    fn answered(&self, repository: &RepositoryName, asked: Asked) {
+        let (settings, order) =
+            (self.settings).read(|view| (view.repository(repository.clone()), view.panes.order));
+        match Page::read(&self.reader, &settings, &asked.listing, order) {
+            Ok(page) => self.telling.answered(Answered {
+                id: asked.id,
+                repository: repository.clone(),
+                page,
+            }),
+            Err(problem) => self.telling.problem(problem),
+        }
     }
 }
 

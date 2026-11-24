@@ -5,6 +5,7 @@ use super::*;
 use crate::github::in_flight::Asking;
 use crate::github::testing::in_flight_heard;
 use crate::token::GhOutput;
+use crate::work::Unseen;
 use std::io;
 use std::sync::Mutex;
 use std::sync::mpsc::Receiver;
@@ -163,7 +164,14 @@ fn gh_held() -> io::Result<GhOutput> {
 
 /// Waits until the session has taken what the test asked before this, as it answers in order.
 fn taken(asked: &Fetching, heard: &Receiver<Heard>) {
-    asked.mark_unseen(gcmon(), 7, None);
+    asked.mark_unseen(
+        gcmon(),
+        Unseen {
+            number: 7,
+            archived: None,
+        },
+        None,
+    );
     while heard.recv_timeout(PLENTY).unwrap() != Heard::Changed(vec![7]) {}
 }
 

@@ -43,36 +43,42 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
     - A **user action** is anything the user does to the selected item, from a key, the palette, a button or
       a menu, with the list hidden too. A **core change** is anything else that changes the list: a sync,
       another window, a change made on GitHub.
-    - A user action **finishes** the item when it settles what the item waits on, or takes the item out of
-      the view on show. The action and that view's rule for what it lists decide which at the keypress,
-      before anything is sent. Any other user action **keeps** the item.
+    - A user action **finishes** the item when it settles what the item waits on, or the core's answer to
+      it leaves the item out of the view on show. Whether it settles comes from the action and the item as
+      the window draws it, at the keypress. Whether it took the item out comes from the core, once it has
+      kept the action. Any other user action **keeps** the item.
 
-    | #   | Who acts | What it does to the selected item                                              | Cursor                                                                                | Detail pane                                        |
-    | --- | -------- | ------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------- | -------------------------------------------------- |
-    | 1   | User     | Finishes the item                                                              | Moves to the next row at the keypress, or to the last row when nothing comes after it | Opens the row the cursor moved to, as `Enter` does |
-    | 2   | User     | Keeps the item                                                                 | Stays on the item and goes with it if it moves                                        | Keeps showing the item                             |
-    | 3   | User     | Acts on a PR in an Issue's tree, and on the PR alone                           | Stays on the PR's row                                                                 | Keeps showing the PR                               |
-    | 4   | Core     | Moves the item but leaves it in the list, into a Filter's open Muted items too | Stays on the item and goes with it                                                    | Keeps showing the item                             |
-    | 5   | Core     | Takes the item out of the list                                                 | Leaves the list: no row is selected, and the next ↓ goes to the first row             | Keeps showing the item                             |
+    | #   | Who acts | What it does to the selected item                                              | Cursor                                                                                                  | Detail pane                                        |
+    | --- | -------- | ------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------- | -------------------------------------------------- |
+    | 1   | User     | Finishes the item                                                              | Moves to the next row once the core has kept the action, or to the last row when nothing comes after it | Opens the row the cursor moved to, as `Enter` does |
+    | 2   | User     | Keeps the item                                                                 | Stays on the item and goes with it if it moves                                                          | Keeps showing the item                             |
+    | 3   | User     | Acts on a PR in an Issue's tree, and on the PR alone                           | Stays on the PR's row                                                                                   | Keeps showing the PR                               |
+    | 4   | Core     | Moves the item but leaves it in the list, into a Filter's open Muted items too | Stays on the item and goes with it                                                                      | Keeps showing the item                             |
+    | 5   | Core     | Takes the item out of the list                                                 | Leaves the list: no row is selected, and the next ↓ goes to the first row                               | Keeps showing the item                             |
 
     In every row, focus on a row of the list goes with the cursor; in row 5, and in row 1 with no other row
     left, it stays on the list with no row selected. Focus anywhere else, as in the Detail pane, a text box
     or the list's header, stays where it is, and focus in the Detail pane stays there in the item it opens.
     The list scrolls as little as it takes to bring the cursor's row back on the screen, and leaves the rest
-    to the browser, also when the user had scrolled that row away. Row 1 moves the pane only when it showed
-    the selected item, and opening the next row leaves that row's Last seen alone; with no other row left,
-    the pane shows nothing open, and `Alt+←` goes back to the item the user finished with. A user action
-    that fails keeps the row it took at the keypress, and nothing waits on an answer from the core. A change
-    of view or order is neither: the cursor stays on the item wherever the new list puts it, and where it
-    was when the list leaves the item out. Revise the whole table for a later action that fits neither
-    "finishes" nor "keeps", or a core change that fits neither core row.
+    to the browser, also when the user had scrolled that row away. Row 1 opens the row the cursor moved to in
+    the Detail pane whatever the pane showed before, and opening a row leaves its Last seen alone; with no
+    other row left, the pane shows nothing open, and `Alt+←` goes back to the item the user finished with. A
+    user action that fails moves nothing, and the problem shows as it does now. A change of view or order is
+    neither: the cursor stays on the item wherever the new list puts it, and where it was when the list
+    leaves the item out. Revise the whole table for a later action that fits neither "finishes" nor "keeps",
+    or a core change that fits neither core row.
+
+    The window sends each action with the selected item and the list on show, and the core answers once it
+    has kept the action, with that list as it now stands, matched by the action's id. The cursor and the
+    Detail pane move on that answer, and on nothing else. A failed action sends no answer, so nothing waits.
 
     Today, row 1 takes Mark Seen on the item's own row while the item waits or has something new, By last
-    update too; Archive and Mute; Mute author on an item its author opened; Unarchive, and Mark Unseen of an
-    Archived item, in the Archived view; and the Pin and Unpin moves [workbench.md](workbench.md) names.
-    Archive in a Filter's view or the Review requests, which can keep the item drawn Archived, moves on but
-    keeps the cursor on the item when it was last. `E` and `M` on a PR in a tree act on the Issue, so the
-    cursor moves past the Issue and its tree, and `Q` there is row 3.
+    update too; Archive and Mute; Mute author on an item its author opened, and on a PR's row whose author's
+    Mute takes the item out of the list; Unarchive, and Mark Unseen of an Archived item, in the Archived view;
+    and the Pin and Unpin moves [workbench.md](workbench.md) names. Archive in a Filter's view or the Review
+    requests, which can keep the item drawn Archived, moves on but keeps the cursor on the item when it was
+    last. `E` and `M` on a PR in a tree act on the Issue, so the cursor moves past the Issue and its tree, and
+    `Q` there is row 3.
 
     An item that Needs attention is marked the way unread mail is, and keeps that look until nothing on it
     waits on the user or the user marks it seen, which drops the whole look. The preview says why in the
@@ -92,10 +98,10 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
     item marks it seen and keeps it Archived. A row the list keeps while Archived, as the Review requests
     view keeps a PR whose Review request stood at the archive, says "Archived" beside its age. In the
     Archived view each item's row has Unarchive after its age, and `E` on any of its rows unarchives it too;
-    either way the cursor moves on at the keypress, as the rule above says, while `E` with the focus in
-    the Detail pane still archives. "View: Archived" in the command palette opens the view. `M` mutes the
-    item `E` would archive, and the cursor moves on as for `E`; on a Muted item it unmutes it, and `Q`,
-    `Shift+Q` and `E` do nothing. A row the list keeps while Muted says "Muted" beside its age. An item's
+    either way the cursor moves on once the core has kept the action, as the rule above says, while `E` with
+    the focus in the Detail pane still archives. "View: Archived" in the command palette opens the view. `M`
+    mutes the item `E` would archive, and the cursor moves on as for `E`; on a Muted item it unmutes it, and
+    `Q`, `Shift+Q` and `E` do nothing. A row the list keeps while Muted says "Muted" beside its age. An item's
     author can be **Muted** too. A footer under the list gives the legend and the list's keys (↑
     ↓, ← →, E, M, `Alt+←`, `?` for all); it can be switched off.
 

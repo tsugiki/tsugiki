@@ -201,8 +201,8 @@
       .join(" · "),
   );
   /** The words of the sync's tooltip: when the Repository last synced, with the date and the time
-   * (#1066). */
-  const syncTip = $derived(lastSync?.at ? tip("Synced", lastSync.at) : undefined);
+   * (#1066). Nothing while a sync is under way, as the button then says what it is doing. */
+  const syncTip = $derived(syncing || !lastSync?.at ? undefined : tip("Synced", lastSync.at));
 </script>
 
 <!-- One row, so the sync words take the room they need and the status gets the rest. -->

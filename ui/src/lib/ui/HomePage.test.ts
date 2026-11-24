@@ -3,6 +3,7 @@ import { tick } from "svelte";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { Opened } from "$lib/state/home.svelte";
 import HomePage from "./HomePage.svelte";
+import { tip } from "./time";
 
 const NOW = new Date("2026-11-23T12:00:00Z");
 
@@ -42,8 +43,8 @@ it("says when the user opened a Repository in its tooltip, with the date and the
   shown();
   const opened = screen.getAllByTitle(/^Opened /);
   expect(opened.map((one) => one.getAttribute("title"))).toEqual([
-    `Opened ${new Date("2026-11-23T11:59:30Z").toLocaleString([], { dateStyle: "medium", timeStyle: "short" })}`,
-    `Opened ${new Date("2026-11-23T10:00:00Z").toLocaleString([], { dateStyle: "medium", timeStyle: "short" })}`,
+    tip("Opened", "2026-11-23T11:59:30Z"),
+    tip("Opened", "2026-11-23T10:00:00Z"),
   ]);
 });
 

@@ -63,10 +63,8 @@
   <!-- The last sync's words keep the moment of the sync in the hover (#1066). One expression chain, as
        Svelte compiles `{a} {b}` with branches no test can reach. -->
   <p class="facts">
-    {parts.length > 0 ? parts.join(" · ") : ""}{parts.length > 0 && synced !== null
-      ? " · "
-      : ""}{#if synced !== null}<span title={lastSyncAt === null ? undefined : whenWords(lastSyncAt)}
-        >{synced}</span
+    {parts.length > 0 ? `${parts.join(" · ")}${synced !== null ? " · " : ""}` : ""}{#if synced !== null}<span
+        title={lastSyncAt === null ? undefined : whenWords(lastSyncAt)}>{synced}</span
       >{/if}
   </p>
 {/if}

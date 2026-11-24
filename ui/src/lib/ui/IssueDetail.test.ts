@@ -465,9 +465,28 @@ it("gives each Origin PR's time in its line's tooltip only, with no time on the 
 });
 
 it("gives the folded merged PRs' latest update in the fold line's tooltip", async () => {
-  await shown(withMerged);
+  await shown({
+    ...withMerged,
+    merged: [
+      {
+        kind: "pr",
+        ...row(20),
+        title: "gh-7: First fix",
+        backports: [{ ...row(21), target_branch: "3.14", backport: "bot" }],
+        updated_at: "2026-11-04T09:00:00Z",
+      },
+      {
+        kind: "pr",
+        ...row(22),
+        title: "gh-7: Second fix",
+        backports: [],
+        updated_at: "2026-11-04T12:00:00Z",
+      },
+      { kind: "pr", ...row(23), title: "gh-7: Third fix", backports: [], updated_at: "2026-11-04T10:00:00Z" },
+    ],
+  });
 
-  const when = new Date("2026-11-04T10:00:00Z").toLocaleString([], {
+  const when = new Date("2026-11-04T12:00:00Z").toLocaleString([], {
     dateStyle: "medium",
     timeStyle: "short",
   });

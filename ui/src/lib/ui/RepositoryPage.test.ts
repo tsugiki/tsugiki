@@ -118,6 +118,31 @@ describe("a Repository's page in Settings", () => {
     });
   });
 
+  it("says the state's words alone while the sync waits", async () => {
+    catchChanged();
+    catchSyncs();
+    core.repositorySync.mockImplementation(() => new Promise(() => {}));
+    show("python/cpython");
+
+    await vi.waitFor(() => {
+      expect(core.repositorySync).toHaveBeenCalled();
+    });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(facts()?.replace(/\s+/g, " ").trim()).toBe("Can write");
+  });
+
+  it("says the sync's words alone while the state can't say", async () => {
+    catchChanged();
+    catchSyncs();
+    core.repositoryState.mockResolvedValue(refused("The database is locked."));
+    core.repositorySync.mockResolvedValue(ok({ last_sync: null, open: null }));
+    show("python/cpython");
+
+    await vi.waitFor(() => {
+      expect(facts()?.replace(/\s+/g, " ").trim()).toBe("Not synced yet");
+    });
+  });
+
   it("shows no line while the core can't say any of it", async () => {
     catchChanged();
     catchSyncs();

@@ -67,6 +67,7 @@
   import StateIcon from "./StateIcon.svelte";
   import UnstoredDetail from "./UnstoredDetail.svelte";
   import {
+    ageTip,
     ago,
     detailWords,
     headline,
@@ -77,6 +78,7 @@
     treeCount,
   } from "./workbench-row";
   import { minuteClock } from "./clock.svelte";
+  import { tip } from "./time";
 
   /** How far ↑ or ↓ scrolls the Detail pane while the list is hidden, in CSS pixels, as a browser does. */
   const LINE = 40;
@@ -1306,7 +1308,11 @@
 <!-- A PR's or a Backport's row in an unfolded tree: its headline, and its facts under it. -->
 {#snippet pullRequest(row: WorkbenchRow, issue: number | undefined)}
   {@const stop: Stop = { number: row.number, kind: "pull_request", issue }}
-  <div class={["row", { greyed: greyed(row) }]} data-row={lineName(stop)}>
+  <div
+    class={["row", { greyed: greyed(row) }]}
+    data-row={lineName(stop)}
+    title={tip("Updated", row.updated_at)}
+  >
     <span class="headline">
       {@render line(stop, row, false, prIcon(row))}
     </span>
@@ -1386,7 +1392,7 @@
         {:else if isMuted(item.hidden)}
           <small class="archived">Muted</small>
         {/if}
-        <small class="age">{ago(item.updated_at, now)}</small>
+        <small class="age" title={ageTip(item)}>{ago(item.updated_at, now.now)}</small>
         <!-- Only Issues take a pin (#488). -->
         {#if item.kind === "issue"}
           {@render star({ number: item.number, pinned: item.pinned })}
@@ -1630,7 +1636,7 @@
         repository={name}
         {repositoryState}
         {issue}
-        {now}
+        now={now.now}
         focusable={panes.hidden("list") || focusedView === issue}
         onmark={markByButton}
         onarchive={archiveByButton}
@@ -1652,7 +1658,7 @@
         {repositoryState}
         {pr}
         {panes}
-        {now}
+        now={now.now}
         onback={back}
         onmark={markByButton}
         marks={!detailMuted()}

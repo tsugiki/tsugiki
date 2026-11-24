@@ -12,6 +12,7 @@
   import { openWords, writeWords } from "./repository-header";
   import StoredIn from "./StoredIn.svelte";
   import { syncedWords } from "./synced";
+  import { tip } from "./time";
 
   let { dialog, repository }: { dialog: SettingsDialog; repository: string } = $props();
 
@@ -37,9 +38,12 @@
     [
       writeWords(stateView?.state, repository),
       sync?.open ? openWords(sync.open) : null,
-      sync === undefined ? null : syncedWords(sync.last_sync, now),
+      sync === undefined ? null : syncedWords(sync.last_sync, now.now),
     ].filter((part) => part !== null),
   );
+  /** The words of the line's tooltip: when the Repository last synced, with the date and the time (#1066).
+   */
+  const syncTip = $derived(sync?.last_sync ? tip("Synced", sync.last_sync) : undefined);
 
   /** Whether this page has Read-only on, once the dialog has read the files (#915). */
   const readOnly = $derived(dialog.readOnly(repository));
@@ -58,7 +62,7 @@
 
 <h3 class="mono">{repository}</h3>
 {#if parts.length > 0}
-  <p class="facts">{parts.join(" · ")}</p>
+  <p class="facts" title={syncTip}>{parts.join(" · ")}</p>
 {/if}
 
 <div class="row">

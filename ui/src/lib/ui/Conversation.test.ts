@@ -3,6 +3,7 @@ import { expect, it, vi } from "vitest";
 import type { IssueContent } from "$lib/state/issue-view.svelte";
 import type { PullRequestContent, Review, ThreadLine } from "$lib/state/pr-view.svelte";
 import Conversation from "./Conversation.svelte";
+import { stamp } from "./time";
 
 const NOW = new Date("2026-11-04T12:00:00Z");
 
@@ -49,6 +50,28 @@ const shown = (content: IssueContent | PullRequestContent, onthread?: (id: strin
 /** Each block's first line, top to bottom. */
 const blocks = (container: HTMLElement) =>
   [...container.querySelectorAll("article > header")].map((line) => line.textContent.trim());
+
+it("says in a comment's and a Review's tooltip when each came (#1066)", () => {
+  const container = shown(
+    reviewed([review({ submitted_at: "2026-11-04T09:00:00Z" })], {
+      comments: [
+        {
+          id: 2,
+          author: "some-author",
+          created_at: "2026-11-04T11:00:00Z",
+          body_html: "<p>Unrelated</p>",
+          hidden: null,
+        },
+      ],
+    }),
+  );
+
+  const tips = [...container.querySelectorAll("[title]")].map((one) => one.getAttribute("title"));
+  expect(tips).toEqual([
+    `Reviewed ${stamp("2026-11-04T09:00:00Z")}`,
+    `Commented ${stamp("2026-11-04T11:00:00Z")}`,
+  ]);
+});
 
 it("heads the description, and says when there is none", () => {
   const container = shown(reviewed([]));

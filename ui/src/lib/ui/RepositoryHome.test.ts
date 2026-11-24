@@ -11,6 +11,7 @@ import { PrViewState } from "$lib/state/pr-view.svelte";
 import type { MuteAuthor } from "$lib/state/workbench.svelte";
 import { done, inboxPage, ok, readyFiles, refused, workbenchPage, workbenchRow } from "$lib/testing/fixtures";
 import { keydown, nextTask, pressed } from "$lib/testing/helpers";
+import { stamp } from "./time";
 import RepositoryHome from "./RepositoryHome.svelte";
 
 /** What the page asks the screen for the palette's rows, from the screen's own exports. */
@@ -145,6 +146,7 @@ const issue = {
   state: "OPEN",
   people: ["issue-author", "some-author"],
   updated_at: "2026-11-04T10:00:00Z",
+  issue_updated_at: "2026-11-04T10:00:00Z",
   pull_requests: [{ kind: "pr", ...row, backports: [] }],
   seen: {
     mark: { numbers: [112564, 160662], up_to: "2026-11-04T10:00:00Z", findings: [] },
@@ -294,6 +296,66 @@ it("moves a time on while the window stays open", async () => {
   expect(screen.getByText("4h ago")).toBeTruthy();
   unmount();
   expect(vi.getTimerCount()).toBe(0);
+});
+
+it("says a row's age a day on, as the clock moves on (#1066)", async () => {
+  vi.useFakeTimers({ toFake: ["Date", "setInterval", "clearInterval"] });
+  vi.setSystemTime("2026-11-04T13:00:00Z");
+  core.workbench.mockResolvedValue(workbenchPage([issue], { count: 1 }));
+  const { unmount } = render(RepositoryHome, {
+    name: "python/cpython",
+    onpick: () => {},
+    onsettings: () => {},
+  });
+  await screen.findByText("3h ago");
+
+  await vi.advanceTimersByTimeAsync(24 * 60 * 60_000);
+
+  expect(screen.getByText("1d ago")).toBeTruthy();
+  unmount();
+});
+
+it("says in a row's tooltip what its time measures, and when (#1066)", async () => {
+  vi.setSystemTime("2026-11-04T13:00:00Z");
+  const pr = { ...row, updated_at: "2026-11-04T11:00:00Z" };
+  core.workbench.mockResolvedValue(
+    workbenchPage(
+      [
+        {
+          ...issue,
+          issue_updated_at: "2026-11-04T09:00:00Z",
+          pull_requests: [{ kind: "pr", ...pr, backports: [] }],
+        },
+      ],
+      { count: 1 },
+    ),
+  );
+  render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onsettings: () => {} });
+
+  const item = await screen.findByRole("listitem");
+
+  expect(item.querySelector(".age")?.getAttribute("title")).toBe(
+    [
+      `Issue updated ${stamp("2026-11-04T09:00:00Z")}`,
+      `PR #160662 updated ${stamp("2026-11-04T11:00:00Z")}`,
+    ].join("\n"),
+  );
+});
+
+it("says in a PR's row in a tree when it changed (#1066)", async () => {
+  vi.setSystemTime("2026-11-04T13:00:00Z");
+  const pr = { ...row, updated_at: "2026-11-04T11:00:00Z" };
+  core.workbench.mockResolvedValue(
+    workbenchPage([{ ...issue, pull_requests: [{ kind: "pr", ...pr, backports: [] }] }], { count: 1 }),
+  );
+  render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onsettings: () => {} });
+
+  await fireEvent.click(await screen.findByRole("button", { name: "PRs of #112564" }));
+
+  const [, pullRequest] = screen.getAllByRole("listitem");
+  expect(pullRequest?.querySelector(".row")?.getAttribute("title")).toBe(
+    `Updated ${stamp("2026-11-04T11:00:00Z")}`,
+  );
 });
 
 it("says an Issue has no PR yet, with no count of none", async () => {

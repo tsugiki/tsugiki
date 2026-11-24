@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { openLink } from "$lib/state/browser";
 import { HOUR_POINTS, OCTOCAT_ONLINE, statusOf } from "$lib/testing/fixtures";
 import StatusBar from "./StatusBar.svelte";
+import { stamp } from "./time";
 
 vi.mock("$lib/state/browser", () => ({ openLink: vi.fn() }));
 
@@ -28,6 +29,13 @@ describe("StatusBar's last sync", () => {
     expect(screen.getByRole("button").textContent).toBe("Synced 2 min ago");
     expect(bar().textContent).not.toContain("Synced");
     expect(screen.getByRole("button").parentElement).toBe(bar().parentElement);
+  });
+
+  it("says in its tooltip when the Repository last synced (#1066)", () => {
+    vi.useFakeTimers({ now: new Date("2026-11-05T12:02:00Z") });
+    const lastSync = { repository, at: "2026-11-05T12:00:00Z" };
+    render(StatusBar, { status: online, lastSync });
+    expect(screen.getByRole("button").getAttribute("title")).toBe(`Synced ${stamp("2026-11-05T12:00:00Z")}`);
   });
 
   it("moves on by itself", async () => {

@@ -156,6 +156,12 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
 - A comment hidden on GitHub (as off-topic, outdated, resolved, a duplicate, spam or abuse) folds to one line
   with its reason, as on GitHub, and opens on a click. A thread whose comments are all hidden counts as
   resolved.
+- The PR view's line over its title names the Issue the PR was opened under, the branch it goes into and
+  when it last changed, as "gh-123 › into main · updated 2h ago". The time's tooltip gives the date and
+  the time of that last update. Each comment and each Review of the Conversation says how long ago it came,
+  with the date and the time in its tooltip, and so does each comment of a review thread in the Files tab.
+  These times follow the system's clock, as the Workbench's do
+  ([#1066](https://github.com/tsugiki/tsugiki/issues/1066)).
 - The Conversation tab shows each **Review** as one block: its author, state, commit and text, then each of
   its threads as one line (file and line, the first words, the replies, Resolved or Outdated) that opens the
   thread in the Files tab. A Review with no text and no threads is one line, such as "some-reviewer approved

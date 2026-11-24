@@ -5,6 +5,7 @@ import { settingsAsk } from "$lib/state/settings-ask.svelte";
 import type { TreeEntry } from "$lib/state/workbench.svelte";
 import { done, ok, refused, workbenchRow } from "$lib/testing/fixtures";
 import IssueDetail from "./IssueDetail.svelte";
+import { stamp } from "./time";
 
 const core = vi.hoisted(() => ({
   issue: vi.fn(),
@@ -28,9 +29,14 @@ vi.mock("$lib/data/bindings", async () => {
   };
 });
 
-/** PR `number`'s row, merged and reviewed. */
-const row = (number: number) =>
-  workbenchRow(number, { author: "some-author", state: "MERGED", your_review: { kind: "reviewed" } });
+/** PR `number`'s row, merged and reviewed, updated at `updated_at` when the test says so. */
+const row = (number: number, updated_at?: string) =>
+  workbenchRow(number, {
+    author: "some-author",
+    state: "MERGED",
+    your_review: { kind: "reviewed" },
+    ...(updated_at === undefined ? {} : { updated_at }),
+  });
 
 const opened: TreeEntry = {
   kind: "pr",
@@ -48,6 +54,7 @@ const view: IssueView = {
   people: ["issue-author"],
   mute_author: { kind: "mute", login: "issue-author" },
   pinned: false,
+  issue_updated_at: "2026-11-04T10:00:00Z",
   updated_at: "2026-11-04T10:00:00Z",
   author: "issue-author",
   assignees: [],
@@ -238,7 +245,7 @@ it("says under the title who opened the Issue and when, and how many comments it
     timeStyle: "short",
   });
   expect(author.textContent).toBe("issue-author");
-  expect(opened.getAttribute("title")).toBe(when);
+  expect(opened.getAttribute("title")).toBe(`Opened ${when}`);
   expect(line.textContent).toBe("issue-author opened this 13d ago · 5 comments");
 });
 
@@ -428,6 +435,51 @@ it("counts the merged PRs folded away, and gives an Issue with only those its ro
 
   await shown({ ...withMerged, pull_requests: [] });
   expect(counts()).toEqual(["Open, 0", "Draft, 0", "Merged, 3", "Closed, 0", "Needs attention, 0"]);
+});
+
+it("says in each PR's line in the tree when it changed (#1066)", async () => {
+  await shown({
+    ...view,
+    pull_requests: [{ kind: "pr", ...row(10, "2026-11-04T09:00:00Z"), backports: [] }],
+  });
+
+  const tree = screen.getByRole("list", { name: "PRs" });
+  const line = tree.querySelector(".pr") as HTMLElement;
+  expect(line.getAttribute("title")).toBe(`Updated ${stamp("2026-11-04T09:00:00Z")}`);
+});
+
+it("says in a Backport's line when it changed (#1066)", async () => {
+  await shown({
+    ...view,
+    pull_requests: [
+      {
+        kind: "pr",
+        ...row(10),
+        backports: [{ ...row(11, "2026-11-04T08:00:00Z"), target_branch: "3.14", backport: "bot" }],
+      },
+    ],
+  });
+
+  const backport = document.querySelector(".backports span") as HTMLElement;
+  expect(backport.getAttribute("title")).toBe(`Updated ${stamp("2026-11-04T08:00:00Z")}`);
+});
+
+it("says in the folded merged PRs' line when they last changed (#1066)", async () => {
+  await shown({
+    ...withMerged,
+    merged: [
+      {
+        kind: "pr",
+        ...row(20, "2026-11-04T07:00:00Z"),
+        title: "gh-7: First fix",
+        backports: [{ ...row(21, "2026-11-04T06:00:00Z"), target_branch: "3.14", backport: "bot" }],
+      },
+    ],
+    merged_count: 2,
+  });
+
+  const line = screen.getByRole("button", { name: "Show 2 merged PRs" });
+  expect(line.getAttribute("title")).toBe(`Updated ${stamp("2026-11-04T07:00:00Z")}`);
 });
 
 it("folds the fully merged PRs into one line that unfolds and folds them again", async () => {

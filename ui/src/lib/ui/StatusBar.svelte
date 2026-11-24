@@ -28,6 +28,7 @@
   } from "./synced";
   import { minuteClock, secondClock } from "./clock.svelte";
   import { inFlightWords, SLOW_MS } from "./in-flight";
+  import { tip } from "./time";
 
   const GIT_DOWNLOADS = "https://git-scm.com/downloads";
 
@@ -195,10 +196,13 @@
   // The core says a clone waits for the network only while none is under way.
   const clone = $derived(cloningWords(cloning) ?? offlineCloneWords(mirrorStates));
   const syncWords = $derived(
-    [syncing ?? syncedWords(lastSync?.at ?? null, now), clone, elsewhere]
+    [syncing ?? syncedWords(lastSync?.at ?? null, now.now), clone, elsewhere]
       .filter((words) => words !== null)
       .join(" · "),
   );
+  /** The words of the sync's tooltip: when the Repository last synced, with the date and the time
+   * (#1066). */
+  const syncTip = $derived(lastSync?.at ? tip("Synced", lastSync.at) : undefined);
 </script>
 
 <!-- One row, so the sync words take the room they need and the status gets the rest. -->
@@ -254,7 +258,7 @@
   <!-- Outside the live region, or a screen reader would read this out each minute, and each page of a
        sync. -->
   {#if lastSync !== null && showStatus}
-    <button class:offline onclick={onrefresh}>{syncWords}</button>
+    <button class:offline title={syncTip} onclick={onrefresh}>{syncWords}</button>
   {/if}
   <!-- Outside the live region too, as it changes with each answer from GitHub. A screen reader can't reach a
        tooltip, so it reads the words and the tooltip from a copy of its own, once. -->

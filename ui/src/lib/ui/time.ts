@@ -27,3 +27,20 @@ export function agoWords(since: string, now: Date): string {
   const time = elapsed(since, now);
   return time.unit === "now" ? "just now" : `${String(time.count)} ${AGO_UNITS[time.unit]} ago`;
 }
+
+/** The moment `milliseconds` past the epoch names. The window's clock gives one on each read, so no
+ * reader holds a Date that another could change. */
+export const at = (milliseconds: number): Date => new Date(milliseconds);
+
+/** The date and the time of `when`, in the system's format: "23 Nov 2026, 03:42". It is what a time's
+ * tooltip shows beside the words of the time itself (#1066). */
+export function stamp(when: string): string {
+  return new Date(when).toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
+}
+
+/** What a time measures, as the words of a tooltip. */
+export type Measured = "Updated" | "Commented" | "Reviewed" | "Opened" | "Synced";
+
+/** The words of a tooltip: what the time measures, and when it was, as "Updated 23 Nov 2026, 03:42"
+ * (#1066). */
+export const tip = (measured: Measured, when: string): string => `${measured} ${stamp(when)}`;

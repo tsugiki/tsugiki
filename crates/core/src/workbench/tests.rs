@@ -249,6 +249,18 @@ fn the_window_gets_the_kind_of_each_item_and_its_times_as_text() {
 }
 
 #[test]
+fn an_issues_row_keeps_its_own_update_beside_the_latest_of_its_prs() {
+    let pr = PullRequestFacts {
+        updated_at: at(5),
+        ..fixing(4, 1)
+    };
+    let found = workbench(vec![pr], vec![issue(1)]);
+    let sent = serde_json::to_value(&found).unwrap();
+    assert_eq!(sent["items"][0]["updated_at"], "1970-01-01T00:00:05Z");
+    assert_eq!(sent["items"][0]["issue_updated_at"], "1970-01-01T00:00:01Z");
+}
+
+#[test]
 fn a_merged_pr_of_the_users_keeps_no_issue_on_the_workbench() {
     let merged = PullRequestFacts {
         state: PrState::Merged,

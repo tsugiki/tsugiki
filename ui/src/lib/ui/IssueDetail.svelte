@@ -12,7 +12,8 @@
   import ReadOnlyNote from "./ReadOnlyNote.svelte";
   import StateIcon from "./StateIcon.svelte";
   import StateWords from "./StateWords.svelte";
-  import { ago, backportWords, commentCount, headline } from "./workbench-row";
+  import { ago, backportWords, commentCount, headline, latestUpdateOf } from "./workbench-row";
+  import { tip } from "./time";
 
   let {
     repository,
@@ -116,7 +117,7 @@
     const who = view.author ?? "deleted user";
     const at = view.content?.opened_at;
     if (!at) return { who, words: "", title: undefined };
-    const title = new Date(at).toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
+    const title = tip("Opened", at);
     return { who, words: ` opened this ${ago(at, now)}`, title };
   };
 
@@ -220,7 +221,7 @@
         <ul role="list" aria-label={name}>
           {#each entries as entry (entry.number)}
             <li>
-              <span class="pr">
+              <span class="pr" title={tip("Updated", entry.updated_at)}>
                 <StateIcon icon={prIcon(entry)} />
                 <code class="branch" title={entry.target_branch}>{entry.target_branch}</code>
                 <button
@@ -235,7 +236,7 @@
                 <small class="backports">
                   Backports:
                   {#each entry.backports as backport (backport.number)}
-                    <span>
+                    <span title={tip("Updated", backport.updated_at)}>
                       <StateIcon icon={prIcon(backport)} />
                       <button
                         class={["link", { attention: view.needs_attention.includes(backport.number) }]}
@@ -274,7 +275,13 @@
             {@render tree(view.pull_requests, "PRs")}
           {/if}
           {#if view.merged_count > 0}
-            <button class="link fold" aria-expanded={issue.mergedShown} onclick={() => issue.toggleMerged()}>
+            {@const mergedTip = latestUpdateOf(view.merged)}
+            <button
+              class="link fold"
+              aria-expanded={issue.mergedShown}
+              title={mergedTip === undefined ? undefined : tip("Updated", mergedTip)}
+              onclick={() => issue.toggleMerged()}
+            >
               {mergedWords(issue.mergedShown, view.merged_count)}
             </button>
             {#if issue.mergedShown}

@@ -32,6 +32,7 @@ export const issue: Extract<ListedItem, { kind: "issue" }> = {
   title: "Issue 7",
   state: "OPEN",
   people: ["issue-author"],
+  issue_updated_at: "2026-11-04T10:00:00Z",
   mute_author: { kind: "mute", login: "issue-author" },
   pinned: false,
   updated_at: "2026-11-04T10:00:00Z",

@@ -5,6 +5,7 @@
   import type { PullRequestContent, Review, ReviewState, ThreadLine } from "$lib/state/pr-view.svelte";
   import { REASONS } from "./hidden";
   import RenderedHtml from "./RenderedHtml.svelte";
+  import { tip } from "./time";
   import { ago } from "./workbench-row";
 
   // An Issue's or a PR's description, then its recent comments and a PR's Reviews in time order (#156). A
@@ -62,11 +63,11 @@
     DISMISSED: "reviewed",
     PENDING: "has a pending Review",
   };
-  /** What follows a Review's state chip: the commit it reviewed, whether it was dismissed, and when. */
+  /** The words that follow a Review's state chip: the commit it reviewed, and whether it was dismissed. */
   const reviewRest = (review: Review) => {
     const at = review.commit === null ? "" : ` at ${review.commit.slice(0, 7)}`;
     const dismissed = review.state === "DISMISSED" ? ", since dismissed" : "";
-    return `${at}${dismissed} · ${ago(review.submitted_at, now)}`;
+    return `${at}${dismissed}`;
   };
 
   /** The file, and the line the thread is on, or began on once the code under it changed. */
@@ -93,7 +94,8 @@
 <!-- A Review's author, its state as a chip, then the rest: the words read as one line, as before. -->
 {#snippet reviewLine(review: Review)}<b>{review.author ?? "deleted user"}</b>
   <span class={["chip", review.state.toLowerCase()]}>{DID[review.state]}</span><span class="muted"
-    >{reviewRest(review)}</span
+    >{reviewRest(review)} ·
+    <span title={tip("Reviewed", review.submitted_at)}>{ago(review.submitted_at, now)}</span></span
   >{/snippet}
 
 <div class="conversation">
@@ -116,7 +118,9 @@
     {#if entry.kind === "comment"}
       <article>
         <header>
-          <b>{entry.comment.author ?? "deleted user"}</b><span class="muted"
+          <b>{entry.comment.author ?? "deleted user"}</b><span
+            class="muted"
+            title={tip("Commented", entry.comment.created_at)}
             >{` · ${ago(entry.comment.created_at, now)}`}</span
           >
         </header>

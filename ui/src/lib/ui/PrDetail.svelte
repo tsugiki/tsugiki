@@ -26,6 +26,7 @@
   import StateWords from "./StateWords.svelte";
   import { PR_UNREAD } from "./unread-words";
   import { ago, headline, staleReviewLine } from "./workbench-row";
+  import { tip } from "./time";
 
   let {
     repository,
@@ -170,7 +171,11 @@
         <span aria-hidden="true">›</span>
       {/if}
       {#if pr.view}
-        <span>{`into ${pr.view.target_branch} · updated ${ago(pr.view.updated_at, now)}`}</span>
+        <span
+          >{`into ${pr.view.target_branch} · `}<span title={tip("Updated", pr.view.updated_at)}
+            >{`updated ${ago(pr.view.updated_at, now)}`}</span
+          ></span
+        >
       {/if}
     </p>
   {/if}

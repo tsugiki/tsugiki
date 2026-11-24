@@ -9,6 +9,7 @@
   import { REASONS } from "./hidden";
   import RenderedHtml from "./RenderedHtml.svelte";
   import ThreadCode from "./ThreadCode.svelte";
+  import { tip } from "./time";
   import { ago, commentCount } from "./workbench-row";
 
   let {
@@ -80,7 +81,9 @@
   {#each thread.comments as comment, at (at)}
     <article>
       <p class="by">
-        {`${comment.author ?? "deleted user"} · ${ago(comment.created_at, now)}`}{#if comment.submission === "pending"}<span
+        {`${comment.author ?? "deleted user"} · `}<span title={tip("Commented", comment.created_at)}
+          >{ago(comment.created_at, now)}</span
+        >{#if comment.submission === "pending"}<span
             class="chip pending"
             title="Only you see it until you submit your review on github.com.">Pending, yours</span
           >{/if}

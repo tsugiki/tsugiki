@@ -1,6 +1,5 @@
 // Clocks that move words such as "3m ago" and "4 s" on by themselves.
-import { SvelteDate } from "svelte/reactivity";
-import { MINUTE_MS, SECOND_MS } from "./time";
+import { at, MINUTE_MS, SECOND_MS } from "./time";
 
 /** The time now in milliseconds, set as the moment `since` gives changes, then again `after` milliseconds
  * past that moment and on each whole second after it, while it gives one and the component that calls this
@@ -33,17 +32,28 @@ export function secondClock(since: () => string | null, after: number): { readon
 }
 
 /** The time now, set again each minute while the component that calls this as it starts is on screen, so
- * words such as "3m ago" move on between syncs. */
-export function minuteClock(): Date {
-  // SvelteDate extends the Date there was at import, so a test's fake clock reaches it only through `now()`.
-  const now = new SvelteDate(Date.now());
+ * words such as "3m ago" move on between syncs. The window's own timers may be throttled or stopped while
+ * it is hidden or minimized, so the clock reads the system's time again whenever the window comes back to
+ * the front, which keeps the times true after the window has stood open for hours (#1066). */
+export function minuteClock(): { readonly now: Date } {
+  let now = $state(Date.now());
   $effect(() => {
-    const ticking = setInterval(() => {
-      now.setTime(Date.now());
-    }, MINUTE_MS);
+    const tick = () => {
+      now = Date.now();
+    };
+    const ticking = setInterval(tick, MINUTE_MS);
+    const shown = () => {
+      if (document.visibilityState === "visible") tick();
+    };
+    document.addEventListener("visibilitychange", shown);
     return () => {
       clearInterval(ticking);
+      document.removeEventListener("visibilitychange", shown);
     };
   });
-  return now;
+  return {
+    get now() {
+      return at(now);
+    },
+  };
 }

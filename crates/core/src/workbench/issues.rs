@@ -24,6 +24,10 @@ pub struct IssueItem {
     #[serde(with = "time::serde::rfc3339")]
     #[specta(type = String)]
     pub updated_at: OffsetDateTime,
+    /// The Issue's own latest update, which its row's tooltip shows beside each PR's (#1066).
+    #[serde(with = "time::serde::rfc3339")]
+    #[specta(type = String)]
+    pub issue_updated_at: OffsetDateTime,
     pub pull_requests: Vec<TreeEntry>,
     /// Its part in Mark Seen, which covers the Issue and every PR in its tree.
     pub seen: Seen,
@@ -59,6 +63,7 @@ pub(super) fn issue_item(
         state: issue.state,
         people,
         updated_at,
+        issue_updated_at: issue.updated_at,
         pull_requests,
         seen,
         mute_author,

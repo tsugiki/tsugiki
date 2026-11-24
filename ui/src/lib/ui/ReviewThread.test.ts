@@ -3,6 +3,7 @@ import { expect, it, vi } from "vitest";
 import type { DiffThread } from "$lib/state/pr-files.svelte";
 import { diffThread, reviewComment } from "$lib/testing/fixtures";
 import ReviewThread from "./ReviewThread.svelte";
+import { stamp } from "./time";
 
 const NOW = new Date("2026-11-04T12:00:00Z");
 
@@ -15,10 +16,10 @@ const thread = (changes: Partial<DiffThread> = {}): DiffThread => ({
   ...changes,
 });
 
-const shown = (shown: DiffThread, folded = false) => {
+const shown = (shown: DiffThread, folded = false, now = NOW) => {
   const ontoggle = vi.fn();
   const onlink = vi.fn();
-  render(ReviewThread, { thread: shown, folded, now: NOW, ontoggle, onlink });
+  render(ReviewThread, { thread: shown, folded, now, ontoggle, onlink });
   return { ontoggle, onlink };
 };
 
@@ -38,6 +39,22 @@ it("shows who started a thread and its comments, oldest first, and folds on a cl
   expect(screen.getByText("It reads better")).toBeTruthy();
   await fireEvent.click(head() as HTMLElement);
   expect(ontoggle).toHaveBeenCalledOnce();
+});
+
+it("says how long ago a comment came, as the clock moves on (#1066)", () => {
+  shown(thread(), false, new Date("2026-11-05T12:00:00Z"));
+
+  expect(document.querySelector("article .by")?.textContent).toContain("1d ago");
+});
+
+it("says in a comment's tooltip when it came (#1066)", () => {
+  shown(thread({ comments: [comment({ created_at: "2026-11-04T11:00:00Z" })] }));
+
+  const by = document.querySelector("article .by") as HTMLElement;
+  expect(by.textContent).toContain("1h ago");
+  expect(by.querySelector("[title]")?.getAttribute("title")).toBe(
+    `Commented ${stamp("2026-11-04T11:00:00Z")}`,
+  );
 });
 
 it("shows a folded thread as its first line, marked Resolved", () => {

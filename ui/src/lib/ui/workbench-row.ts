@@ -16,7 +16,7 @@ import {
   type YourReview,
 } from "$lib/state/workbench.svelte";
 import { counted } from "$lib/state/counted";
-import { elapsed } from "./time";
+import { elapsed, stamp, tip } from "./time";
 
 const REASONS: Record<WorkReason, string> = {
   review_request: "Review request",
@@ -90,6 +90,38 @@ const AGO_UNITS = { minute: "m", hour: "h", day: "d" } as const;
 export function ago(updatedAt: string, now: Date): string {
   const time = elapsed(updatedAt, now);
   return time.unit === "now" ? "just now" : `${String(time.count)}${AGO_UNITS[time.unit]} ago`;
+}
+
+/** Each PR a tree holds, an Origin PR and its Backports, in the order the list shows them. */
+function rowsOf(entry: TreeEntry): WorkbenchRow[] {
+  return entry.kind === "pr" ? [entry, ...entry.backports] : [entry];
+}
+
+/** The latest update of the PRs `entries` hold, or nothing while they hold none (#1066). */
+export function latestUpdateOf(entries: TreeEntry[]): string | undefined {
+  return entries
+    .flatMap((entry) => rowsOf(entry).map((row) => row.updated_at))
+    .reduce<string | undefined>(
+      (latest, at) => (latest === undefined || Date.parse(at) > Date.parse(latest) ? at : latest),
+      undefined,
+    );
+}
+
+/**
+ * The words of an item's row's tooltip: what its age measures, and when each update was. An Issue's row
+ * lists the Issue's own last update, then each PR in its tree, each with the date and the time, so the user
+ * can see which update put the item in the list, and when (#1066). A PR's row measures the PR's own last
+ * update.
+ */
+export function ageTip(item: ListedItem): string {
+  if (item.kind !== "issue") return tip("Updated", item.updated_at);
+  const lines = [`Issue updated ${stamp(item.issue_updated_at)}`];
+  for (const entry of item.pull_requests) {
+    for (const row of rowsOf(entry)) {
+      lines.push(`PR #${String(row.number)} updated ${stamp(row.updated_at)}`);
+    }
+  }
+  return lines.join("\n");
 }
 
 /** How many comments an Issue, a PR or a review thread has. */

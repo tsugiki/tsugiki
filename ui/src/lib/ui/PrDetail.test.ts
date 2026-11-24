@@ -6,6 +6,7 @@ import { PanesState } from "$lib/state/panes.svelte";
 import { PrViewState, type PrView } from "$lib/state/pr-view.svelte";
 import { done, ok, readyFiles, refused, workbenchRow } from "$lib/testing/fixtures";
 import PrDetail from "./PrDetail.svelte";
+import { stamp } from "./time";
 
 const core = vi.hoisted(() => ({
   pullRequest: vi.fn(),
@@ -88,12 +89,13 @@ const shown = async (
   onback = vi.fn(),
   onmark = vi.fn(),
   panes = new PanesState(),
+  now = NOW,
 ) => {
   core.pullRequest.mockResolvedValue(ok(answer));
   const state = new PrViewState("python/cpython", 11, issue, panes);
   onShow = state;
   await state.load();
-  render(PrDetail, { repository: "python/cpython", pr: state, panes, now: NOW, onback, onmark });
+  render(PrDetail, { repository: "python/cpython", pr: state, panes, now, onback, onmark });
   return state;
 };
 
@@ -139,6 +141,20 @@ it("says over the title which Issue the PR is under, where it goes and when it c
   expect(document.querySelector("p.byline")?.textContent).toBe(
     `pr-author ${document.querySelector(".words")?.textContent ?? ""}`,
   );
+});
+
+it("says how long ago the PR changed, as the clock moves on (#1066)", async () => {
+  await shown(view, 10, vi.fn(), vi.fn(), new PanesState(), new Date("2026-11-05T11:00:00Z"));
+
+  expect(document.querySelector(".crumb")?.textContent).toContain("updated 1d ago");
+});
+
+it("says in the header's tooltip when the PR changed (#1066)", async () => {
+  await shown(view, 10);
+
+  const crumb = document.querySelector(".crumb") as HTMLElement;
+  const updated = within(crumb).getByText("updated 1h ago");
+  expect(updated.getAttribute("title")).toBe(`Updated ${stamp("2026-11-04T10:00:00Z")}`);
 });
 
 it("marks the PR's title with the icon of its state", async () => {

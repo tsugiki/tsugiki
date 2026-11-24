@@ -9,6 +9,7 @@ import { ThemeState } from "$lib/state/theme.svelte";
 import { ok, refused } from "$lib/testing/fixtures";
 import { LIGHT_SIDE } from "$lib/testing/state";
 import RepositoryPage from "./RepositoryPage.svelte";
+import { stamp } from "./time";
 
 const core = vi.hoisted(() => ({ repositoryState: vi.fn(), repositorySync: vi.fn() }));
 /** The listeners the page registers for the core's events. */
@@ -82,6 +83,19 @@ describe("a Repository's page in Settings", () => {
     });
     expect(core.repositoryState).toHaveBeenCalledWith("python/cpython");
     expect(core.repositorySync).toHaveBeenCalledWith("python/cpython");
+  });
+
+  it("says in its tooltip when the Repository last synced (#1066)", async () => {
+    catchChanged();
+    catchSyncs();
+    show("python/cpython");
+
+    await vi.waitFor(() => {
+      expect(facts()).toContain("Synced 2 min ago");
+    });
+    expect(document.querySelector(".facts")?.getAttribute("title")).toBe(
+      `Synced ${stamp("2026-11-05T12:00:00Z")}`,
+    );
   });
 
   it("says Read-only and why while the Repository is marked so, and follows the mark", async () => {

@@ -27,6 +27,7 @@ const issue = (number: number, waiting: boolean, pullRequests: TreeEntry[] = [])
   mute_author: { kind: "mute", login: "issue-author" },
   pinned: false,
   updated_at: "2026-11-04T10:00:00Z",
+  issue_updated_at: "2026-11-04T10:00:00Z",
   pull_requests: pullRequests,
   seen: { mark: { numbers: [number], up_to: null, findings: [] }, state: "seen" },
   attention: waiting
@@ -47,6 +48,7 @@ const view = (bodyHtml: string): IssueView => ({
   mute_author: { kind: "mute", login: "issue-author" },
   pinned: false,
   updated_at: "2026-11-04T10:00:00Z",
+  issue_updated_at: "2026-11-04T10:00:00Z",
   author: "issue-author",
   assignees: ["some-assignee"],
   labels: ["type-bug"],

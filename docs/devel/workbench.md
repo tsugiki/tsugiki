@@ -64,6 +64,14 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
     this machine, so it survives a restart, and an item muted on its own stays out whatever it says. The
     checkbox shows the switch as the Inbox read after its save holds it, and takes no click while it saves.
 - Every row in every Issue list has an Issue or PR icon coloured by state.
+- A row's age is the time since the item's last update: for an Issue, the latest of the Issue's own last
+  update and the last update of each PR in its tree, and for a PR, the PR's own last update. The age's
+  tooltip says what it measures, with the date and the time: an Issue's row lists the Issue's own last update
+  and each PR's, each with its date and the time, so the user can see which update put the item in the list,
+  and when. A PR's row under an Issue shows no age of its own, and its tooltip gives the date and the time of
+  its last update. Every age follows the system's clock, so it moves on while the window stays open, and
+  after it comes back from being hidden or minimized
+  ([#1066](https://github.com/tsugiki/tsugiki/issues/1066)).
 - The Sidebar shows counts the way a mail client shows unread counts. For the Workbench, the Filters switched
   on and the Pinned issues, the count is how many Issues Need attention. For a Filter switched off, it is how
   many items its search found, as its view lists them, less the Archived and Muted ones. For Stale reviews,

@@ -111,6 +111,7 @@ export const listedIssue = (
   state: "OPEN",
   people: [],
   updated_at: "2026-11-04T10:00:00Z",
+  issue_updated_at: "2026-11-04T10:00:00Z",
   pull_requests: [],
   seen: { mark: { numbers: [number], up_to: null, findings: [] }, state: "seen" },
   mute_author: { kind: "mute", login: "issue-author" },

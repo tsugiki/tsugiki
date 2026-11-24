@@ -13,7 +13,7 @@ const ROWS: Opened[] = [
 ];
 
 beforeEach(() => {
-  vi.useFakeTimers({ now: NOW, toFake: ["Date"] });
+  vi.useFakeTimers({ now: NOW, toFake: ["Date", "setInterval", "clearInterval"] });
 });
 
 afterEach(() => {
@@ -36,6 +36,23 @@ it("lists each Repository with when the user opened it, and none for one never o
     "python/peps opened 2 h ago",
     "a/never",
   ]);
+});
+
+it("says when the user opened a Repository in its tooltip, with the date and the time (#1066)", () => {
+  shown();
+  const opened = screen.getAllByTitle(/^Opened /);
+  expect(opened.map((one) => one.getAttribute("title"))).toEqual([
+    `Opened ${new Date("2026-11-23T11:59:30Z").toLocaleString([], { dateStyle: "medium", timeStyle: "short" })}`,
+    `Opened ${new Date("2026-11-23T10:00:00Z").toLocaleString([], { dateStyle: "medium", timeStyle: "short" })}`,
+  ]);
+});
+
+it("moves the time on with the clock, so a time a day old says so (#1066)", async () => {
+  shown();
+  expect(rows()[0]?.textContent).toContain("opened just now");
+  await vi.advanceTimersByTimeAsync(24 * 60 * 60_000);
+  expect(rows()[0]?.textContent).toContain("opened 1 d ago");
+  expect(rows()[1]?.textContent).toContain("opened 1 d ago");
 });
 
 it("starts on the top row with the focus, and keeps the cursor between the first row and the last", async () => {

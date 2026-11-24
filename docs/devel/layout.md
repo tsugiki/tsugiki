@@ -26,6 +26,9 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
     - the Issue's number and title, with the number of PRs and the time of the last update
     - a preview of what is waiting on the user
 
+    The time of the last update has a tooltip with the date and the time, and it says what it measures, as
+    [workbench.md](workbench.md) tells.
+
     A header over the list names the view on show. In the Workbench, a Built-in view, a Filter or Pinned
     issues, a switch at the header's far end, or "Sort by Attention" and "Sort by Last Update" in the command
     palette, picks one of two orders, and `machine.toml` keeps the choice:
@@ -130,7 +133,8 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
       Settings, which switches the choice ([settings.md](settings.md)).
     - The Issue view shows the title, an author line, the Origin PRs, the description, and recent comments,
       with a box to comment. The author line says who opened the Issue and how long ago, with the date and
-      time in its tooltip, how many comments it has, and whom it is assigned to, if anyone. Under it the
+      the time in its tooltip, which says when they opened it, how many comments it has, and whom it is
+      assigned to, if anyone. Under it the
       Issue's labels show as plain chips in name order, as GitHub lists them, beside a row of buttons:
       Archive, which archives the Issue on show and reads Unarchive on an Archived Issue, Mute, which mutes
       it, "Mute <author>", which mutes the Issue's author and is off on the user's own Issue, then Mark
@@ -145,8 +149,11 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
       place; a state at 0 shows in muted colour. The count of PRs that Need attention comes last,
       after "Bold" in bold. A screen reader reads the row as a list named "PR counts", each entry its word
       and count, "Open, 1" or "Needs attention, 1", and skips the icons, the dots and "Bold". Each PR's line
-      starts with its branch and ends with its author, and a PR that Needs attention shows in bold. The
-      worklist's line for an Issue still says "2 open of 3 PRs", as it has no room for five counts.
+      starts with its branch and ends with its author, and a PR that Needs attention shows in bold. A PR's
+      line shows no time of its own, and its tooltip gives the date and the time of its last update, as a
+      Backport's line gives of the Backport. The line that folds the merged PRs away gives the date and the
+      time of the latest of them. The worklist's line for an Issue still says "2 open of 3 PRs", as it has
+      no room for five counts.
     - The PR view shows Conversation and Files as tabs, and opens on Conversation. `Ctrl+PageDown` and
       `Ctrl+PageUp` switch tabs, and so does `Enter` on the PR's row once the PR is open.
     - An Issue or PR the database lacks, which quick open's "Fetch #N from GitHub" asks for

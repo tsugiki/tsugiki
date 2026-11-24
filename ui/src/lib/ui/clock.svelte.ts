@@ -50,6 +50,8 @@ export function minuteClock(): { readonly now: Date } {
   });
   return {
     get now() {
+      // Made anew on each read, so no reader can change it, and the `$state` above is what's reactive.
+      // eslint-disable-next-line svelte/prefer-svelte-reactivity
       return new Date(at);
     },
   };

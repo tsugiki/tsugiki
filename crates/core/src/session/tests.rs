@@ -41,6 +41,7 @@ use crate::testing::{
 };
 use crate::token::Token;
 use crate::work::{Hiding, Unseen};
+use crate::workbench::inbox::InboxPage;
 use crate::workbench::{
     Answered, Asked, ListedItem, Listing, Page, Workbench, WorkbenchItem, WorkbenchView,
 };
@@ -720,7 +721,13 @@ fn mark_seen_moves_last_seen_to_the_moment_the_window_drew_and_asks_github_nothi
                 up_to: Some(drawn),
                 findings: vec![],
             },
-            None,
+            // The session answers an action it kept, and this one has nowhere to pass the answer on.
+            Some(Asked {
+                id: 1,
+                listing: Listing::Workbench {
+                    view: WorkbenchView::Whole,
+                },
+            }),
         );
     });
 
@@ -1006,6 +1013,52 @@ fn a_mark_answers_with_the_list_it_left() {
     assert!(
         !workbench.items.iter().any(|listed| listed.key == issue),
         "the Muted item left the Workbench"
+    );
+}
+
+#[test]
+fn a_mark_in_the_inbox_answers_with_the_page_it_left() {
+    let (folders, _folder) = temp_folders("answered-inbox");
+    let store = Store::open(&folders.database()).unwrap();
+    stores_issue_5_with_its_prs(&store);
+    store.close();
+    let (sent, answered) = mpsc::channel();
+    let board = quiet_board();
+    let connections = Connections::new(offline(), mirrors(), listed(vec![cpython_gcmon()]))
+        .with_acted(Box::new(move |answer: &Answered| {
+            sent.send(answer.clone()).unwrap();
+        }));
+    let session = Session::start(board, Ok(folders.clone()), connections, HOURLY);
+    let issue = ItemKey::Issue { number: 5 };
+
+    let hiding = Hiding {
+        key: issue,
+        mark: SeenMark {
+            numbers: vec![5, 8, 9],
+            up_to: Some(hours_ago(1)),
+            findings: vec![],
+        },
+    };
+    session.fetching().mute(
+        gcmon(),
+        hiding,
+        Some(Asked {
+            id: 7,
+            listing: Listing::Inbox {
+                page: InboxPage::Latest,
+            },
+        }),
+    );
+    let answer = answered.recv_timeout(PLENTY).unwrap();
+    session.stop(PLENTY);
+
+    assert_eq!((answer.id, answer.repository), (7, gcmon()));
+    let Page::Inbox { inbox } = answer.page else {
+        panic!("the answer reads the Inbox page the action asked about");
+    };
+    assert!(
+        !inbox.items.iter().any(|listed| listed.key == issue),
+        "the Muted item left the Inbox"
     );
 }
 
@@ -1497,6 +1550,27 @@ fn a_mark_that_cant_be_stored_is_a_problem() {
 
         assert_eq!(problems_for_the_status_bar(&github), [ErrorKind::Internal]);
     }
+}
+
+#[test]
+fn a_mark_whose_list_cant_be_read_is_a_problem() {
+    let store = empty_store();
+    stores_issue_5_with_its_prs(&store);
+    let (told, github) = telling(&mut quiet_board());
+    let keeper = keeper_told(0, plain_gcmon(), vec![], told);
+
+    keeper.mark(
+        &store,
+        mute_5(),
+        Some(Asked {
+            id: 3,
+            listing: Listing::Workbench {
+                view: WorkbenchView::Whole,
+            },
+        }),
+    );
+
+    assert_eq!(problems_for_the_status_bar(&github), [ErrorKind::Internal]);
 }
 
 /// The kinds of the problems the session asked the GitHub thread to show on the status bar.

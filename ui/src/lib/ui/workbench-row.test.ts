@@ -152,6 +152,7 @@ it("says in the line of merged PRs the latest of their updates", () => {
     { kind: "pr", ...row, number: 160663, updated_at: "2026-11-04T09:00:00Z", backports: [] },
   ];
   expect(foldedTip(merged)).toBe(`Latest update of these PRs: ${stampOf("2026-11-04T12:00:00Z")}`);
+  expect(foldedTip(merged.reverse())).toBe(`Latest update of these PRs: ${stampOf("2026-11-04T12:00:00Z")}`);
 });
 
 it("reads a time ahead of this computer's clock as now", () => {

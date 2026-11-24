@@ -137,6 +137,18 @@ describe("a Repository's page in Settings", () => {
     expect(line?.getAttribute("title")).toBe(`Last synced ${stampOf("2026-11-05T12:00:00Z")}`);
   });
 
+  it("says what the core has said before the sync's answer comes", async () => {
+    catchChanged();
+    catchSyncs();
+    // The page reads the syncs beside the state, and says the state's part as soon as it has it.
+    core.repositorySync.mockReturnValue(new Promise(() => {}));
+    show("python/cpython");
+
+    await vi.waitFor(() => {
+      expect(facts()).toBe("Can write");
+    });
+  });
+
   it("shows no line while the core can't say any of it", async () => {
     catchChanged();
     catchSyncs();

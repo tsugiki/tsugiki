@@ -103,8 +103,8 @@ export const workbenchRow = (
  * hidden, with what `overrides` says instead. */
 export const listedIssue = (
   number: number,
-  overrides: Omit<Partial<ListedItem & { kind: "issue" }>, "kind" | "number"> = {},
-): ListedItem & { kind: "issue" } => ({
+  overrides: Omit<Partial<Extract<ListedItem, { kind: "issue" }>>, "kind" | "number"> = {},
+): Extract<ListedItem, { kind: "issue" }> => ({
   kind: "issue",
   number,
   title: `Issue ${String(number)}`,

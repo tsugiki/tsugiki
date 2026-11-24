@@ -130,7 +130,10 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
       Settings, which switches the choice ([settings.md](settings.md)).
     - The Issue view shows the title, an author line, the Origin PRs, the description, and recent comments,
       with a box to comment. The author line says who opened the Issue and how long ago, with the date and
-      time in its tooltip, how many comments it has, and whom it is assigned to, if anyone. Under it the
+      time in its tooltip, how many comments it has, and whom it is assigned to, if anyone. Each PR's line
+      in the Origin PRs gives its last update in its tooltip, as does each Backport's, and the line that
+      folds the merged PRs gives the latest of theirs, so no PR's time takes room on a line
+      ([#1066](https://github.com/tsugiki/tsugiki/issues/1066)). Under it the
       Issue's labels show as plain chips in name order, as GitHub lists them, beside a row of buttons:
       Archive, which archives the Issue on show and reads Unarchive on an Archived Issue, Mute, which mutes
       it, "Mute <author>", which mutes the Issue's author and is off on the user's own Issue, then Mark
@@ -173,7 +176,9 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
         line sits indented on the panel colour.
       - The description, each comment and each Review with a body sit in a box with 6 px corners: a 13 px
         header on the panel colour with the author, the age and a Review's state chip, green for an
-        approval and red for changes requested, then the body.
+        approval and red for changes requested, then the body. Every age the window words as "… ago" keeps
+        that short form, and gives its date and time in a tooltip
+        ([#1066](https://github.com/tsugiki/tsugiki/issues/1066)).
       - A PR's state words are 11.5 px, joined by a muted "·": a Review request in the accent colour at
         weight 600, failed CI in the danger colour and passed CI in green.
       - In a description or comment, code sits on the panel colour, a quote has a muted line on its left,

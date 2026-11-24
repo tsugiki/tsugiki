@@ -3,6 +3,7 @@ import { expect, it, vi } from "vitest";
 import type { IssueContent } from "$lib/state/issue-view.svelte";
 import type { PullRequestContent, Review, ThreadLine } from "$lib/state/pr-view.svelte";
 import Conversation from "./Conversation.svelte";
+import { stampOf } from "./time";
 
 const NOW = new Date("2026-11-04T12:00:00Z");
 
@@ -58,6 +59,31 @@ it("heads the description, and says when there is none", () => {
 
   shown(reviewed([], { body_html: "" }));
   expect(screen.getByText("No description.")).toBeTruthy();
+});
+
+it("gives a comment's and a Review's time the date and time in a tooltip", () => {
+  const container = shown(
+    reviewed([review({})], {
+      comments: [
+        {
+          id: 1,
+          author: "some-author",
+          created_at: "2026-11-04T09:00:00Z",
+          body_html: "<p>Hi</p>",
+          hidden: null,
+        },
+      ],
+    }),
+  );
+
+  const times = [...container.querySelectorAll(".muted")].map((muted) => [
+    muted.textContent,
+    muted.getAttribute("title"),
+  ]);
+  expect(times).toEqual([
+    [" · 3h ago", stampOf("2026-11-04T09:00:00Z")],
+    [" at 0123abc · 2h ago", stampOf("2026-11-04T10:00:00Z")],
+  ]);
 });
 
 it("puts a Review's state in a chip, green for an approval and red for changes requested", () => {

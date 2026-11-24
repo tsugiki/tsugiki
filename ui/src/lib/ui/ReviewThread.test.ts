@@ -2,6 +2,7 @@ import { fireEvent, render, screen } from "@testing-library/svelte";
 import { expect, it, vi } from "vitest";
 import type { DiffThread } from "$lib/state/pr-files.svelte";
 import { diffThread, reviewComment } from "$lib/testing/fixtures";
+import { stampOf } from "./time";
 import ReviewThread from "./ReviewThread.svelte";
 
 const NOW = new Date("2026-11-04T12:00:00Z");
@@ -15,14 +16,28 @@ const thread = (changes: Partial<DiffThread> = {}): DiffThread => ({
   ...changes,
 });
 
-const shown = (shown: DiffThread, folded = false) => {
+const shown = (shown: DiffThread, folded = false, now = NOW) => {
   const ontoggle = vi.fn();
   const onlink = vi.fn();
-  render(ReviewThread, { thread: shown, folded, now: NOW, ontoggle, onlink });
+  render(ReviewThread, { thread: shown, folded, now, ontoggle, onlink });
   return { ontoggle, onlink };
 };
 
 const head = () => screen.getAllByRole("button")[0];
+
+it("gives a comment's time its date and time in a tooltip", () => {
+  shown(thread());
+
+  expect(screen.getByText("some-reviewer · 2h ago").getAttribute("title")).toBe(
+    stampOf("2026-11-04T10:00:00Z"),
+  );
+});
+
+it("says the time since with a clock a day on", () => {
+  shown(thread(), false, new Date("2026-11-05T12:00:00Z"));
+
+  expect(screen.getByText("some-reviewer · 1d ago")).toBeTruthy();
+});
 
 it("shows who started a thread and its comments, oldest first, and folds on a click on its first line", async () => {
   const { ontoggle } = shown(

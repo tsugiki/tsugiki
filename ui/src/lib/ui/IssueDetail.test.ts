@@ -4,6 +4,7 @@ import { IssueViewState, type IssueView } from "$lib/state/issue-view.svelte";
 import { settingsAsk } from "$lib/state/settings-ask.svelte";
 import type { TreeEntry } from "$lib/state/workbench.svelte";
 import { done, ok, refused, workbenchRow } from "$lib/testing/fixtures";
+import { stampOf } from "./time";
 import IssueDetail from "./IssueDetail.svelte";
 
 const core = vi.hoisted(() => ({
@@ -49,6 +50,7 @@ const view: IssueView = {
   mute_author: { kind: "mute", login: "issue-author" },
   pinned: false,
   updated_at: "2026-11-04T10:00:00Z",
+  issue_updated_at: "2026-11-04T10:00:00Z",
   author: "issue-author",
   assignees: [],
   labels: [],
@@ -290,6 +292,39 @@ it("shows each Origin PR's state, CI and review state, and folds its Backports i
   const backports = screen.getByText(/Backports:/);
   expect(backports.textContent).toContain("3.14 Merged");
   expect(backports.textContent).toContain("3.13 Open");
+});
+
+it("gives each PR in the Origin PRs table its update in a tooltip, and each Backport its own", async () => {
+  await shown(view);
+
+  const prs = [...document.querySelectorAll(".pr")].map((pr) => pr.getAttribute("title"));
+  expect(prs).toEqual([
+    `Updated ${stampOf("2026-11-04T10:00:00Z")}`,
+    `Updated ${stampOf("2026-11-04T10:00:00Z")}`,
+    `Updated ${stampOf("2026-11-04T10:00:00Z")}`,
+  ]);
+  const backports = [
+    screen.getByRole("button", { name: "3.14 Merged" }),
+    screen.getByRole("button", { name: "3.13 Open" }),
+  ];
+  for (const backport of backports) {
+    expect(backport.parentElement?.getAttribute("title")).toBe(`Updated ${stampOf("2026-11-04T10:00:00Z")}`);
+  }
+});
+
+it("says in the folded line's tooltip the latest update of the merged PRs", async () => {
+  const late = { ...row(20), updated_at: "2026-11-04T12:00:00Z" };
+  await shown({
+    ...withMerged,
+    merged: [
+      { kind: "pr", ...late, title: "gh-7: First fix", backports: [] },
+      { kind: "pr", ...row(22), title: "gh-7: Second fix", backports: [] },
+    ],
+  });
+
+  const line = screen.getByRole("button", { name: "Show 3 merged PRs" });
+
+  expect(line.getAttribute("title")).toBe(`Latest update of these PRs: ${stampOf("2026-11-04T12:00:00Z")}`);
 });
 
 it("shows a Stale review in the danger tone, with the files changed since the Review in its hover", async () => {

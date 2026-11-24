@@ -1,11 +1,21 @@
 import { expect, it } from "vitest";
-import type { CantCheck, IssueItem, WorkbenchRow, Why, YourReview } from "$lib/state/workbench.svelte";
+import type {
+  CantCheck,
+  IssueItem,
+  TreeEntry,
+  WorkbenchRow,
+  Why,
+  YourReview,
+} from "$lib/state/workbench.svelte";
 import { workbenchRow } from "$lib/testing/fixtures";
+import { stampOf } from "./time";
 import {
   ago,
+  ageTip,
   backportWords,
   details,
   detailWords,
+  foldedTip,
   headline,
   peopleOf,
   preview,
@@ -13,6 +23,7 @@ import {
   staleReviewLine,
   summary,
   treeCount,
+  updatedTip,
 } from "./workbench-row";
 
 /** The commit the user's Review covered. */
@@ -43,6 +54,7 @@ const issue: IssueItem = {
   mute_author: { kind: "mute", login: "issue-author" },
   pinned: false,
   updated_at: "2026-11-04T10:00:00Z",
+  issue_updated_at: "2026-11-04T10:00:00Z",
   pull_requests: [
     { kind: "pr", ...row, backports: [] },
     { kind: "pr", ...row, number: 160663, backports: [] },
@@ -108,6 +120,38 @@ it.each([
   ["2026-11-14T10:00:00Z", "10d ago"],
 ])("at %s says %s", (now, words) => {
   expect(ago("2026-11-04T10:00:00Z", new Date(now))).toBe(words);
+});
+
+it("gives a PR's own update in the tooltip beside its time", () => {
+  expect(updatedTip(row)).toBe(`Updated ${stampOf("2026-11-04T10:00:00Z")}`);
+});
+
+it("lists in an Issue's tooltip its own update and each PR's, saying which is the latest", () => {
+  const timed: IssueItem = {
+    ...issue,
+    updated_at: "2026-11-04T12:00:00Z",
+    issue_updated_at: "2026-11-04T10:00:00Z",
+    pull_requests: [
+      { kind: "pr", ...row, updated_at: "2026-11-04T12:00:00Z", backports: [] },
+      { kind: "pr", ...row, number: 160663, updated_at: "2026-11-04T09:00:00Z", backports: [] },
+    ],
+  };
+  expect(ageTip({ kind: "issue", ...timed, ...unmarked })).toBe(
+    [
+      `Latest update of this Issue or its PRs: ${stampOf("2026-11-04T12:00:00Z")}`,
+      `Issue #112564, updated ${stampOf("2026-11-04T10:00:00Z")}`,
+      `PR #160662, updated ${stampOf("2026-11-04T12:00:00Z")}`,
+      `PR #160663, updated ${stampOf("2026-11-04T09:00:00Z")}`,
+    ].join("\n"),
+  );
+});
+
+it("says in the line of merged PRs the latest of their updates", () => {
+  const merged: TreeEntry[] = [
+    { kind: "pr", ...row, updated_at: "2026-11-04T12:00:00Z", backports: [] },
+    { kind: "pr", ...row, number: 160663, updated_at: "2026-11-04T09:00:00Z", backports: [] },
+  ];
+  expect(foldedTip(merged)).toBe(`Latest update of these PRs: ${stampOf("2026-11-04T12:00:00Z")}`);
 });
 
 it("reads a time ahead of this computer's clock as now", () => {

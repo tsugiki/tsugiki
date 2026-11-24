@@ -1,5 +1,4 @@
 import { fireEvent, render, screen, within } from "@testing-library/svelte";
-import { SvelteDate } from "svelte/reactivity";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { RepositoryState } from "$lib/state/repository-state.svelte";
 import type { RepositorySync } from "$lib/state/repository-sync.svelte";
@@ -9,6 +8,7 @@ import { ThemeState } from "$lib/state/theme.svelte";
 import { ok, refused } from "$lib/testing/fixtures";
 import { LIGHT_SIDE } from "$lib/testing/state";
 import RepositoryPage from "./RepositoryPage.svelte";
+import { stampOf } from "./time";
 
 const core = vi.hoisted(() => ({ repositoryState: vi.fn(), repositorySync: vi.fn() }));
 /** The listeners the page registers for the core's events. */
@@ -24,11 +24,6 @@ vi.mock("$lib/data/bindings", () => ({
 }));
 
 type Heard = (event: { event: string; id: number; payload: { repository: string } }) => void;
-
-// SvelteDate makes its methods reactive from the Date there is when the first one is built, and a fake
-// clock's Date has none of its own, so the page's clock would never move on. This builds that first one
-// before any test fakes the clock.
-new SvelteDate();
 
 const writable: RepositoryState = { read_only: [], connection: "online" };
 const readOnly: RepositoryState = { read_only: ["token"], connection: "online" };
@@ -101,6 +96,20 @@ describe("a Repository's page in Settings", () => {
     await vi.waitFor(() => {
       expect(facts()).toMatch(/^Can write · /);
     });
+  });
+
+  it("gives its last sync the date and time in a tooltip", async () => {
+    catchChanged();
+    catchSyncs();
+    show("python/cpython");
+
+    await vi.waitFor(() => {
+      expect(facts()).toBe("Can write · 1,204 open Issues · 1 open PR · Synced 2 min ago");
+    });
+
+    const line = document.querySelector(".facts span[title]");
+    expect(line?.textContent).toBe("Synced 2 min ago");
+    expect(line?.getAttribute("title")).toBe(`Last synced ${stampOf("2026-11-05T12:00:00Z")}`);
   });
 
   it("says when it hasn't synced yet, and no counts before a sync has counted them", async () => {

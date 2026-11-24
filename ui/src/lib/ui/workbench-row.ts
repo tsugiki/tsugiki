@@ -16,7 +16,7 @@ import {
   type YourReview,
 } from "$lib/state/workbench.svelte";
 import { counted } from "$lib/state/counted";
-import { elapsed } from "./time";
+import { elapsed, stampOf } from "./time";
 
 const REASONS: Record<WorkReason, string> = {
   review_request: "Review request",
@@ -90,6 +90,24 @@ const AGO_UNITS = { minute: "m", hour: "h", day: "d" } as const;
 export function ago(updatedAt: string, now: Date): string {
   const time = elapsed(updatedAt, now);
   return time.unit === "now" ? "just now" : `${String(time.count)}${AGO_UNITS[time.unit]} ago`;
+}
+
+/** A PR's or a Backport's update, for the tooltip beside its "… ago". */
+export const updatedTip = (row: { updated_at: string }) => `Updated ${stampOf(row.updated_at)}`;
+
+/** An item's time, for the tooltip beside its "… ago" (#1066). A PR's is its own update. An Issue's is the
+ * latest of its own and its PRs', so the tooltip lists each one with its date and time, to show which update
+ * put the Issue in the list. */
+export function ageTip(item: ListedItem): string {
+  if (item.kind !== "issue") return updatedTip(item);
+  const lines = [
+    `Latest update of this Issue or its PRs: ${stampOf(item.updated_at)}`,
+    `Issue #${String(item.number)}, updated ${stampOf(item.issue_updated_at)}`,
+    ...treeRows(item.pull_requests).map(
+      (row) => `PR #${String(row.number)}, updated ${stampOf(row.updated_at)}`,
+    ),
+  ];
+  return lines.join("\n");
 }
 
 /** How many comments an Issue, a PR or a review thread has. */
@@ -236,3 +254,12 @@ export function prStateWords(row: WorkbenchRow): StateWord[] {
 
 /** A Backport in the line its Origin PR folds them into: its branch and state. */
 export const backportWords = (row: WorkbenchRow) => `${row.target_branch} ${STATES[row.state]}`;
+
+/** The tooltip of the line that folds merged PRs, which says the latest of their updates (#1066). */
+export function foldedTip(entries: TreeEntry[]): string {
+  const rows = treeRows(entries);
+  const latest = rows.reduce((one, other) =>
+    Date.parse(other.updated_at) > Date.parse(one.updated_at) ? other : one,
+  );
+  return `Latest update of these PRs: ${stampOf(latest.updated_at)}`;
+}

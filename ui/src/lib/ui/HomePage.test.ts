@@ -3,6 +3,7 @@ import { tick } from "svelte";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { Opened } from "$lib/state/home.svelte";
 import HomePage from "./HomePage.svelte";
+import { stampOf } from "./time";
 
 const NOW = new Date("2026-11-23T12:00:00Z");
 
@@ -36,6 +37,14 @@ it("lists each Repository with when the user opened it, and none for one never o
     "python/peps opened 2 h ago",
     "a/never",
   ]);
+});
+
+it("gives the time the user opened a Repository its date and time in a tooltip", () => {
+  shown();
+
+  expect(screen.getByText("opened 2 h ago").getAttribute("title")).toBe(
+    `Opened ${stampOf("2026-11-23T10:00:00Z")}`,
+  );
 });
 
 it("starts on the top row with the focus, and keeps the cursor between the first row and the last", async () => {

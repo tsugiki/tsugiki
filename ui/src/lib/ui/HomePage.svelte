@@ -6,7 +6,7 @@
   import type { Opened } from "$lib/state/home.svelte";
   import { minuteClock } from "./clock.svelte";
   import { currentOs, keyName, withKey } from "./keys";
-  import { agoWords } from "./time";
+  import { agoWords, stampOf } from "./time";
 
   let {
     rows,
@@ -29,11 +29,15 @@
     onsettings: () => void;
   } = $props();
 
-  const now = minuteClock();
+  const clock = minuteClock();
   /** Each row's words for the time the user last opened its Repository, or nothing for one `recent` has no
    * time for. */
   const opened = $derived(
-    rows.map((row) => (row.opened_at === null ? null : `opened ${agoWords(row.opened_at, now)}`)),
+    rows.map((row) => (row.opened_at === null ? null : `opened ${agoWords(row.opened_at, clock.now)}`)),
+  );
+  /** Each row's tooltip for that time: the date and time the user last opened its Repository (#1066). */
+  const openedTips = $derived(
+    rows.map((row) => (row.opened_at === null ? undefined : `Opened ${stampOf(row.opened_at)}`)),
   );
   const os = currentOs();
   /** The name of the row the cursor last went to. */
@@ -111,7 +115,7 @@
         >
           <span class="name mono">{row.name}</span>
           {#if opened[at]}
-            <span class="opened">{opened[at]}</span>
+            <span class="opened" title={openedTips[at]}>{opened[at]}</span>
           {/if}
         </button>
       </li>

@@ -11,7 +11,7 @@
   import { minuteClock } from "./clock.svelte";
   import { openWords, writeWords } from "./repository-header";
   import StoredIn from "./StoredIn.svelte";
-  import { syncedWords } from "./synced";
+  import { syncedTip, syncedWords } from "./synced";
 
   let { dialog, repository }: { dialog: SettingsDialog; repository: string } = $props();
 
@@ -31,15 +31,15 @@
   });
 
   // "Synced 2 min ago" has to move on by itself between syncs.
-  const now = minuteClock();
+  const clock = minuteClock();
   const sync = $derived(syncView?.state);
   const parts = $derived(
-    [
-      writeWords(stateView?.state, repository),
-      sync?.open ? openWords(sync.open) : null,
-      sync === undefined ? null : syncedWords(sync.last_sync, now),
-    ].filter((part) => part !== null),
+    [writeWords(stateView?.state, repository), sync?.open ? openWords(sync.open) : null].filter(
+      (part) => part !== null,
+    ),
   );
+  /** The sync's words, last in the line, with the date and time of the last sync in a tooltip. */
+  const synced = $derived(sync === undefined ? null : syncedWords(sync.last_sync, clock.now));
 
   /** Whether this page has Read-only on, once the dialog has read the files (#915). */
   const readOnly = $derived(dialog.readOnly(repository));
@@ -58,7 +58,11 @@
 
 <h3 class="mono">{repository}</h3>
 {#if parts.length > 0}
-  <p class="facts">{parts.join(" · ")}</p>
+  <p class="facts">
+    {parts.join(" · ")}{#if synced !== null}{parts.length > 0 ? " · " : ""}<span
+        title={syncedTip(sync?.last_sync ?? null)}>{synced}</span
+      >{/if}
+  </p>
 {/if}
 
 <div class="row">

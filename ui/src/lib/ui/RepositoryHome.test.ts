@@ -10,6 +10,7 @@ import { PrFilesState, type FilesMode } from "$lib/state/pr-files.svelte";
 import { PrViewState } from "$lib/state/pr-view.svelte";
 import type { MuteAuthor } from "$lib/state/workbench.svelte";
 import { done, inboxPage, ok, readyFiles, refused, workbenchPage, workbenchRow } from "$lib/testing/fixtures";
+import { stampOf } from "./time";
 import { keydown, nextTask, pressed } from "$lib/testing/helpers";
 import RepositoryHome from "./RepositoryHome.svelte";
 
@@ -145,6 +146,7 @@ const issue = {
   state: "OPEN",
   people: ["issue-author", "some-author"],
   updated_at: "2026-11-04T10:00:00Z",
+  issue_updated_at: "2026-11-04T10:00:00Z",
   pull_requests: [{ kind: "pr", ...row, backports: [] }],
   seen: {
     mark: { numbers: [112564, 160662], up_to: "2026-11-04T10:00:00Z", findings: [] },
@@ -206,6 +208,7 @@ beforeEach(() => {
       state: "OPEN",
       people: [],
       updated_at: "2026-11-04T10:00:00Z",
+      issue_updated_at: "2026-11-04T10:00:00Z",
       pull_requests: [],
       merged: [],
       merged_count: 0,
@@ -275,6 +278,47 @@ it("lists a Standalone PR with the time it changed", async () => {
   expect(within(item).getByText("some-author")).toBeTruthy();
   expect(within(item).getByText("3h ago")).toBeTruthy();
   expect(within(item).getByText("Review request · some-author · into main · Open · CI passed")).toBeTruthy();
+});
+
+it("names what an Issue's time measures, with its own update and each PR's in its tooltip", async () => {
+  vi.setSystemTime("2026-11-04T13:00:00Z");
+  core.workbench.mockResolvedValue(workbenchPage([issue], { count: 1 }));
+  render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onsettings: () => {} });
+
+  const age = await screen.findByText("3h ago");
+
+  expect(age.getAttribute("title")).toBe(
+    [
+      `Latest update of this Issue or its PRs: ${stampOf("2026-11-04T10:00:00Z")}`,
+      `Issue #112564, updated ${stampOf("2026-11-04T10:00:00Z")}`,
+      `PR #160662, updated ${stampOf("2026-11-04T10:00:00Z")}`,
+    ].join("\n"),
+  );
+});
+
+it("gives a PR under an Issue its time in a tooltip, with no time on its line", async () => {
+  core.workbench.mockResolvedValue(workbenchPage([issue], { count: 1 }));
+  render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onsettings: () => {} });
+
+  await fireEvent.click(await screen.findByRole("button", { name: "PRs of #112564" }));
+  const line = screen.getByText("Review request · some-author · into main · Open · CI passed");
+  const row = line.closest(".row");
+
+  expect(row?.getAttribute("title")).toBe(`Updated ${stampOf("2026-11-04T10:00:00Z")}`);
+  expect(row?.querySelector(".age")).toBeNull();
+});
+
+it("moves a time on by a day while the window stays open", async () => {
+  // Only these, because the wait for the first answer runs on the real `setTimeout`.
+  vi.useFakeTimers({ toFake: ["Date", "setInterval", "clearInterval"] });
+  vi.setSystemTime("2026-11-04T13:00:00Z");
+  core.workbench.mockResolvedValue(workbenchPage([issue], { count: 1 }));
+  render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onsettings: () => {} });
+  await screen.findByText("3h ago");
+
+  await vi.advanceTimersByTimeAsync(24 * 60 * 60_000);
+
+  expect(screen.getByText("1d ago")).toBeTruthy();
 });
 
 it("moves a time on while the window stays open", async () => {
@@ -771,6 +815,7 @@ it("says how long ago each comment in the Detail pane came", async () => {
       state: "OPEN",
       people: [],
       updated_at: "2026-11-04T10:00:00Z",
+      issue_updated_at: "2026-11-04T10:00:00Z",
       pull_requests: [],
       author: "issue-author",
       assignees: [],
@@ -874,6 +919,7 @@ it("keeps the merged PRs unfolded after one of them opens and Esc comes back", a
       state: "OPEN",
       people: [],
       updated_at: "2026-11-04T10:00:00Z",
+      issue_updated_at: "2026-11-04T10:00:00Z",
       pull_requests: [],
       merged: [{ ...merged, state: "MERGED" }],
       merged_count: 1,

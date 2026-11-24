@@ -80,6 +80,7 @@ const issueWith = (number: number, pr: number): ListedItem => ({
   mute_author: { kind: "mute", login: "issue-author" },
   pinned: false,
   updated_at: "2026-11-04T10:00:00Z",
+  issue_updated_at: "2026-11-04T10:00:00Z",
   pull_requests: [{ ...row, kind: "pr", number: pr, seen: seen(pr), backports: [] }],
   seen: seen(number, pr),
 });
@@ -205,6 +206,7 @@ describe("WorkbenchState", () => {
       mute_author: { kind: "mute", login: "issue-author" },
       pinned: false,
       updated_at: "2026-11-04T10:00:00Z",
+      issue_updated_at: "2026-11-04T10:00:00Z",
       seen: seen(10, 11, 12, 13),
       pull_requests: [
         { ...row, kind: "pr", number: 11, backports: [{ ...row, number: 12, backport: "bot" }] },
@@ -264,6 +266,7 @@ describe("WorkbenchState", () => {
       mute_author: { kind: "mute", login: "issue-author" },
       pinned: false,
       updated_at: "2026-11-04T10:00:00Z",
+      issue_updated_at: "2026-11-04T10:00:00Z",
       pull_requests: [{ ...row, kind: "pr", number: 5, backports: [] }],
       seen: seen(number, 5),
     });
@@ -437,6 +440,7 @@ describe("WorkbenchState", () => {
       mute_author: { kind: "mute", login: "issue-author" },
       pinned: false,
       updated_at: "2026-11-04T10:00:00Z",
+      issue_updated_at: "2026-11-04T10:00:00Z",
       pull_requests: [{ ...row, kind: "pr", number: 5, backports: [] }],
       seen: seen(10, 5),
     };
@@ -1512,6 +1516,7 @@ describe("WorkbenchState", () => {
       mute_author: { kind: "mute", login: "issue-author" },
       pinned: false,
       updated_at: "2026-11-04T10:00:00Z",
+      issue_updated_at: "2026-11-04T10:00:00Z",
       pull_requests: [pr(10), pr(11)],
       seen: seen(5, 10, 11),
     });

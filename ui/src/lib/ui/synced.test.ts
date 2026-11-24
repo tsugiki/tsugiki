@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest";
+import { stampOf } from "./time";
 import {
   cloningWords,
   elsewhereWords,
   mirrorWords,
   offlineCloneWords,
   questionWords,
+  syncedTip,
   syncedWords,
 } from "./synced";
 
@@ -25,6 +27,16 @@ describe("syncedWords", () => {
     expect(syncedWords("2026-11-05T11:00:01Z", now)).toBe("Synced 59 min ago");
     expect(syncedWords("2026-11-05T09:00:00Z", now)).toBe("Synced 3 h ago");
     expect(syncedWords("2026-11-03T12:00:00Z", now)).toBe("Synced 2 d ago");
+  });
+});
+
+describe("syncedTip", () => {
+  it("gives the date and time of the last sync", () => {
+    expect(syncedTip("2026-11-05T12:00:00Z")).toBe(`Last synced ${stampOf("2026-11-05T12:00:00Z")}`);
+  });
+
+  it("gives nothing before the first sync", () => {
+    expect(syncedTip(null)).toBeUndefined();
   });
 });
 

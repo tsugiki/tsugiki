@@ -20,6 +20,11 @@ export function elapsed(since: string, now: Date): Elapsed {
   return { unit: "day", count: Math.floor(minutes / MINUTES_IN_DAY) };
 }
 
+/** The date and time of `at` in the system's format, for a tooltip beside an "… ago": "Nov 22, 2026,
+ * 7:05 AM". */
+export const stampOf = (at: string) =>
+  new Date(at).toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
+
 const AGO_UNITS = { minute: "min", hour: "h", day: "d" } as const;
 
 /** The time from `since` to `now` in words: "just now", "3 min ago", "2 h ago" or "4 d ago". */

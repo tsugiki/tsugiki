@@ -21,6 +21,7 @@ const view = (title: string): IssueView => ({
   mute_author: { kind: "mute", login: "issue-author" },
   pinned: false,
   updated_at: "2026-11-04T10:00:00Z",
+  issue_updated_at: "2026-11-04T10:00:00Z",
   pull_requests: [],
   merged: [],
   merged_count: 0,

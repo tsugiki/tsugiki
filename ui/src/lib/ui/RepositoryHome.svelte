@@ -68,6 +68,7 @@
   import UnstoredDetail from "./UnstoredDetail.svelte";
   import {
     ago,
+    ageTip,
     detailWords,
     headline,
     offersMarkSeen,
@@ -75,6 +76,7 @@
     preview,
     summary,
     treeCount,
+    updatedTip,
   } from "./workbench-row";
   import { minuteClock } from "./clock.svelte";
 
@@ -127,7 +129,7 @@
   } = $props();
 
   // A window can stay open between syncs, so "3h ago" moves on by itself.
-  const now = minuteClock();
+  const clock = minuteClock();
 
   // Another Repository has its own Workbench, so a new name starts a new state and stops the last one.
   const workbench = $derived(
@@ -1306,7 +1308,7 @@
 <!-- A PR's or a Backport's row in an unfolded tree: its headline, and its facts under it. -->
 {#snippet pullRequest(row: WorkbenchRow, issue: number | undefined)}
   {@const stop: Stop = { number: row.number, kind: "pull_request", issue }}
-  <div class={["row", { greyed: greyed(row) }]} data-row={lineName(stop)}>
+  <div class={["row", { greyed: greyed(row) }]} data-row={lineName(stop)} title={updatedTip(row)}>
     <span class="headline">
       {@render line(stop, row, false, prIcon(row))}
     </span>
@@ -1386,7 +1388,7 @@
         {:else if isMuted(item.hidden)}
           <small class="archived">Muted</small>
         {/if}
-        <small class="age">{ago(item.updated_at, now)}</small>
+        <small class="age" title={ageTip(item)}>{ago(item.updated_at, clock.now)}</small>
         <!-- Only Issues take a pin (#488). -->
         {#if item.kind === "issue"}
           {@render star({ number: item.number, pinned: item.pinned })}
@@ -1630,7 +1632,7 @@
         repository={name}
         {repositoryState}
         {issue}
-        {now}
+        now={clock.now}
         focusable={panes.hidden("list") || focusedView === issue}
         onmark={markByButton}
         onarchive={archiveByButton}
@@ -1652,7 +1654,7 @@
         {repositoryState}
         {pr}
         {panes}
-        {now}
+        now={clock.now}
         onback={back}
         onmark={markByButton}
         marks={!detailMuted()}

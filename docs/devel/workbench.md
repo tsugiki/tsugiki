@@ -112,6 +112,12 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
   touched, stays in the one list: By attention sorts it below the items that do, and By last update among
   them. It has no section or fold of its own, in the Workbench, a Filter or a Built-in view.
 - A PR that fixes no Issue is a **Standalone PR**: its own item in the Issue list.
+- A row's age, as "3h ago", measures GitHub's `updatedAt`: a PR's own update on a PR's row, and on an
+  Issue's row the latest of the Issue's own update and each PR's in its tree, Backports included, which is
+  also what By last update sorts by. The tooltip gives that moment as a date and a time, and on an Issue's
+  row it lists the Issue's update and each of its PRs' with its own date and time, so the user sees which
+  update moved the row. A PR's row under an Issue gives its update in its tooltip alone, with no time on the
+  line ([#1066](https://github.com/tsugiki/tsugiki/issues/1066)).
 - A Pinned issue stays until the user unpins it (#488). Closing doesn't unpin it, and the sync doesn't
   archive it as it closes. ★ on an Issue's row, in the Workbench, a Filter or the Inbox, and ☆ Pin in the
   Issue view pin the Issue and unpin it again. The row shows ★ on a Pinned issue, and ☆ on another while the

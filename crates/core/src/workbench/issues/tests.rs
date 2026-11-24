@@ -70,6 +70,18 @@ fn an_issues_time_is_the_latest_of_it_and_its_prs() {
 }
 
 #[test]
+fn an_issue_keeps_its_own_time_apart_from_its_prs() {
+    let later_pr = PullRequestFacts {
+        updated_at: at(5),
+        ..fixing(10, 1)
+    };
+    let found = workbench(vec![later_pr], vec![issue(1)]);
+    // The row's age is the latest of the two, and the tooltip names each (#1066).
+    assert_eq!(first_issue(&found).updated_at, at(5));
+    assert_eq!(first_issue(&found).issue_updated_at, at(1));
+}
+
+#[test]
 fn an_issues_people_and_time_count_its_backports() {
     let later = PullRequestFacts {
         updated_at: at(7),

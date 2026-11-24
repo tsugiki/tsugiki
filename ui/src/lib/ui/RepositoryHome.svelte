@@ -67,11 +67,13 @@
   import StateIcon from "./StateIcon.svelte";
   import UnstoredDetail from "./UnstoredDetail.svelte";
   import {
+    ageTooltip,
     ago,
     detailWords,
     headline,
     offersMarkSeen,
     peopleOf,
+    prAgeTooltip,
     preview,
     summary,
     treeCount,
@@ -127,7 +129,7 @@
   } = $props();
 
   // A window can stay open between syncs, so "3h ago" moves on by itself.
-  const now = minuteClock();
+  const clock = minuteClock();
 
   // Another Repository has its own Workbench, so a new name starts a new state and stops the last one.
   const workbench = $derived(
@@ -1273,7 +1275,8 @@
 
 <!-- An Issue's or a PR's number in the code font and its title, which name the button that opens it. One
      expression for each: Svelte compiles `{a} {b}` with `?? ""` branches that no test can reach. -->
-{#snippet label(item: { number: number; title: string })}<code>{`#${String(item.number)}`}</code
+{#snippet label(item: { number: number; title: string }, tip?: string)}<code title={tip}
+    >{`#${String(item.number)}`}</code
   >{` ${item.title}`}{/snippet}
 
 <!-- The icon sits beside the button, so the button's name stays the item's headline. The button's `::after`
@@ -1283,6 +1286,7 @@
   item: { number: number; title: string },
   attention: boolean,
   icon: Octicon | undefined,
+  tip?: string,
 )}
   {#if icon}
     <StateIcon {icon} />
@@ -1296,9 +1300,9 @@
     }}
   >
     {#if attention}
-      <strong>{@render label(item)}</strong>
+      <strong>{@render label(item, tip)}</strong>
     {:else}
-      {@render label(item)}
+      {@render label(item, tip)}
     {/if}
   </button>
 {/snippet}
@@ -1308,7 +1312,7 @@
   {@const stop: Stop = { number: row.number, kind: "pull_request", issue }}
   <div class={["row", { greyed: greyed(row) }]} data-row={lineName(stop)}>
     <span class="headline">
-      {@render line(stop, row, false, prIcon(row))}
+      {@render line(stop, row, false, prIcon(row), prAgeTooltip(row))}
     </span>
     <small class="facts">{@render facts(row)}</small>
   </div>
@@ -1386,7 +1390,7 @@
         {:else if isMuted(item.hidden)}
           <small class="archived">Muted</small>
         {/if}
-        <small class="age">{ago(item.updated_at, now)}</small>
+        <small class="age" title={ageTooltip(item)}>{ago(item.updated_at, clock.now)}</small>
         <!-- Only Issues take a pin (#488). -->
         {#if item.kind === "issue"}
           {@render star({ number: item.number, pinned: item.pinned })}
@@ -1630,7 +1634,7 @@
         repository={name}
         {repositoryState}
         {issue}
-        {now}
+        now={clock.now}
         focusable={panes.hidden("list") || focusedView === issue}
         onmark={markByButton}
         onarchive={archiveByButton}
@@ -1652,7 +1656,7 @@
         {repositoryState}
         {pr}
         {panes}
-        {now}
+        now={clock.now}
         onback={back}
         onmark={markByButton}
         marks={!detailMuted()}
@@ -1813,8 +1817,10 @@
   }
 
   /* The state icon sits above the title's cover, so its tooltip names the state, and a Stale review does too,
-     so its tooltip lists the files. */
+     so its tooltip lists the files. A PR's number sits above it as well, so its tooltip says when the PR
+     last moved (#1066). */
   .headline > :global(.octicon),
+  .title code,
   .stale {
     position: relative;
     z-index: 1;

@@ -21,7 +21,9 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
 - The Home page lists the Repositories in the Repository picker's order, most recently opened first, so the
   top row is the Repository the user came from, and the rows keep their order while the page shows. Each row's
   first line holds `owner/name`, and on the right "opened 2 h ago", from `recent` in `machine.toml`, or
-  nothing for a Repository never opened on this machine. ↑ ↓ move the cursor, and Enter or a click opens the
+  nothing for a Repository never opened on this machine. The time's tooltip says the date and the time of
+  the opening ([#1066](https://github.com/tsugiki/tsugiki/issues/1066)). ↑ ↓ move the cursor, and Enter or a
+  click opens the
   Repository on its Workbench. A switch that finds its Repository gone from the files drops its row, and the
   cursor stays where the row was. On the Home page the command palette offers Repository: …, Add repository…
   and Settings, and has no quick open, which searches one Repository. The status bar shows there too.

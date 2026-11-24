@@ -160,3 +160,7 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
   its threads as one line (file and line, the first words, the replies, Resolved or Outdated) that opens the
   thread in the Files tab. A Review with no text and no threads is one line, such as "some-reviewer approved
   at abc1234". A thread itself shows only in the Files tab.
+- Each comment and each Review of the Conversation says how long ago it was, with the date and the time of
+  the moment in its tooltip ([#1066](https://github.com/tsugiki/tsugiki/issues/1066)). A comment of a
+  review thread in the Files tab says so too, and the thread's own line folds to the first commenter and
+  the number of comments.

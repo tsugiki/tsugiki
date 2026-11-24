@@ -59,7 +59,9 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
   putting back the changes not applied, and switches to that Repository; while Apply saves, Settings stays
   open and the window stays where it is.
 - A Repository's page opens with a header: its `owner/name`, then Read-only or Can write, its open Issues
-  and PRs, and its last sync, as "Can write · 1,204 open Issues · 342 open PRs · Synced 2 min ago". Read-only
+  and PRs, and its last sync, as "Can write · 1,204 open Issues · 342 open PRs · Synced 2 min ago". The line's
+  tooltip says the date and the time of that sync
+  ([#1066](https://github.com/tsugiki/tsugiki/issues/1066)). Read-only
   follows the Repository's state, for any reason it holds, says each reason as the Issue and PR views do
   ("Read-only: your token can't write to python/cpython"), and changes as the mark does. The counts are
   GitHub's as a sync last kept them ([sync.md](sync.md)), so a large Repository counts all it has open, not

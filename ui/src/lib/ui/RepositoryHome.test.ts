@@ -145,6 +145,7 @@ const issue = {
   state: "OPEN",
   people: ["issue-author", "some-author"],
   updated_at: "2026-11-04T10:00:00Z",
+  issue_updated_at: "2026-11-04T09:00:00Z",
   pull_requests: [{ kind: "pr", ...row, backports: [] }],
   seen: {
     mark: { numbers: [112564, 160662], up_to: "2026-11-04T10:00:00Z", findings: [] },
@@ -155,6 +156,9 @@ const issue = {
   key: { kind: "issue", number: 112564 },
   hidden: null,
 };
+
+/** The date and the time of `at`, as the window's tooltip shows it (#1066). */
+const when = (at: string) => new Date(at).toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
 
 const DEFAULT_LAYOUT = {
   sidebar: null,
@@ -344,6 +348,56 @@ it("lists an Issue folded, and its PRs under it once unfolded", async () => {
       "Review request · some-author · into main · Open · CI passed",
     ),
   ).toBeTruthy();
+});
+
+it("says the time since, not 'just now', once the clock moves on (#1066)", async () => {
+  vi.useFakeTimers({ toFake: ["Date", "setInterval", "clearInterval"] });
+  vi.setSystemTime("2026-11-04T13:00:00Z");
+  // The update is ahead of the clock the window opened with, so a clock that stood still reads it as "just
+  // now".
+  core.workbench.mockResolvedValue(
+    workbenchPage([{ ...issue, updated_at: "2026-11-04T14:00:00Z" }], { count: 1 }),
+  );
+  render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onsettings: () => {} });
+  await screen.findByRole("listitem");
+  expect(document.querySelector(".age")?.textContent).toBe("just now");
+
+  vi.setSystemTime("2026-11-05T13:00:00Z");
+  await vi.advanceTimersByTimeAsync(60_000);
+
+  expect(document.querySelector(".age")?.textContent).toBe("23h ago");
+});
+
+it("says in a row's tooltip what its age measures, and each update with its date and time (#1066)", async () => {
+  vi.setSystemTime("2026-11-04T13:00:00Z");
+  core.workbench.mockResolvedValue(workbenchPage([issue], { count: 1 }));
+  render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onsettings: () => {} });
+
+  const age = await screen.findByText("3h ago");
+
+  expect(age.getAttribute("title")).toBe(
+    [
+      "The latest update of the Issue and of each PR in its tree:",
+      `Issue #112564: ${when("2026-11-04T09:00:00Z")}`,
+      `PR #160662: ${when("2026-11-04T10:00:00Z")}`,
+    ].join("\n"),
+  );
+});
+
+it("gives a PR's row under an Issue its time in a tooltip, and none on the line (#1066)", async () => {
+  vi.setSystemTime("2026-11-04T13:00:00Z");
+  core.workbench.mockResolvedValue(workbenchPage([issue], { count: 1 }));
+  render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onsettings: () => {} });
+  await fireEvent.click(await screen.findByRole("button", { name: "PRs of #112564" }));
+
+  const [item, pullRequest] = screen.getAllByRole("listitem");
+  const number = within(pullRequest as HTMLElement).getByText("#160662");
+
+  expect(number.getAttribute("title")).toBe(
+    `The latest update of PR #160662: ${when("2026-11-04T10:00:00Z")}`,
+  );
+  expect(pullRequest?.querySelector(".age")).toBeNull();
+  expect(item?.querySelector(".age")?.textContent).toBe("3h ago");
 });
 
 it("says so while there is nothing to list", async () => {

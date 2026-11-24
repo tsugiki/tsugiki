@@ -16,7 +16,7 @@ import {
   type YourReview,
 } from "$lib/state/workbench.svelte";
 import { counted } from "$lib/state/counted";
-import { elapsed } from "./time";
+import { dateTime, elapsed } from "./time";
 
 const REASONS: Record<WorkReason, string> = {
   review_request: "Review request",
@@ -90,6 +90,40 @@ const AGO_UNITS = { minute: "m", hour: "h", day: "d" } as const;
 export function ago(updatedAt: string, now: Date): string {
   const time = elapsed(updatedAt, now);
   return time.unit === "now" ? "just now" : `${String(time.count)}${AGO_UNITS[time.unit]} ago`;
+}
+
+/** The tooltip of a row's age: what the time measures, for an Issue or a PR (#1066). */
+export function ageTooltip(item: ListedItem): string {
+  return item.kind === "issue" ? issueAgeTooltip(item) : prAgeTooltip(item);
+}
+
+/** The tooltip of a PR's row or line, which says when the PR last moved (#1066). A Backport's line in the
+ * Issue view names no number, so the tooltip does. */
+export const prAgeTooltip = (row: { number: number; updated_at: string }): string =>
+  `The latest update of PR #${String(row.number)}: ${dateTime(row.updated_at)}`;
+
+/** The tooltip of an Issue's row: what its age measures, then the update of the Issue and of each PR in
+ * its tree, each with its date and time, so the user can see which update put the item in the list, and
+ * when (#1066). */
+export function issueAgeTooltip(issue: {
+  number: number;
+  issue_updated_at: string;
+  pull_requests: TreeEntry[];
+}): string {
+  const prs = treeRows(issue.pull_requests).map(
+    (row) => `PR #${String(row.number)}: ${dateTime(row.updated_at)}`,
+  );
+  return [
+    "The latest update of the Issue and of each PR in its tree:",
+    `Issue #${String(issue.number)}: ${dateTime(issue.issue_updated_at)}`,
+    ...prs,
+  ].join("\n");
+}
+
+/** The tooltip of the line that folds the merged PRs away: the latest update of the PRs it folds (#1066). */
+export function mergedAgeTooltip(entries: TreeEntry[]): string {
+  const latest = treeRows(entries).reduce((latest, row) => Math.max(latest, Date.parse(row.updated_at)), 0);
+  return `The latest update of the merged PRs: ${dateTime(latest)}`;
 }
 
 /** How many comments an Issue, a PR or a review thread has. */

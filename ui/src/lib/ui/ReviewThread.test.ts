@@ -1,10 +1,16 @@
-import { fireEvent, render, screen } from "@testing-library/svelte";
+import { cleanup, fireEvent, render, screen } from "@testing-library/svelte";
 import { expect, it, vi } from "vitest";
 import type { DiffThread } from "$lib/state/pr-files.svelte";
 import { diffThread, reviewComment } from "$lib/testing/fixtures";
 import ReviewThread from "./ReviewThread.svelte";
 
 const NOW = new Date("2026-11-04T12:00:00Z");
+
+/** The clock a day on, as it is when the window has stayed open for a day (#1066). */
+const LATER = new Date("2026-11-05T12:00:00Z");
+
+/** The date and the time of `at`, as the window's tooltip shows it (#1066). */
+const when = (at: string) => new Date(at).toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
 
 const comment = (changes: Partial<DiffThread["comments"][number]> = {}) =>
   reviewComment({ body_html: "<p>Why not a set?</p>", ...changes });
@@ -15,14 +21,32 @@ const thread = (changes: Partial<DiffThread> = {}): DiffThread => ({
   ...changes,
 });
 
-const shown = (shown: DiffThread, folded = false) => {
+const shown = (shown: DiffThread, folded = false, now = NOW) => {
   const ontoggle = vi.fn();
   const onlink = vi.fn();
-  render(ReviewThread, { thread: shown, folded, now: NOW, ontoggle, onlink });
+  render(ReviewThread, { thread: shown, folded, now, ontoggle, onlink });
   return { ontoggle, onlink };
 };
 
 const head = () => screen.getAllByRole("button")[0];
+
+it("gives each comment the date and the time of its moment (#1066)", () => {
+  shown(thread());
+
+  const by = document.querySelector("article .by");
+
+  expect(by?.querySelector("span")?.getAttribute("title")).toBe(when("2026-11-04T10:00:00Z"));
+});
+
+it("says the time since, not 'just now', when the clock is a day on (#1066)", () => {
+  const at = { comments: [comment({ created_at: "2026-11-04T12:00:00Z" })] };
+  shown(thread(at));
+  expect(document.querySelector("article .by")?.textContent).toContain("just now");
+  cleanup();
+
+  shown(thread(at), false, LATER);
+  expect(document.querySelector("article .by")?.textContent).toContain("1d ago");
+});
 
 it("shows who started a thread and its comments, oldest first, and folds on a click on its first line", async () => {
   const { ontoggle } = shown(

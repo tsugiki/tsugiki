@@ -1,6 +1,6 @@
 import { expect, it } from "vitest";
-import type { CantCheck, IssueItem, WorkbenchRow, Why, YourReview } from "$lib/state/workbench.svelte";
-import { workbenchRow } from "$lib/testing/fixtures";
+import type { CantCheck, WorkbenchRow, Why, YourReview } from "$lib/state/workbench.svelte";
+import { listedIssue, workbenchRow } from "$lib/testing/fixtures";
 import {
   ago,
   backportWords,
@@ -35,14 +35,9 @@ const row: WorkbenchRow = workbenchRow(160662, {
   reasons: ["review_request"],
 });
 
-const issue: IssueItem = {
-  number: 112564,
+const issue = listedIssue(112564, {
   title: "GIL drop during collection",
-  state: "OPEN",
   people: ["issue-author", "some-author"],
-  mute_author: { kind: "mute", login: "issue-author" },
-  pinned: false,
-  updated_at: "2026-11-04T10:00:00Z",
   pull_requests: [
     { kind: "pr", ...row, backports: [] },
     { kind: "pr", ...row, number: 160663, backports: [] },
@@ -51,7 +46,7 @@ const issue: IssueItem = {
     mark: { numbers: [112564, 160662, 160663], up_to: null, findings: [] },
     state: "seen",
   },
-};
+});
 
 it("starts with the PR's number and title", () => {
   expect(headline(row)).toBe("#160662 gh-112564: Fix UAF for gc debug print");
@@ -162,7 +157,7 @@ it("shows the review state a Bot backport shares with its Origin PR, Reviewed to
 });
 
 it("counts each Backport and each PR in an Issue's tree", () => {
-  const tree: IssueItem = {
+  const tree: ReturnType<typeof listedIssue> = {
     ...issue,
     pull_requests: [
       { kind: "pr", ...row, backports: [{ ...row, number: 2, backport: "bot", state: "MERGED" }] },
@@ -170,7 +165,7 @@ it("counts each Backport and each PR in an Issue's tree", () => {
     ],
   };
   expect(treeCount(tree)).toBe("3 PRs");
-  expect(summary({ kind: "issue", ...tree, ...unmarked })).toBe("2 open of 3 PRs");
+  expect(summary({ ...tree, ...unmarked })).toBe("2 open of 3 PRs");
 });
 
 it("counts one PR in the singular", () => {
@@ -182,7 +177,7 @@ it("starts an Issue with its number and title", () => {
 });
 
 it("names the people an Issue involves, or a PR's author", () => {
-  expect(peopleOf({ kind: "issue", ...issue, ...unmarked })).toBe("issue-author, some-author");
+  expect(peopleOf({ ...issue, ...unmarked })).toBe("issue-author, some-author");
   expect(peopleOf({ kind: "standalone_pr", ...row, backports: [], ...unmarked })).toBe("some-author");
   expect(peopleOf({ kind: "standalone_backport", ...row, author: null, backport: "bot", ...unmarked })).toBe(
     "deleted user",
@@ -190,11 +185,11 @@ it("names the people an Issue involves, or a PR's author", () => {
 });
 
 it("shows a dash for an Issue whose people have all gone", () => {
-  expect(peopleOf({ kind: "issue", ...issue, people: [], ...unmarked })).toBe("—");
+  expect(peopleOf({ ...issue, people: [], ...unmarked })).toBe("—");
 });
 
 it("says an Issue has no PR yet, and gives a PR's facts", () => {
-  expect(summary({ kind: "issue", ...issue, pull_requests: [], ...unmarked })).toBe("No PR yet");
+  expect(summary({ ...issue, pull_requests: [], ...unmarked })).toBe("No PR yet");
   expect(summary({ kind: "standalone_pr", ...row, backports: [], ...unmarked })).toBe(details(row));
 });
 

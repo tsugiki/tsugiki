@@ -1,5 +1,4 @@
 import { fireEvent, render, screen, within } from "@testing-library/svelte";
-import { SvelteDate } from "svelte/reactivity";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { RepositoryState } from "$lib/state/repository-state.svelte";
 import type { RepositorySync } from "$lib/state/repository-sync.svelte";
@@ -25,11 +24,6 @@ vi.mock("$lib/data/bindings", () => ({
 
 type Heard = (event: { event: string; id: number; payload: { repository: string } }) => void;
 
-// SvelteDate makes its methods reactive from the Date there is when the first one is built, and a fake
-// clock's Date has none of its own, so the page's clock would never move on. This builds that first one
-// before any test fakes the clock.
-new SvelteDate();
-
 const writable: RepositoryState = { read_only: [], connection: "online" };
 const readOnly: RepositoryState = { read_only: ["token"], connection: "online" };
 const synced: RepositorySync = { last_sync: "2026-11-05T12:00:00Z", open: { issues: 1204, prs: 1 } };
@@ -53,6 +47,9 @@ const catchSyncs = () => catchAll(listen.syncs, "repository-sync-changed");
 
 /** The line under the Repository's name, or nothing while it shows none. */
 const facts = () => document.querySelector(".facts")?.textContent ?? null;
+
+/** The date and the time of `at`, as the window's tooltip shows it (#1066). */
+const when = (at: string) => new Date(at).toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
 
 /** A Settings dialog that hasn't read the files. */
 const unread = () => new SettingsDialog(new SettingsState(), new ThemeState(LIGHT_SIDE));
@@ -82,6 +79,30 @@ describe("a Repository's page in Settings", () => {
     });
     expect(core.repositoryState).toHaveBeenCalledWith("python/cpython");
     expect(core.repositorySync).toHaveBeenCalledWith("python/cpython");
+  });
+
+  it("gives the line the date and the time of the last sync (#1066)", async () => {
+    catchChanged();
+    catchSyncs();
+    show("python/cpython");
+
+    await vi.waitFor(() => {
+      expect(document.querySelector(".facts")?.getAttribute("title")).toBe(
+        `Last sync: ${when("2026-11-05T12:00:00Z")}`,
+      );
+    });
+  });
+
+  it("gives the line no date while the Repository hasn't synced (#1066)", async () => {
+    catchChanged();
+    catchSyncs();
+    core.repositorySync.mockResolvedValue(ok({ last_sync: null, open: null }));
+    show("python/cpython");
+
+    await vi.waitFor(() => {
+      expect(facts()).toBe("Can write · Not synced yet");
+    });
+    expect(document.querySelector(".facts")?.getAttribute("title")).toBeNull();
   });
 
   it("says Read-only and why while the Repository is marked so, and follows the mark", async () => {

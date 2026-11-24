@@ -3,6 +3,7 @@ import type { ListedItem_Serialize as ListedItem } from "../src/lib/data/binding
 import {
   done,
   HOUR_POINTS,
+  listedIssue,
   OCTOCAT_ONLINE,
   ok,
   refused,
@@ -20,19 +21,10 @@ const reviewRow = workbenchRow(160662, {
   reasons: ["review_request"],
 });
 
-const review: ListedItem = {
+const review = listedIssue(112564, {
   attention: { since: "2026-11-04T10:00:00Z", why: [{ kind: "review_requested" }] },
-  key: { kind: "issue", number: 112564 },
-  hidden: null,
-  unpin: "stays",
-  kind: "issue",
-  number: 112564,
   title: "GIL drop during collection",
-  state: "OPEN",
   people: ["issue-author", "some-author"],
-  mute_author: { kind: "mute", login: "issue-author" },
-  pinned: false,
-  updated_at: "2026-11-04T10:00:00Z",
   pull_requests: [
     {
       kind: "pr",
@@ -54,7 +46,7 @@ const review: ListedItem = {
     mark: { numbers: [112564, 160662, 160700], up_to: null, findings: [] },
     state: "seen",
   },
-};
+});
 
 test("the Workbench lists what waits on the user", async ({ page }) => {
   await mockCore(page, { home, workbench: workbenchPage([review, own], { count: 2 }) });
@@ -72,6 +64,26 @@ test("the Workbench lists what waits on the user", async ({ page }) => {
   await expect(rows.nth(1)).toContainText("Review request · some-author · into main · Open · CI passed");
   await expect(rows.nth(2)).toContainText("Bot backport · some-author · into 3.14 · Merged · CI passed");
   await expect(rows.nth(3)).toContainText("Own PR · octocat · into 3.14 · Open · Draft · CI failed");
+});
+
+test("a PR's row under an Issue gives its time in a tooltip, which the row's cover doesn't hide", async ({
+  page,
+}) => {
+  await mockCore(page, { home, workbench: workbenchPage([review], { count: 1 }) });
+  await page.goto("/");
+  await page.getByRole("button", { name: "PRs of #112564" }).click();
+
+  const number = page.getByRole("listitem").nth(1).locator("button.title code").first();
+
+  await expect(number).toHaveAttribute("title", /^The latest update of PR #160662: /);
+  // The title's cover takes a click anywhere on the row, and the number has to sit above it, or its
+  // tooltip never shows (#1066).
+  expect(
+    await number.evaluate((node) => {
+      const box = node.getBoundingClientRect();
+      return document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2) === node;
+    }),
+  ).toBe(true);
 });
 
 test("an item that Needs attention shows an accent bar and title, and a long title ends in an ellipsis", async ({

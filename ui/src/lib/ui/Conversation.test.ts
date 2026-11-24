@@ -6,6 +6,9 @@ import Conversation from "./Conversation.svelte";
 
 const NOW = new Date("2026-11-04T12:00:00Z");
 
+/** The date and the time of `at`, as the window's tooltip shows it (#1066). */
+const when = (at: string) => new Date(at).toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
+
 const thread = (changes: Partial<ThreadLine>): ThreadLine => ({
   id: "T1",
   path: "Lib/ast.py",
@@ -58,6 +61,28 @@ it("heads the description, and says when there is none", () => {
 
   shown(reviewed([], { body_html: "" }));
   expect(screen.getByText("No description.")).toBeTruthy();
+});
+
+it("gives each comment and each Review the date and the time of its moment (#1066)", () => {
+  const container = shown(
+    reviewed([review({ submitted_at: "2026-11-04T09:00:00Z" })], {
+      comments: [
+        {
+          id: 1,
+          author: "some-reviewer",
+          created_at: "2026-11-04T08:00:00Z",
+          body_html: "<p>A comment</p>",
+          hidden: null,
+        },
+      ],
+    }),
+  );
+
+  const times = [...container.querySelectorAll("article > header span.muted, p.review span.muted")];
+  expect(times.map((time) => time.getAttribute("title"))).toEqual([
+    when("2026-11-04T08:00:00Z"),
+    when("2026-11-04T09:00:00Z"),
+  ]);
 });
 
 it("puts a Review's state in a chip, green for an approval and red for changes requested", () => {

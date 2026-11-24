@@ -6,6 +6,9 @@ import HomePage from "./HomePage.svelte";
 
 const NOW = new Date("2026-11-23T12:00:00Z");
 
+/** The date and the time of `at`, as the window's tooltip shows it (#1066). */
+const when = (at: string) => new Date(at).toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
+
 const ROWS: Opened[] = [
   { name: "python/cpython", opened_at: "2026-11-23T11:59:30Z" },
   { name: "python/peps", opened_at: "2026-11-23T10:00:00Z" },
@@ -36,6 +39,13 @@ it("lists each Repository with when the user opened it, and none for one never o
     "python/peps opened 2 h ago",
     "a/never",
   ]);
+});
+
+it("gives each row the date and the time the user opened its Repository (#1066)", () => {
+  shown();
+  expect(screen.getByText("opened just now").getAttribute("title")).toBe(when("2026-11-23T11:59:30Z"));
+  // A Repository never opened here has no time, and so no tooltip.
+  expect(screen.getByText("a/never").getAttribute("title")).toBeNull();
 });
 
 it("starts on the top row with the focus, and keeps the cursor between the first row and the last", async () => {

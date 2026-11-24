@@ -9,6 +9,7 @@ import type {
   Home_Serialize as Home,
   HourPoints_Serialize as HourPoints,
   InboxCursor_Serialize as InboxCursor,
+  IssueItem_Serialize as IssueItem,
   LanguageServerSettings_Serialize as LanguageServerSettings,
   ListedItem_Serialize as ListedItem,
   LoadedSettings_Serialize as LoadedSettings,
@@ -104,13 +105,14 @@ export const workbenchRow = (
 export const listedIssue = (
   number: number,
   overrides: Omit<Partial<ListedItem & { kind: "issue" }>, "kind" | "number"> = {},
-): ListedItem & { kind: "issue" } => ({
+): ListedItem & { kind: "issue" } & IssueItem => ({
   kind: "issue",
   number,
   title: `Issue ${String(number)}`,
   state: "OPEN",
   people: [],
   updated_at: "2026-11-04T10:00:00Z",
+  issue_updated_at: "2026-11-04T10:00:00Z",
   pull_requests: [],
   seen: { mark: { numbers: [number], up_to: null, findings: [] }, state: "seen" },
   mute_author: { kind: "mute", login: "issue-author" },

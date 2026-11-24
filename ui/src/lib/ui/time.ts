@@ -1,4 +1,5 @@
-// The time since something happened, in the one unit the window words it in.
+// The time since something happened, in the one unit the window words it in, and the date and the time it
+// happened at, which a tooltip shows beside it (#1066).
 
 /** A second, in milliseconds. */
 export const SECOND_MS = 1000;
@@ -26,4 +27,10 @@ const AGO_UNITS = { minute: "min", hour: "h", day: "d" } as const;
 export function agoWords(since: string, now: Date): string {
   const time = elapsed(since, now);
   return time.unit === "now" ? "just now" : `${String(time.count)} ${AGO_UNITS[time.unit]} ago`;
+}
+
+/** The date and the time of `at`, as the system's format shows them: "Nov 23, 2026, 3:42 AM". A tooltip
+ * says it, so a bare "2 h ago" tells the user when the moment was. */
+export function dateTime(at: string | number): string {
+  return new Date(at).toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
 }

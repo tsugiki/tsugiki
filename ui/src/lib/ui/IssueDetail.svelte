@@ -12,7 +12,15 @@
   import ReadOnlyNote from "./ReadOnlyNote.svelte";
   import StateIcon from "./StateIcon.svelte";
   import StateWords from "./StateWords.svelte";
-  import { ago, backportWords, commentCount, headline } from "./workbench-row";
+  import {
+    ago,
+    backportWords,
+    commentCount,
+    headline,
+    mergedAgeTooltip,
+    prAgeTooltip,
+  } from "./workbench-row";
+  import { dateTime } from "./time";
 
   let {
     repository,
@@ -116,7 +124,7 @@
     const who = view.author ?? "deleted user";
     const at = view.content?.opened_at;
     if (!at) return { who, words: "", title: undefined };
-    const title = new Date(at).toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
+    const title = dateTime(at);
     return { who, words: ` opened this ${ago(at, now)}`, title };
   };
 
@@ -239,6 +247,7 @@
                       <StateIcon icon={prIcon(backport)} />
                       <button
                         class={["link", { attention: view.needs_attention.includes(backport.number) }]}
+                        title={prAgeTooltip(backport)}
                         onclick={openPr(backport.number)}>{backportWords(backport)}</button
                       >
                     </span>
@@ -274,7 +283,12 @@
             {@render tree(view.pull_requests, "PRs")}
           {/if}
           {#if view.merged_count > 0}
-            <button class="link fold" aria-expanded={issue.mergedShown} onclick={() => issue.toggleMerged()}>
+            <button
+              class="link fold"
+              aria-expanded={issue.mergedShown}
+              title={mergedAgeTooltip(view.merged)}
+              onclick={() => issue.toggleMerged()}
+            >
               {mergedWords(issue.mergedShown, view.merged_count)}
             </button>
             {#if issue.mergedShown}
@@ -295,8 +309,9 @@
 
 <!-- A PR's number in the code font, then its title: one expression each, as Svelte compiles `{a} {b}` with
      branches no test can reach. -->
-{#snippet numbered(row: { number: number; title: string })}<code class="number"
-    >{`#${String(row.number)}`}</code
+{#snippet numbered(row: { number: number; title: string; updated_at: string })}<code
+    class="number"
+    title={prAgeTooltip(row)}>{`#${String(row.number)}`}</code
   >{` ${row.title}`}{/snippet}
 
 <!-- A count in the row above the tree, after a comma only a screen reader hears: "Open, 1". -->
@@ -425,6 +440,12 @@
   }
 
   .pr > :global(.octicon) {
+    position: relative;
+    z-index: 1;
+  }
+
+  /* The PR's number sits above the cover as well, so its tooltip says when the PR last moved (#1066). */
+  .pr .number {
     position: relative;
     z-index: 1;
   }

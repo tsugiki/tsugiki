@@ -53,7 +53,8 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
   - Sync status, which a click refreshes: "Synced 2 min ago" or "Not synced yet" for the open Repository,
     and a first sync's part and progress in its place ([sync.md](sync.md)). The background work follows
     ("· python/peps syncing", "· Cloning python/cpython 42%", "· Cloning python/cpython starts once GitHub
-    answers"). It shows once a Repository is open.
+    answers"). It shows once a Repository is open. While it shows the last sync's time, its tooltip says the
+    date and the time of that sync ([#1066](https://github.com/tsugiki/tsugiki/issues/1066)).
   - Unsent **Pending reviews** in any Repository, which a click opens on the PR.
   - The hour's GitHub points ("1,240 points left · resets 14:32"). The part shows from GitHub's first answer
     of the run, since until then Tsugiki doesn't know them, and goes at the reset, by GitHub's clock, until

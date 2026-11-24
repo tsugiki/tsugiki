@@ -49,6 +49,7 @@ const view: IssueView = {
   mute_author: { kind: "mute", login: "issue-author" },
   pinned: false,
   updated_at: "2026-11-04T10:00:00Z",
+  issue_updated_at: "2026-11-04T10:00:00Z",
   author: "issue-author",
   assignees: [],
   labels: [],
@@ -97,6 +98,9 @@ const content = (body_html: string, earlier_comments: number) => ({
 });
 
 const NOW = new Date("2026-11-04T11:00:00Z");
+
+/** The date and the time of `at`, as the window's tooltip shows it (#1066). */
+const when = (at: string) => new Date(at).toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
 
 /** The commit the user's Review covered, and the head the check compared it with. */
 const REVIEWED = { reviewed: "1".repeat(40), head: "2".repeat(40) };
@@ -460,6 +464,30 @@ it("leaves the line out when nothing has fully merged", async () => {
   await shown(view);
 
   expect(screen.queryByRole("button", { name: /merged PR/ })).toBeNull();
+});
+
+it("gives each Origin PR's line its time in a tooltip, and none on the line (#1066)", async () => {
+  await shown(view);
+
+  const prs = screen.getByRole("list", { name: "PRs" });
+  const number = within(prs).getByText("#10");
+
+  expect(number.getAttribute("title")).toBe(`The latest update of PR #10: ${when("2026-11-04T10:00:00Z")}`);
+  // The Backports have a time of their own, in their own tooltip.
+  expect(within(prs).getByText("3.14 Merged").getAttribute("title")).toBe(
+    `The latest update of PR #11: ${when("2026-11-04T10:00:00Z")}`,
+  );
+  expect(prs.textContent).not.toContain("ago");
+});
+
+it("gives the line that folds the merged PRs away the latest update of the PRs it folds (#1066)", async () => {
+  await shown(withMerged);
+
+  const line = screen.getByRole("button", { name: "Show 3 merged PRs" });
+
+  expect(line.getAttribute("title")).toBe(
+    `The latest update of the merged PRs: ${when("2026-11-04T10:00:00Z")}`,
+  );
 });
 
 it("marks the Issue, each PR in its tree and each Backport with the icon of its state", async () => {

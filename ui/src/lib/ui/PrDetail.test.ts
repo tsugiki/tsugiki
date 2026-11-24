@@ -78,6 +78,12 @@ const view: PrView = {
 
 const NOW = new Date("2026-11-04T11:00:00Z");
 
+/** The clock a day on, as it is when the window has stayed open for a day (#1066). */
+const LATER = new Date("2026-11-05T11:00:00Z");
+
+/** The date and the time of `at`, as the window's tooltip shows it (#1066). */
+const when = (at: string) => new Date(at).toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
+
 /** The PR on show, which stops after each test, as its Files tab loads once it shows. */
 let onShow: PrViewState | undefined;
 
@@ -88,12 +94,13 @@ const shown = async (
   onback = vi.fn(),
   onmark = vi.fn(),
   panes = new PanesState(),
+  now = NOW,
 ) => {
   core.pullRequest.mockResolvedValue(ok(answer));
   const state = new PrViewState("python/cpython", 11, issue, panes);
   onShow = state;
   await state.load();
-  render(PrDetail, { repository: "python/cpython", pr: state, panes, now: NOW, onback, onmark });
+  render(PrDetail, { repository: "python/cpython", pr: state, panes, now, onback, onmark });
   return state;
 };
 
@@ -139,6 +146,23 @@ it("says over the title which Issue the PR is under, where it goes and when it c
   expect(document.querySelector("p.byline")?.textContent).toBe(
     `pr-author ${document.querySelector(".words")?.textContent ?? ""}`,
   );
+});
+
+it("gives the PR view's header the date and the time of the update (#1066)", async () => {
+  await shown(view, 10);
+
+  const updated = screen.getByText("1h ago");
+
+  expect(updated.getAttribute("title")).toBe(when("2026-11-04T10:00:00Z"));
+});
+
+it("says the time since, not 'just now', when the clock is a day on (#1066)", async () => {
+  await shown({ ...view, updated_at: "2026-11-04T11:00:00Z" }, 10);
+  expect(screen.getByText("just now")).toBeTruthy();
+  cleanup();
+
+  await shown({ ...view, updated_at: "2026-11-04T11:00:00Z" }, 10, vi.fn(), vi.fn(), new PanesState(), LATER);
+  expect(screen.getByText("1d ago")).toBeTruthy();
 });
 
 it("marks the PR's title with the icon of its state", async () => {

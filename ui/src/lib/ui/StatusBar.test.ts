@@ -8,6 +8,9 @@ vi.mock("$lib/state/browser", () => ({ openLink: vi.fn() }));
 
 const bar = () => screen.getByRole("status");
 
+/** The date and the time of `at`, as the window's tooltip shows it (#1066). */
+const when = (at: string) => new Date(at).toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
+
 describe("StatusBar's last sync", () => {
   const online = OCTOCAT_ONLINE;
   const repository = "python/cpython";
@@ -43,6 +46,38 @@ describe("StatusBar's last sync", () => {
     const { unmount } = render(StatusBar, { status: online, lastSync: { repository, at: null } });
     unmount();
     expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("gives the sync's button the date and the time of the sync (#1066)", () => {
+    vi.useFakeTimers({ now: new Date("2026-11-05T12:02:00Z") });
+    const lastSync = { repository, at: "2026-11-05T12:00:00Z" };
+    render(StatusBar, { status: online, lastSync });
+
+    expect(screen.getByRole("button").getAttribute("title")).toBe(
+      `Last sync: ${when("2026-11-05T12:00:00Z")}`,
+    );
+  });
+
+  it("gives the sync's button no date while the Repository hasn't synced (#1066)", () => {
+    render(StatusBar, { status: online, lastSync: { repository, at: null } });
+
+    expect(screen.getByRole("button").getAttribute("title")).toBeNull();
+  });
+
+  it("gives the sync's button no date while a sync is under way (#1066)", () => {
+    vi.useFakeTimers({ now: new Date("2026-11-05T12:02:00Z") });
+    const lastSync = { repository, at: "2026-11-05T12:00:00Z" };
+    render(StatusBar, {
+      status: online,
+      lastSync,
+      syncActivity: {
+        open: { repository, part: "window", pages: 12, load: null },
+        paused_until: null,
+        elsewhere: [],
+      },
+    });
+
+    expect(screen.getByRole("button").getAttribute("title")).toBeNull();
   });
 
   it("refreshes at a click", async () => {

@@ -1,5 +1,4 @@
 // Clocks that move words such as "3m ago" and "4 s" on by themselves.
-import { SvelteDate } from "svelte/reactivity";
 import { MINUTE_MS, SECOND_MS } from "./time";
 
 /** The time now in milliseconds, set as the moment `since` gives changes, then again `after` milliseconds
@@ -32,18 +31,39 @@ export function secondClock(since: () => string | null, after: number): { readon
   };
 }
 
+/** The window's clock: the time now, as the system says it. */
+export type Clock = { readonly now: Date };
+
 /** The time now, set again each minute while the component that calls this as it starts is on screen, so
- * words such as "3m ago" move on between syncs. */
-export function minuteClock(): Date {
-  // SvelteDate extends the Date there was at import, so a test's fake clock reaches it only through `now()`.
-  const now = new SvelteDate(Date.now());
+ * words such as "3m ago" move on between syncs.
+ *
+ * The clock holds a plain value, which every reader sees. A `SvelteDate` keeps its time in a derived of
+ * its own, and that derived stops moving once the effect that first read it goes away: the window then
+ * keeps the time it opened at, and every moment since reads as the future, which `elapsed()` calls "just
+ * now" (#1066).
+ *
+ * A hidden or minimized window's timers may be throttled or stopped, so the clock reads the system's time
+ * again as soon as the window comes back to the front, as `window-shown.ts` watches for the core. */
+export function minuteClock(): Clock {
+  let at = $state(Date.now());
+  const read = () => {
+    at = Date.now();
+  };
   $effect(() => {
-    const ticking = setInterval(() => {
-      now.setTime(Date.now());
-    }, MINUTE_MS);
+    const ticking = setInterval(read, MINUTE_MS);
+    const shown = () => read();
+    document.addEventListener("visibilitychange", shown);
     return () => {
       clearInterval(ticking);
+      document.removeEventListener("visibilitychange", shown);
     };
   });
-  return now;
+  return {
+    get now() {
+      // The Date is made afresh on each read and never held or changed, and a `SvelteDate` keeps its time in
+      // a derived of its own that stops moving (#1066).
+      // eslint-disable-next-line svelte/prefer-svelte-reactivity
+      return new Date(at);
+    },
+  };
 }

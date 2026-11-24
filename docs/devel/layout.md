@@ -23,7 +23,9 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
   - **Issue list** (middle): one item per Issue for whatever is selected in the Sidebar, laid out like mail.
     **Standalone PRs** and **Dependency updates** are items of their own beside the Issues. Each item shows:
     - the people involved
-    - the Issue's number and title, with the number of PRs and the time of the last update
+    - the Issue's number and title, with the number of PRs and the time of the last update, which measures
+      the latest update of the Issue and of each PR in its tree, and says with which in its tooltip
+      ([#1066](https://github.com/tsugiki/tsugiki/issues/1066))
     - a preview of what is waiting on the user
 
     A header over the list names the view on show. In the Workbench, a Built-in view, a Filter or Pinned
@@ -136,7 +138,10 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
       it, "Mute <author>", which mutes the Issue's author and is off on the user's own Issue, then Mark
       Seen. A Muted Issue shows only Unmute and "Mute <author>", and a Muted author's Issue only
       "Unmute <author>". An Issue with no labels shows no chips. Each
-      Origin PR's Backports are folded into one line that gives their branches and states. A row between
+      Origin PR's Backports are folded into one line that gives their branches and states. Each Origin PR's
+      line gives the PR's last update in its tooltip, and each Backport's line its own, and the line that
+      folds the merged PRs away the latest update of the PRs it folds
+      ([#1066](https://github.com/tsugiki/tsugiki/issues/1066)). A row between
       the "Origin PRs" heading and the tree counts the PRs by state, as
       `Open 2 · Draft 0 · Merged 1 · Closed 0 · Bold: Needs attention 1`: each state's icon, its word, then
       its count, muted and without brackets, as on GitHub's tabs, with a muted dot between entries. Each
@@ -164,8 +169,9 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
       drops the fetch's answer, though the database still keeps what it brought.
     - **Look**, which the prototype settled, with colours from the Theme's tokens ([themes.md](themes.md)):
       - A muted 12 px line over the title gives the Issue's state, or the Issue a PR was opened under, the
-        branch it goes into and when it changed. The title is 18 px. The 13 px line under it names the
-        author in the text colour at weight 600, and a PR's state words follow.
+        branch it goes into and when it changed, with the date and the time of the change in its tooltip
+        ([#1066](https://github.com/tsugiki/tsugiki/issues/1066)). The title is 18 px. The 13 px line under
+        it names the author in the text colour at weight 600, and a PR's state words follow.
       - The Issue view keeps to 900 px and the Conversation to 860 px, so lines stay short in a wide
         window. Section headings, "Origin PRs" and "Description", are 13 px with 18 px above.
       - The PR tree is a box with 6 px corners and a line between rows. Each row is 13 px, with the number

@@ -315,14 +315,14 @@ fn run_session(
     let session = Session::start(
         StatusBoard::new(Box::new(|_| {})),
         folders,
-        Connections {
-            github: GitHubAccess {
+        Connections::new(
+            GitHubAccess {
                 transport: Box::new(Proxy),
                 token_from: from,
             },
-            mirrors: mirrors.requests(),
-            settings: latest::channel(SettingsView::default()).1,
-        },
+            mirrors.requests(),
+            latest::channel(SettingsView::default()).1,
+        ),
         Intervals {
             status,
             repository: Duration::from_secs(3600),

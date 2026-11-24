@@ -40,7 +40,11 @@ use crate::testing::{
     listing, me, one_folder, pr_facts, recordings,
 };
 use crate::token::Token;
-use crate::workbench::{ListedItem, Workbench, WorkbenchItem, WorkbenchView};
+use crate::work::{Hiding, Unseen};
+use crate::workbench::inbox::InboxPage;
+use crate::workbench::{
+    Answered, Asked, ListedItem, Listing, Page, Workbench, WorkbenchItem, WorkbenchView,
+};
 use serde_json::{Value, json};
 use std::cell::{Cell, RefCell};
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
@@ -495,6 +499,11 @@ fn database(folders: Result<Folders, Error>) -> Database {
     Database { folders, to_open }
 }
 
+/// A read-only connection no database answers, for a session part that never reads a list back (#1052).
+fn unopened_reader() -> StoreReader {
+    store::reader().1
+}
+
 /// Runs a session on `database` whose thread has nothing to take, so its GitHub thread connects through
 /// `access` and stops, for a test that shouldn't get as far as a second request. A GitHub thread with no
 /// token ends on that too.
@@ -510,7 +519,10 @@ fn run_stopped(mut board: StatusBoard, database: Database, access: GitHubAccess)
     let keeper = Keeper::new(
         mpsc::channel().1,
         unheard(),
-        listed(vec![plain_gcmon()]),
+        Reads {
+            settings: listed(vec![plain_gcmon()]),
+            reader: unopened_reader(),
+        },
         telling,
     );
     let threads = Threads {
@@ -528,11 +540,7 @@ fn mirrors() -> MirrorRequests {
 
 /// GitHub through `access`, a Mirror worker that isn't there, and settings that list gcmon with no Filters.
 fn reaching(access: GitHubAccess) -> Connections {
-    Connections {
-        github: access,
-        mirrors: mirrors(),
-        settings: listed(vec![plain_gcmon()]),
-    }
+    Connections::new(access, mirrors(), listed(vec![plain_gcmon()]))
 }
 
 /// A handle that reaches neither a session nor a Mirror worker, for refreshes a test drives itself.
@@ -698,7 +706,14 @@ fn mark_seen_moves_last_seen_to_the_moment_the_window_drew_and_asks_github_nothi
     let drawn = hours_ago(2);
 
     let (content, activity, _) = after_asking("mark-seen", access, |asked| {
-        asked.mark_unseen(gcmon(), 8, None);
+        asked.mark_unseen(
+            gcmon(),
+            Unseen {
+                number: 8,
+                archived: None,
+            },
+            None,
+        );
         asked.mark_seen(
             gcmon(),
             SeenMark {
@@ -706,6 +721,13 @@ fn mark_seen_moves_last_seen_to_the_moment_the_window_drew_and_asks_github_nothi
                 up_to: Some(drawn),
                 findings: vec![],
             },
+            // The session answers an action it kept, and this one has nowhere to pass the answer on.
+            Some(Asked {
+                id: 1,
+                listing: Listing::Workbench {
+                    view: WorkbenchView::Whole,
+                },
+            }),
         );
     });
 
@@ -727,10 +749,31 @@ fn archive_marks_the_item_seen_and_keeps_it_archived_until_unarchive() {
             up_to: Some(drawn),
             findings: vec![],
         };
-        asked.archive(gcmon(), issue, mark(vec![7, 8]));
-        asked.keep_archived(gcmon(), issue, mark(vec![7]));
-        asked.archive(gcmon(), standalone, mark(vec![9]));
-        asked.unarchive(gcmon(), standalone);
+        asked.archive(
+            gcmon(),
+            Hiding {
+                key: issue,
+                mark: mark(vec![7, 8]),
+            },
+            None,
+        );
+        asked.keep_archived(
+            gcmon(),
+            Hiding {
+                key: issue,
+                mark: mark(vec![7]),
+            },
+            None,
+        );
+        asked.archive(
+            gcmon(),
+            Hiding {
+                key: standalone,
+                mark: mark(vec![9]),
+            },
+            None,
+        );
+        asked.unarchive(gcmon(), standalone, None);
     });
 
     let archived = activity.archived.iter();
@@ -756,8 +799,22 @@ fn mute_marks_the_item_seen_and_keeps_it_muted_until_unmute() {
             up_to: Some(drawn),
             findings: vec![],
         };
-        asked.mute(gcmon(), issue, mark(vec![7, 8]));
-        asked.mute(gcmon(), standalone, mark(vec![9]));
+        asked.mute(
+            gcmon(),
+            Hiding {
+                key: issue,
+                mark: mark(vec![7, 8]),
+            },
+            None,
+        );
+        asked.mute(
+            gcmon(),
+            Hiding {
+                key: standalone,
+                mark: mark(vec![9]),
+            },
+            None,
+        );
         asked.unmute(gcmon(), standalone);
     });
 
@@ -772,7 +829,14 @@ fn mark_unseen_flags_the_item_from_now() {
     let before = OffsetDateTime::now_utc().replace_nanosecond(0).unwrap();
 
     let (_, activity, _) = after_asking("mark-unseen", access, |asked| {
-        asked.mark_unseen(gcmon(), 7, None)
+        asked.mark_unseen(
+            gcmon(),
+            Unseen {
+                number: 7,
+                archived: None,
+            },
+            None,
+        )
     });
 
     let flagged = activity.marked_unseen.get(&7).copied().unwrap();
@@ -856,8 +920,16 @@ fn mark_seen_and_mark_unseen_work_with_no_token() {
                 up_to: Some(drawn),
                 findings: vec![],
             },
+            None,
         );
-        asked.mark_unseen(gcmon(), 8, None);
+        asked.mark_unseen(
+            gcmon(),
+            Unseen {
+                number: 8,
+                archived: None,
+            },
+            None,
+        );
     });
 
     assert_eq!(content, None);
@@ -883,6 +955,7 @@ fn marking_an_issue_seen_and_reading_it_each_tell_the_window() {
             up_to: None,
             findings: vec![],
         },
+        None,
     );
     requests.fetch_issue(gcmon(), 7);
     session.stop(PLENTY);
@@ -894,6 +967,98 @@ fn marking_an_issue_seen_and_reading_it_each_tell_the_window() {
     assert_eq!(
         changes.try_iter().collect::<Vec<_>>(),
         [change(vec![7, 8]), change(vec![7])]
+    );
+}
+
+#[test]
+fn a_mark_answers_with_the_list_it_left() {
+    let (folders, _folder) = temp_folders("answered-list");
+    let store = Store::open(&folders.database()).unwrap();
+    stores_issue_5_with_its_prs(&store);
+    store.close();
+    let (sent, answered) = mpsc::channel();
+    let board = quiet_board();
+    let connections = Connections::new(offline(), mirrors(), listed(vec![cpython_gcmon()]))
+        .with_acted(Box::new(move |answer: &Answered| {
+            sent.send(answer.clone()).unwrap();
+        }));
+    let session = Session::start(board, Ok(folders.clone()), connections, HOURLY);
+    let issue = ItemKey::Issue { number: 5 };
+
+    let hiding = Hiding {
+        key: issue,
+        mark: SeenMark {
+            numbers: vec![5, 8, 9],
+            up_to: Some(hours_ago(1)),
+            findings: vec![],
+        },
+    };
+    session.fetching().mute(
+        gcmon(),
+        hiding,
+        Some(Asked {
+            id: 42,
+            listing: Listing::Workbench {
+                view: WorkbenchView::Whole,
+            },
+        }),
+    );
+    let answer = answered.recv_timeout(PLENTY).unwrap();
+    session.stop(PLENTY);
+
+    assert_eq!((answer.id, answer.repository), (42, gcmon()));
+    let Page::Workbench { workbench } = answer.page else {
+        panic!("the answer reads the Workbench the action asked about");
+    };
+    assert!(
+        !workbench.items.iter().any(|listed| listed.key == issue),
+        "the Muted item left the Workbench"
+    );
+}
+
+#[test]
+fn a_mark_in_the_inbox_answers_with_the_page_it_left() {
+    let (folders, _folder) = temp_folders("answered-inbox");
+    let store = Store::open(&folders.database()).unwrap();
+    stores_issue_5_with_its_prs(&store);
+    store.close();
+    let (sent, answered) = mpsc::channel();
+    let board = quiet_board();
+    let connections = Connections::new(offline(), mirrors(), listed(vec![cpython_gcmon()]))
+        .with_acted(Box::new(move |answer: &Answered| {
+            sent.send(answer.clone()).unwrap();
+        }));
+    let session = Session::start(board, Ok(folders.clone()), connections, HOURLY);
+    let issue = ItemKey::Issue { number: 5 };
+
+    let hiding = Hiding {
+        key: issue,
+        mark: SeenMark {
+            numbers: vec![5, 8, 9],
+            up_to: Some(hours_ago(1)),
+            findings: vec![],
+        },
+    };
+    session.fetching().mute(
+        gcmon(),
+        hiding,
+        Some(Asked {
+            id: 7,
+            listing: Listing::Inbox {
+                page: InboxPage::Latest,
+            },
+        }),
+    );
+    let answer = answered.recv_timeout(PLENTY).unwrap();
+    session.stop(PLENTY);
+
+    assert_eq!((answer.id, answer.repository), (7, gcmon()));
+    let Page::Inbox { inbox } = answer.page else {
+        panic!("the answer reads the Inbox page the action asked about");
+    };
+    assert!(
+        !inbox.items.iter().any(|listed| listed.key == issue),
+        "the Muted item left the Inbox"
     );
 }
 
@@ -954,6 +1119,7 @@ fn telling_through(
 ) -> Telling {
     Telling {
         changes: board.changes(),
+        acted: Box::new(|_| {}),
         github,
         shown: board.shown(),
         refreshes_done,
@@ -980,7 +1146,15 @@ fn two_threads(intervals: Intervals, mirrors: MirrorRequests) -> (TwoThreads, Fe
     let (refreshes, done) =
         Refreshes::new(intervals, github_queue, requests.clone(), settings.clone());
     let telling = telling_through(&mut quiet_board(), to_github, done);
-    let keeper = Keeper::new(incoming, requests.clone(), settings, telling);
+    let keeper = Keeper::new(
+        incoming,
+        requests.clone(),
+        Reads {
+            settings,
+            reader: unopened_reader(),
+        },
+        telling,
+    );
     let threads = TwoThreads {
         refreshes,
         keeper,
@@ -1036,7 +1210,15 @@ fn keeper_told(
         saves_told: saves,
         ..listing(vec![listed])
     };
-    Keeper::new(incoming, unheard(), crate::latest::channel(view).1, telling)
+    Keeper::new(
+        incoming,
+        unheard(),
+        Reads {
+            settings: crate::latest::channel(view).1,
+            reader: unopened_reader(),
+        },
+        telling,
+    )
 }
 
 /// A handle whose demands on GitHub reach `github` as the session's thread passes them on, from a thread of
@@ -1044,7 +1226,15 @@ fn keeper_told(
 fn passed_on(github: Sender<GitHubMessage>) -> Fetching {
     let (messages, incoming) = mpsc::channel();
     let told = telling_through(&mut quiet_board(), github, crate::latest::channel(0).1);
-    let keeper = Keeper::new(incoming, unheard(), listed(vec![plain_gcmon()]), told);
+    let keeper = Keeper::new(
+        incoming,
+        unheard(),
+        Reads {
+            settings: listed(vec![plain_gcmon()]),
+            reader: unopened_reader(),
+        },
+        told,
+    );
     #[expect(
         unused_results,
         reason = "it ends on the stop the handle sends, or once the handle goes"
@@ -1104,8 +1294,14 @@ fn a_mute_and_an_unmute_while_a_save_is_owed_keep_their_order() {
     let store = empty_store();
     stores_issue_5_with_its_prs(&store);
     let messages = vec![
-        SessionMessage::Mark(mute_5()),
-        SessionMessage::Mark(unmute_5()),
+        SessionMessage::Mark {
+            marked: mute_5(),
+            asked: None,
+        },
+        SessionMessage::Mark {
+            marked: unmute_5(),
+            asked: None,
+        },
         cpython_saved(),
     ];
     let keeper = quiet_keeper(1, cpython_gcmon(), messages);
@@ -1120,7 +1316,10 @@ fn a_mark_before_a_stop_is_kept_while_a_save_is_owed() {
     let store = empty_store();
     stores_issue_5_with_its_prs(&store);
     let messages = vec![
-        SessionMessage::Mark(mute_5()),
+        SessionMessage::Mark {
+            marked: mute_5(),
+            asked: None,
+        },
         SessionMessage::Stop,
         cpython_saved(),
     ];
@@ -1175,7 +1374,10 @@ fn an_unmute_before_a_save_it_hasnt_followed_moves_reach_from_where_the_save_end
         SavedBy::HandEdit,
     );
     let messages = vec![
-        SessionMessage::Mark(unmute_5()),
+        SessionMessage::Mark {
+            marked: unmute_5(),
+            asked: None,
+        },
         SessionMessage::SettingsChanged(switched),
     ];
     let keeper = quiet_keeper(1, cpython_bugs(OnWorkbench::On), messages);
@@ -1197,7 +1399,7 @@ fn a_mark_follows_only_the_saves_its_settings_hold() {
     let messages = vec![cpython_saved(), SessionMessage::SettingsChanged(switch)];
     let keeper = quiet_keeper(1, cpython_gcmon(), messages);
 
-    keeper.mark(&store, unmute_5());
+    keeper.mark(&store, unmute_5(), None);
 
     assert_eq!(left_in(&keeper), ["switch"]);
 }
@@ -1208,7 +1410,7 @@ fn a_mark_the_queue_holds_no_owed_save_for_is_kept_at_once() {
     stores_issue_5_with_its_prs(&store);
     let keeper = quiet_keeper(1, cpython_gcmon(), vec![SessionMessage::Refresh]);
 
-    keeper.mark(&store, mute_5());
+    keeper.mark(&store, mute_5(), None);
 
     assert!(issue_5_muted(&store));
     assert_eq!(left_in(&keeper), ["refresh"]);
@@ -1222,7 +1424,10 @@ fn what_the_github_thread_saved_has_the_session_hand_over_the_wants_then_the_hea
     let keeper = Keeper::new(
         mpsc::channel().1,
         sending(mpsc::channel().0, mirrors),
-        listed(vec![plain_gcmon()]),
+        Reads {
+            settings: listed(vec![plain_gcmon()]),
+            reader: unopened_reader(),
+        },
         telling(&mut quiet_board()).0,
     );
     let saved = |items: Vec<u32>| {
@@ -1260,7 +1465,7 @@ fn what_the_github_thread_saved_has_the_session_hand_over_the_wants_then_the_hea
 fn a_mark_that_moves_no_reach_follows_no_save() {
     let keeper = quiet_keeper(1, cpython_gcmon(), vec![cpython_saved()]);
 
-    keeper.mark(&Store::stopped(), unseen_7());
+    keeper.mark(&Store::stopped(), unseen_7(), None);
 
     assert_eq!(left_in(&keeper), [format!("settings of {}", gcmon())]);
 }
@@ -1279,7 +1484,7 @@ fn a_hand_edit_a_mute_follows_ahead_of_the_open_of_its_repository_tells_the_wind
     let (mut board, changes) = board_hearing_settings();
     let keeper = keeper_told(1, cpython_gcmon(), messages, telling(&mut board).0);
 
-    keeper.mark(&store, mute_5());
+    keeper.mark(&store, mute_5(), None);
 
     let told: Vec<Change> = changes.try_iter().collect();
     assert_eq!(
@@ -1302,13 +1507,21 @@ fn a_save_missing_from_the_queue_leaves_later_marks_to_the_saves_their_view_coun
         ..listing(vec![cpython_gcmon()])
     };
     let quiet = telling(&mut quiet_board()).0;
-    let keeper = Keeper::new(incoming, unheard(), crate::latest::channel(view).1, quiet);
-    keeper.mark(&store, mute_5());
+    let keeper = Keeper::new(
+        incoming,
+        unheard(),
+        Reads {
+            settings: crate::latest::channel(view).1,
+            reader: unopened_reader(),
+        },
+        quiet,
+    );
+    keeper.mark(&store, mute_5(), None);
     // A save that only a view after this one counts.
     let switch = SettingsSave::new(cpython_gcmon(), &[cpython_gcmon()], SavedBy::Window);
     sent.send(SessionMessage::SettingsChanged(switch)).unwrap();
 
-    keeper.mark(&store, unmute_5());
+    keeper.mark(&store, unmute_5(), None);
 
     assert_eq!(left_in(&keeper), ["switch"]);
 }
@@ -1333,10 +1546,31 @@ fn a_mark_that_cant_be_stored_is_a_problem() {
         let (told, github) = telling(&mut quiet_board());
         let keeper = keeper_told(0, plain_gcmon(), vec![], told);
 
-        keeper.mark(&Store::stopped(), marked);
+        keeper.mark(&Store::stopped(), marked, None);
 
         assert_eq!(problems_for_the_status_bar(&github), [ErrorKind::Internal]);
     }
+}
+
+#[test]
+fn a_mark_whose_list_cant_be_read_is_a_problem() {
+    let store = empty_store();
+    stores_issue_5_with_its_prs(&store);
+    let (told, github) = telling(&mut quiet_board());
+    let keeper = keeper_told(0, plain_gcmon(), vec![], told);
+
+    keeper.mark(
+        &store,
+        mute_5(),
+        Some(Asked {
+            id: 3,
+            listing: Listing::Workbench {
+                view: WorkbenchView::Whole,
+            },
+        }),
+    );
+
+    assert_eq!(problems_for_the_status_bar(&github), [ErrorKind::Internal]);
 }
 
 /// The kinds of the problems the session asked the GitHub thread to show on the status bar.
@@ -1491,7 +1725,15 @@ impl OneRead {
         let (to_github, github_queue) = mpsc::channel();
         let (queue, done) = Refreshes::new(HOURLY, github_queue, demands.clone(), listing.clone());
         let told = telling_through(&mut quiet_board(), to_github, done);
-        let passing = Keeper::new(incoming, demands.clone(), listing, told);
+        let passing = Keeper::new(
+            incoming,
+            demands.clone(),
+            Reads {
+                settings: listing,
+                reader: unopened_reader(),
+            },
+            told,
+        );
         // The session's thread took the Sync the syncs above added gcmon by.
         passing.opened.borrow_mut().push(gcmon());
         Self {
@@ -2261,11 +2503,7 @@ fn a_sync_hands_the_mirror_the_heads_it_saved_of_the_prs_the_users_work_reaches_
     let session = Session::start(
         quiet_board(),
         Ok(folders.clone()),
-        Connections {
-            github: access,
-            mirrors,
-            settings: listed(vec![plain_gcmon()]),
-        },
+        Connections::new(access, mirrors, listed(vec![plain_gcmon()])),
         HOURLY,
     );
 
@@ -2486,11 +2724,11 @@ fn a_hand_edit_to_the_settings_tells_the_window_and_the_windows_own_switch_doesn
     store.close();
     let (board, changes) = board_hearing_settings();
     let (mirrors, _heard) = HeardRequests::new();
-    let connections = Connections {
-        github: offline(),
+    let connections = Connections::new(
+        offline(),
         mirrors,
-        settings: listed(vec![bugs_switched(OnWorkbench::On)]),
-    };
+        listed(vec![bugs_switched(OnWorkbench::On)]),
+    );
     let session = Session::start(board, Ok(folders.clone()), connections, HOURLY);
     // GitHub's Conventions are those every Repository but CPython starts with.
     let regrouped = RepositorySettings {
@@ -2612,11 +2850,7 @@ fn session_taking(
     let (board, changes) = board_hearing_settings();
     let (mirrors, heard) = HeardRequests::new();
     let settings = listed(vec![save.saved().clone()]);
-    let connections = Connections {
-        github,
-        mirrors,
-        settings,
-    };
+    let connections = Connections::new(github, mirrors, settings);
     let session = Session::start(board, Ok(folders.clone()), connections, HOURLY);
 
     if let Some(opened) = opened {
@@ -2787,17 +3021,20 @@ fn mute_takes_an_issues_heads_from_the_mirror_and_unmute_hands_them_back_and_owe
     stores_issue_5_with_its_prs(&store);
     store.close();
     let (mirrors, heard) = HeardRequests::new();
-    let connections = Connections {
-        github: offline(),
-        mirrors,
-        settings: listed(vec![cpython_gcmon()]),
-    };
+    let connections = Connections::new(offline(), mirrors, listed(vec![cpython_gcmon()]));
     let session = Session::start(quiet_board(), Ok(folders.clone()), connections, HOURLY);
     let issue = ItemKey::Issue { number: 5 };
 
     let asked = session.fetching();
     asked.sync(gcmon());
-    asked.mute(gcmon(), issue, issue_5_seen());
+    asked.mute(
+        gcmon(),
+        Hiding {
+            key: issue,
+            mark: issue_5_seen(),
+        },
+        None,
+    );
     let muted = heard.asked_through("wants heads none", PLENTY);
     asked.unmute(gcmon(), issue);
     let unmuted = heard.asked_through("wants heads #8", PLENTY);
@@ -2830,20 +3067,16 @@ fn pin_hands_the_mirror_the_heads_of_an_issues_tree_and_owes_their_reads_and_unp
     store.save_pull_requests(&gcmon(), stored).unwrap();
     store.close();
     let (mirrors, heard) = HeardRequests::new();
-    let connections = Connections {
-        github: offline(),
-        mirrors,
-        settings: listed(vec![cpython_gcmon()]),
-    };
+    let connections = Connections::new(offline(), mirrors, listed(vec![cpython_gcmon()]));
     let (board, changes) = changes_board();
     let session = Session::start(board, Ok(folders.clone()), connections, HOURLY);
 
     let asked = session.fetching();
     asked.sync(gcmon());
-    asked.pin(gcmon(), 5);
+    asked.pin(gcmon(), 5, None);
     let pinned = heard.asked_through("wants heads #8", PLENTY);
     let change = changes.recv_timeout(PLENTY).unwrap();
-    asked.unpin(gcmon(), 5);
+    asked.unpin(gcmon(), 5, None);
     let unpinned = heard.asked_through("wants heads none", PLENTY);
     session.stop(PLENTY);
     let store = Store::open(&folders.database()).unwrap();
@@ -2881,18 +3114,21 @@ fn with_no_token_mute_tells_the_window_and_unmute_owes_the_read_of_a_pr_read_at_
         transport: Box::new(Canned(Err(Unreachable::Offline))),
         token_from: NO_GH,
     };
-    let connections = Connections {
-        github,
-        mirrors,
-        settings: listed(vec![cpython_gcmon()]),
-    };
+    let connections = Connections::new(github, mirrors, listed(vec![cpython_gcmon()]));
     let (board, changes) = changes_board();
     let session = Session::start(board, Ok(folders.clone()), connections, HOURLY);
     let issue = ItemKey::Issue { number: 5 };
 
     let asked = session.fetching();
     asked.sync(gcmon());
-    asked.mute(gcmon(), issue, issue_5_seen());
+    asked.mute(
+        gcmon(),
+        Hiding {
+            key: issue,
+            mark: issue_5_seen(),
+        },
+        None,
+    );
     let muted = heard.asked_through("wants heads none", PLENTY);
     let change = changes.recv_timeout(PLENTY).unwrap();
     asked.unmute(gcmon(), issue);
@@ -2926,17 +3162,13 @@ fn mute_author_marks_their_items_seen_takes_their_trees_from_the_mirror_and_unmu
     store.save_issues(&gcmon(), vec![opened]).unwrap();
     store.close();
     let (mirrors, heard) = HeardRequests::new();
-    let connections = Connections {
-        github: offline(),
-        mirrors,
-        settings: listed(vec![cpython_gcmon()]),
-    };
+    let connections = Connections::new(offline(), mirrors, listed(vec![cpython_gcmon()]));
     let (board, changes) = changes_board();
     let session = Session::start(board, Ok(folders.clone()), connections, HOURLY);
 
     let asked = session.fetching();
     asked.sync(gcmon());
-    asked.mute_author(gcmon(), author.clone());
+    asked.mute_author(gcmon(), author.clone(), None);
     let muted = heard.asked_through("wants heads none", PLENTY);
     let change = changes.recv_timeout(PLENTY).unwrap();
     let store = session.reader();
@@ -3008,7 +3240,10 @@ fn show_muted_answers_once_the_store_kept_the_switch_or_why_it_couldnt() {
     let keeper = Keeper::new(
         incoming,
         sending(messages, mirrors),
-        listed(vec![cpython_gcmon()]),
+        Reads {
+            settings: listed(vec![cpython_gcmon()]),
+            reader: unopened_reader(),
+        },
         telling(&mut quiet_board()).0,
     );
     let switch = |show| {
@@ -3046,7 +3281,10 @@ fn a_mute_whose_facts_the_store_cant_read_back_keeps_the_mute_and_hands_the_mirr
     let keeper = Keeper::new(
         incoming,
         sending(messages, mirrors),
-        listed(vec![cpython_gcmon()]),
+        Reads {
+            settings: listed(vec![cpython_gcmon()]),
+            reader: unopened_reader(),
+        },
         telling(&mut quiet_board()).0,
     );
     let issue = ItemKey::Issue { number: 5 };
@@ -3057,7 +3295,7 @@ fn a_mute_whose_facts_the_store_cant_read_back_keeps_the_mute_and_hands_the_mirr
         at: OffsetDateTime::now_utc(),
     };
 
-    keeper.mark(&lossy, muted);
+    keeper.mark(&lossy, muted, None);
 
     // The calls go: the facts before the Mute, the Mute, then the facts after it, which went missing. The
     // next step that saves hands the Mirror its heads.
@@ -3142,11 +3380,7 @@ fn synced_with_both_sides_read(name: &str, prepared: &str) -> (Vec<String>, Revi
     let session = Session::start(
         quiet_board(),
         Ok(folders.clone()),
-        Connections {
-            github: access,
-            mirrors,
-            settings: listed(vec![plain_gcmon()]),
-        },
+        Connections::new(access, mirrors, listed(vec![plain_gcmon()])),
         HOURLY,
     );
     session.fetching().sync(gcmon());
@@ -3516,11 +3750,7 @@ fn a_fetched_unstored_pr_in_a_syncing_repository_hands_its_head_to_the_mirror() 
     after_a_finished_sync(&folders);
     let (access, asked) = quiet_repository();
     let (mirrors, heard) = HeardRequests::new();
-    let connections = Connections {
-        github: access,
-        mirrors,
-        settings: listed(vec![plain_gcmon()]),
-    };
+    let connections = Connections::new(access, mirrors, listed(vec![plain_gcmon()]));
     let session = Session::start(quiet_board(), Ok(folders), connections, HOURLY);
     session.fetching().sync(gcmon());
     wait_for(&asked, "RefreshRepository");
@@ -4049,11 +4279,7 @@ fn reading_ahead_once_saved(name: &str, held: &'static str, save: fn(&SettingsOw
         }),
         token_from: SIGNED_IN,
     };
-    let connections = Connections {
-        github: access,
-        mirrors: mirrors(),
-        settings: owner.reader(),
-    };
+    let connections = Connections::new(access, mirrors(), owner.reader());
     let session = Session::start(quiet_board(), Ok(folders.clone()), connections, HOURLY);
     // As `Calls::launched` does.
     let told = session.fetching();
@@ -4479,7 +4705,14 @@ fn a_panic_in_the_sessions_thread_has_the_github_thread_say_tsugiki_stopped_chec
     let session = Session::start(board, Ok(folders), reaching(octocat_answers()), HOURLY);
     assert_eq!(seen.recv_timeout(PLENTY), Ok(octocat()));
 
-    session.fetching().mark_unseen(gcmon(), 7, None);
+    session.fetching().mark_unseen(
+        gcmon(),
+        Unseen {
+            number: 7,
+            archived: None,
+        },
+        None,
+    );
     let stopped = seen.recv_timeout(PLENTY).unwrap();
     session.stop(PLENTY);
 
@@ -4501,7 +4734,14 @@ fn a_panic_in_the_sessions_thread_with_no_token_still_says_tsugiki_stopped_check
     let session = Session::start(board, Ok(folders), reaching(access), HOURLY);
     assert!(says_no_token(&seen.recv_timeout(PLENTY).unwrap()));
 
-    session.fetching().mark_unseen(gcmon(), 7, None);
+    session.fetching().mark_unseen(
+        gcmon(),
+        Unseen {
+            number: 7,
+            archived: None,
+        },
+        None,
+    );
     let stopped = seen.recv_timeout(PLENTY).unwrap();
     session.stop(PLENTY);
 
@@ -4580,7 +4820,15 @@ fn refilled_watching(open: fn(&Fetching)) -> (Vec<RepositoryName>, Store) {
         }
     }));
     let (told, _github) = telling(&mut board);
-    let keeper = Keeper::new(incoming, unheard(), listed(vec![plain_gcmon()]), told);
+    let keeper = Keeper::new(
+        incoming,
+        unheard(),
+        Reads {
+            settings: listed(vec![plain_gcmon()]),
+            reader: unopened_reader(),
+        },
+        told,
+    );
 
     keeper.run(&store);
 

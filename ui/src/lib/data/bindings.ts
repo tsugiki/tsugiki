@@ -96,44 +96,55 @@ export const commands = {
 	windowLoaded: () => __TAURI_INVOKE<void>("window_loaded"),
 	/**
 	 *  Mark Seen on what `mark` names, as the window drew it: an item, and for an Issue every PR in its tree.
-	 *  Returns at once, and the `changed` event follows.
+	 *  Returns at once, and the `changed` event follows, then `acted` with the list it left (#1052).
 	 */
-	markSeen: (repository: string, mark: SeenMark_Deserialize) => typedError<null, Error_Serialize>(__TAURI_INVOKE("mark_seen", { repository, mark })),
+	markSeen: (repository: string, mark: SeenMark_Deserialize, asked: Asked_Deserialize) => typedError<null, Error_Serialize>(__TAURI_INVOKE("mark_seen", { repository, mark, asked })),
 	/**
-	 *  Mark Unseen on Issue or PR `number`, which unarchives `archived`, the item that holds it, when the window
-	 *  draws that Archived (#491). Returns at once.
+	 *  Mark Unseen on what `unseen` names, which unarchives the item that holds it when the window draws that
+	 *  Archived (#491). Returns at once, and the `changed` event follows, then `acted` with the list it left
+	 *  (#1052).
 	 */
-	markUnseen: (repository: string, number: number, archived: ItemKey | null) => typedError<null, Error_Serialize>(__TAURI_INVOKE("mark_unseen", { repository, number, archived })),
+	markUnseen: (repository: string, unseen: Unseen_Deserialize, asked: Asked_Deserialize) => typedError<null, Error_Serialize>(__TAURI_INVOKE("mark_unseen", { repository, unseen, asked })),
 	/**
-	 *  Archive on the item `item` names, with the Mark Seen the window drew for it in `mark` (#490). Returns at
-	 *  once, and the `changed` event follows.
+	 *  Archive on the item `hiding` names, with the Mark Seen the window drew for it (#490). Returns at once,
+	 *  and the `changed` event follows, then `acted` with the list it left (#1052).
 	 */
-	archive: (repository: string, item: ItemKey, mark: SeenMark_Deserialize) => typedError<null, Error_Serialize>(__TAURI_INVOKE("archive", { repository, item, mark })),
+	archive: (repository: string, hiding: Hiding_Deserialize, asked: Asked_Deserialize) => typedError<null, Error_Serialize>(__TAURI_INVOKE("archive", { repository, hiding, asked })),
 	/**
-	 *  Mark Seen with `mark` on the item `item` names, which the window draws Archived: it stays Archived, in
-	 *  its place in the Archived view (#491). Returns at once, and the `changed` event follows.
+	 *  Mark Seen with the mark `hiding` carries on the item it names, which the window draws Archived: it stays
+	 *  Archived, in its place in the Archived view (#491). Returns at once, and the `changed` event follows, then
+	 *  `acted` with the list it left (#1052).
 	 */
-	keepArchived: (repository: string, item: ItemKey, mark: SeenMark_Deserialize) => typedError<null, Error_Serialize>(__TAURI_INVOKE("keep_archived", { repository, item, mark })),
-	/**  Unarchives the item `item` names, and returns at once. */
-	unarchive: (repository: string, item: ItemKey) => typedError<null, Error_Serialize>(__TAURI_INVOKE("unarchive", { repository, item })),
+	keepArchived: (repository: string, hiding: Hiding_Deserialize, asked: Asked_Deserialize) => typedError<null, Error_Serialize>(__TAURI_INVOKE("keep_archived", { repository, hiding, asked })),
 	/**
-	 *  Mute on the item `item` names, with the Mark Seen the window drew for it in `mark` (#492). Returns at
-	 *  once, and the `changed` event follows.
+	 *  Unarchives the item `item` names, and returns at once. The `changed` event follows, then `acted` with the
+	 *  list it left (#1052).
 	 */
-	mute: (repository: string, item: ItemKey, mark: SeenMark_Deserialize) => typedError<null, Error_Serialize>(__TAURI_INVOKE("mute", { repository, item, mark })),
+	unarchive: (repository: string, item: ItemKey, asked: Asked_Deserialize) => typedError<null, Error_Serialize>(__TAURI_INVOKE("unarchive", { repository, item, asked })),
+	/**
+	 *  Mute on the item `hiding` names, with the Mark Seen the window drew for it (#492). Returns at once, and
+	 *  the `changed` event follows, then `acted` with the list it left (#1052).
+	 */
+	mute: (repository: string, hiding: Hiding_Deserialize, asked: Asked_Deserialize) => typedError<null, Error_Serialize>(__TAURI_INVOKE("mute", { repository, hiding, asked })),
 	/**  Unmutes the item `item` names, and returns at once. */
 	unmute: (repository: string, item: ItemKey) => typedError<null, Error_Serialize>(__TAURI_INVOKE("unmute", { repository, item })),
 	/**
 	 *  Mute author on `author` in `repository` (#494). Returns at once: the core marks their open items seen in
-	 *  the background, and the `changed` event follows.
+	 *  the background, and the `changed` event follows, then `acted` with the list it left (#1052).
 	 */
-	muteAuthor: (repository: string, author: Login) => typedError<null, Error_Serialize>(__TAURI_INVOKE("mute_author", { repository, author })),
+	muteAuthor: (repository: string, author: Login, asked: Asked_Deserialize) => typedError<null, Error_Serialize>(__TAURI_INVOKE("mute_author", { repository, author, asked })),
 	/**  Unmutes `author` in `repository`, and returns at once. */
 	unmuteAuthor: (repository: string, author: Login) => typedError<null, Error_Serialize>(__TAURI_INVOKE("unmute_author", { repository, author })),
-	/**  Pins Issue `number` of `repository` (#488), and returns at once. The `changed` event follows. */
-	pin: (repository: string, number: number) => typedError<null, Error_Serialize>(__TAURI_INVOKE("pin", { repository, number })),
-	/**  Unpins Issue `number` of `repository` (#488), and returns at once. The `changed` event follows. */
-	unpin: (repository: string, number: number) => typedError<null, Error_Serialize>(__TAURI_INVOKE("unpin", { repository, number })),
+	/**
+	 *  Pins Issue `number` of `repository` (#488), and returns at once. The `changed` event follows, then
+	 *  `acted` with the list it left (#1052).
+	 */
+	pin: (repository: string, number: number, asked: Asked_Deserialize) => typedError<null, Error_Serialize>(__TAURI_INVOKE("pin", { repository, number, asked })),
+	/**
+	 *  Unpins Issue `number` of `repository` (#488), and returns at once. The `changed` event follows, then
+	 *  `acted` with the list it left (#1052).
+	 */
+	unpin: (repository: string, number: number, asked: Asked_Deserialize) => typedError<null, Error_Serialize>(__TAURI_INVOKE("unpin", { repository, number, asked })),
 	/**
 	 *  Turns "Show muted" on the Inbox of `repository` to `show` (#825), and returns once the store has kept it,
 	 *  or says why it couldn't. The window then asks for the Inbox again. This waits on the session's thread
@@ -378,6 +389,7 @@ export const commands = {
 
 /** Events */
 export const events = {
+	acted: makeEvent<Acted_Serialize, Acted_Deserialize>("acted"),
 	changed: makeEvent<Changed, Changed>("changed"),
 	cloningChanged: makeEvent<CloningChanged_Serialize, CloningChanged_Deserialize>("cloning-changed"),
 	headsFetchFailed: makeEvent<HeadsFetchFailed, HeadsFetchFailed>("heads-fetch-failed"),
@@ -456,6 +468,24 @@ export type Account =
 { state: "stopped" };
 
 /**
+ *  Sent when the core kept a user's action, with the list it showed as it now stands, so the cursor and the
+ *  Detail pane move by that answer alone (#1052).
+ */
+export type Acted = Acted_Serialize | Acted_Deserialize;
+
+/**
+ *  Sent when the core kept a user's action, with the list it showed as it now stands, so the cursor and the
+ *  Detail pane move by that answer alone (#1052).
+ */
+export type Acted_Deserialize = Answered_Deserialize;
+
+/**
+ *  Sent when the core kept a user's action, with the list it showed as it now stands, so the cursor and the
+ *  Detail pane move by that answer alone (#1052).
+ */
+export type Acted_Serialize = Answered_Serialize;
+
+/**
  *  An action the user can bind a key to, named in `[keys]` as serde names it: `archive`,
  *  `local_mark`.
  */
@@ -500,6 +530,38 @@ export type Answer_Serialize =
 { state: "no_server" } | 
 /**  A newer lookup, or the user, cancelled it before the server answered. */
 { state: "cancelled" };
+
+/**
+ *  The core's answer to an action it kept (#1052): the number the window gave the action, the Repository it
+ *  acted in, and the list it showed as it now stands.
+ */
+export type Answered = Answered_Serialize | Answered_Deserialize;
+
+/**
+ *  The core's answer to an action it kept (#1052): the number the window gave the action, the Repository it
+ *  acted in, and the list it showed as it now stands.
+ */
+export type Answered_Deserialize = {
+	/**  The number the window gave the action. */
+	id: number,
+	/**  The Repository the action was made in. */
+	repository: RepositoryName,
+	/**  The list the window showed, as the store holds it now. */
+	page: Page_Deserialize,
+};
+
+/**
+ *  The core's answer to an action it kept (#1052): the number the window gave the action, the Repository it
+ *  acted in, and the list it showed as it now stands.
+ */
+export type Answered_Serialize = {
+	/**  The number the window gave the action. */
+	id: number,
+	/**  The Repository the action was made in. */
+	repository: RepositoryName,
+	/**  The list the window showed, as the store holds it now. */
+	page: Page_Serialize,
+};
 
 /**
  *  What the Settings dialog's Apply changed in `[appearance]`: each key it changed, and nothing for the
@@ -562,6 +624,34 @@ export type AppearanceSettings = {
 	theme: ThemeChoice,
 	light_theme: ThemeName,
 	dark_theme: ThemeName,
+};
+
+/**
+ *  The window's ask about an action it made (#1052): the number it gives the action, and the list it showed,
+ *  so the core can say what the action did to that list.
+ */
+export type Asked = Asked_Serialize | Asked_Deserialize;
+
+/**
+ *  The window's ask about an action it made (#1052): the number it gives the action, and the list it showed,
+ *  so the core can say what the action did to that list.
+ */
+export type Asked_Deserialize = {
+	/**  The number the window gives the action, which the answer names. */
+	id: number,
+	/**  The list the window showed when the user acted. */
+	listing: Listing_Deserialize,
+};
+
+/**
+ *  The window's ask about an action it made (#1052): the number it gives the action, and the list it showed,
+ *  so the core can say what the action did to that list.
+ */
+export type Asked_Serialize = {
+	/**  The number the window gives the action, which the answer names. */
+	id: number,
+	/**  The list the window showed when the user acted. */
+	listing: Listing_Serialize,
 };
 
 /**
@@ -1367,6 +1457,30 @@ export type HiddenReason = "abuse" | "off_topic" | "outdated" | "resolved" | "du
 /**  GitHub gave a reason Tsugiki doesn't know, or none. */
 "unstated";
 
+/**
+ *  The item Archive, Keep Archived or Mute acts on, and its tree's part in Mark Seen, as the window drew it
+ *  (#490, #491, #492).
+ */
+export type Hiding = Hiding_Serialize | Hiding_Deserialize;
+
+/**
+ *  The item Archive, Keep Archived or Mute acts on, and its tree's part in Mark Seen, as the window drew it
+ *  (#490, #491, #492).
+ */
+export type Hiding_Deserialize = {
+	key: ItemKey,
+	mark: SeenMark_Deserialize,
+};
+
+/**
+ *  The item Archive, Keep Archived or Mute acts on, and its tree's part in Mark Seen, as the window drew it
+ *  (#490, #491, #492).
+ */
+export type Hiding_Serialize = {
+	key: ItemKey,
+	mark: SeenMark_Serialize,
+};
+
 /**  What a run of text shows as, in colors and styles that look like github.com's. */
 export type Highlight = "keyword" | "string" | "comment" | "constant" | "function" | "type" | 
 /**  An HTML tag's name, or a key in YAML or TOML. */
@@ -2040,6 +2154,8 @@ export type ListedItem_Deserialize = {
 	key: ItemKey,
 	/**  Whether the user's state hides the item, which only some lists show, as `Hidden` says. */
 	hidden?: Hidden | null,
+	/**  The unpin's effect on the item. The Inbox lists no Pinned issue, so it says `Stays` of each item. */
+	unpin: Unpin,
 } & WorkbenchItem_Deserialize;
 
 /**  A top-level entry of the list, with why it Needs attention, if it does. */
@@ -2049,7 +2165,26 @@ export type ListedItem_Serialize = {
 	key: ItemKey,
 	/**  Whether the user's state hides the item, which only some lists show, as `Hidden` says. */
 	hidden: Hidden | null,
+	/**  The unpin's effect on the item. The Inbox lists no Pinned issue, so it says `Stays` of each item. */
+	unpin: Unpin,
 } & WorkbenchItem_Serialize;
+
+/**  The list the window showed when the user acted, as the window asked for it. */
+export type Listing = Listing_Serialize | Listing_Deserialize;
+
+/**  The list the window showed when the user acted, as the window asked for it. */
+export type Listing_Deserialize = 
+/**  The Workbench, or one of its views. */
+{ kind: "workbench"; view: WorkbenchView } | 
+/**  A page of the Inbox. */
+{ kind: "inbox"; page: InboxPage_Deserialize };
+
+/**  The list the window showed when the user acted, as the window asked for it. */
+export type Listing_Serialize = 
+/**  The Workbench, or one of its views. */
+{ kind: "workbench"; view: WorkbenchView } | 
+/**  A page of the Inbox. */
+{ kind: "inbox"; page: InboxPage_Serialize };
 
 /**  A first sync's progress through its queue. It learns of more PRs as it reads, so `prs_known` grows. */
 export type LoadProgress = LoadProgress_Serialize | LoadProgress_Deserialize;
@@ -2528,6 +2663,23 @@ export type Opened_Serialize = {
 
 /**  The start of a thread's line: the first words of its first comment, or the reason that comment is hidden. */
 export type Opening = { kind: "words"; words: string } | { kind: "hidden"; reason: HiddenReason };
+
+/**  The list an action left, read as the window asked for it. */
+export type Page = Page_Serialize | Page_Deserialize;
+
+/**  The list an action left, read as the window asked for it. */
+export type Page_Deserialize = 
+/**  The Workbench view, or one of them, as it now stands. */
+{ kind: "workbench"; workbench: Workbench_Deserialize } | 
+/**  A page of the Inbox, as it now stands. */
+{ kind: "inbox"; inbox: Inbox_Deserialize };
+
+/**  The list an action left, read as the window asked for it. */
+export type Page_Serialize = 
+/**  The Workbench view, or one of them, as it now stands. */
+{ kind: "workbench"; workbench: Workbench_Serialize } | 
+/**  A page of the Inbox, as it now stands. */
+{ kind: "inbox"; inbox: Inbox_Serialize };
 
 /**
  *  Removed rows and the added rows right after them: the lines a change replaced, and what replaced them.
@@ -4127,6 +4279,45 @@ export type Unfetched =
 { kind: "behind" } | 
 /**  GitHub has no ref for the PR. */
 { kind: "not_on_github" };
+
+/**
+ *  An unpin's effect on a listed item on the Workbench (#488), which the window reads to judge whether the
+ *  unpin finishes the item (#1052).
+ */
+export type Unpin = 
+/**
+ *  The item stays where it is: it has no pin, something besides the pin keeps it on the Workbench, or
+ *  the Workbench doesn't list it.
+ */
+"stays" | 
+/**  Nothing but its pin keeps the Issue on the Workbench, which the unpin takes it off. */
+"leaves" | 
+/**  The Issue closed while pinned, so the unpin archives it. */
+"archives";
+
+/**
+ *  Mark Unseen's target: the Issue or PR, with the Archived item that holds it, if the window draws it
+ *  Archived (#491).
+ */
+export type Unseen = Unseen_Serialize | Unseen_Deserialize;
+
+/**
+ *  Mark Unseen's target: the Issue or PR, with the Archived item that holds it, if the window draws it
+ *  Archived (#491).
+ */
+export type Unseen_Deserialize = {
+	number: number,
+	archived?: ItemKey | null,
+};
+
+/**
+ *  Mark Unseen's target: the Issue or PR, with the Archived item that holds it, if the window draws it
+ *  Archived (#491).
+ */
+export type Unseen_Serialize = {
+	number: number,
+	archived: ItemKey | null,
+};
 
 /**  What a lookup waits for, which the Definition peek says while it waits. */
 export type Waiting = 

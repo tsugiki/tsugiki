@@ -40,6 +40,7 @@ export const issue: Extract<ListedItem, { kind: "issue" }> = {
   attention: null,
   key: { kind: "issue", number: 7 },
   hidden: null,
+  unpin: "stays",
 };
 
 /** The user's own draft PR #157178 into 3.14, a Standalone PR with failed CI and nothing waiting. */
@@ -47,6 +48,7 @@ export const own: Extract<ListedItem, { kind: "standalone_pr" }> = {
   attention: null,
   key: { kind: "pull_request", number: 157178 },
   hidden: null,
+  unpin: "stays",
   kind: "standalone_pr",
   ...workbenchRow(157178, {
     title: "GH-156425: Clear GC frame on early return",

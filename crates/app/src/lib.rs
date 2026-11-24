@@ -52,13 +52,13 @@ use tsugiki_core::status::{Change, FailedRead, LastSync, PointsBack, Status, Syn
 use tsugiki_core::theme::ThemeKind;
 use tsugiki_core::version::Version;
 use tsugiki_core::web::{GitHubItem, WebAddress};
-use tsugiki_core::work::SeenMark;
+use tsugiki_core::work::{Hiding, SeenMark, Unseen};
 use tsugiki_core::workbench::inbox::{Inbox, InboxPage};
 use tsugiki_core::workbench::issue_view::IssueView;
 use tsugiki_core::workbench::pr_files::{FileLine, LineInDiff};
 use tsugiki_core::workbench::pr_view::PrView;
 use tsugiki_core::workbench::quick_open::QuickOpenFound;
-use tsugiki_core::workbench::{Workbench, WorkbenchView};
+use tsugiki_core::workbench::{Answered, Asked, Workbench, WorkbenchView};
 
 #[tauri::command]
 #[specta::specta]
@@ -286,75 +286,88 @@ fn open_pull_request(repository: &str, number: u32, calls: &Calls) -> Result<(),
 }
 
 /// Mark Seen on what `mark` names, as the window drew it: an item, and for an Issue every PR in its tree.
-/// Returns at once, and the `changed` event follows.
+/// Returns at once, and the `changed` event follows, then `acted` with the list it left (#1052).
 #[tauri::command]
 #[specta::specta]
-fn mark_seen(repository: &str, mark: SeenMark, calls: State<'_, Calls>) -> Result<(), Error> {
-    calls.mark_seen(RepositoryName::parse(repository)?, mark);
+fn mark_seen(
+    repository: &str,
+    mark: SeenMark,
+    asked: Asked,
+    calls: State<'_, Calls>,
+) -> Result<(), Error> {
+    calls.mark_seen(RepositoryName::parse(repository)?, mark, asked);
     Ok(())
 }
 
-/// Mark Unseen on Issue or PR `number`, which unarchives `archived`, the item that holds it, when the window
-/// draws that Archived (#491). Returns at once.
+/// Mark Unseen on what `unseen` names, which unarchives the item that holds it when the window draws that
+/// Archived (#491). Returns at once, and the `changed` event follows, then `acted` with the list it left
+/// (#1052).
 #[tauri::command]
 #[specta::specta]
 fn mark_unseen(
     repository: &str,
-    number: u32,
-    archived: Option<ItemKey>,
+    unseen: Unseen,
+    asked: Asked,
     calls: State<'_, Calls>,
 ) -> Result<(), Error> {
-    calls.mark_unseen(RepositoryName::parse(repository)?, number, archived);
+    calls.mark_unseen(RepositoryName::parse(repository)?, unseen, asked);
     Ok(())
 }
 
-/// Archive on the item `item` names, with the Mark Seen the window drew for it in `mark` (#490). Returns at
-/// once, and the `changed` event follows.
+/// Archive on the item `hiding` names, with the Mark Seen the window drew for it (#490). Returns at once,
+/// and the `changed` event follows, then `acted` with the list it left (#1052).
 #[tauri::command]
 #[specta::specta]
 fn archive(
     repository: &str,
-    item: ItemKey,
-    mark: SeenMark,
+    hiding: Hiding,
+    asked: Asked,
     calls: State<'_, Calls>,
 ) -> Result<(), Error> {
-    calls.archive(RepositoryName::parse(repository)?, item, mark);
+    calls.archive(RepositoryName::parse(repository)?, hiding, asked);
     Ok(())
 }
 
-/// Mark Seen with `mark` on the item `item` names, which the window draws Archived: it stays Archived, in
-/// its place in the Archived view (#491). Returns at once, and the `changed` event follows.
+/// Mark Seen with the mark `hiding` carries on the item it names, which the window draws Archived: it stays
+/// Archived, in its place in the Archived view (#491). Returns at once, and the `changed` event follows, then
+/// `acted` with the list it left (#1052).
 #[tauri::command]
 #[specta::specta]
 fn keep_archived(
     repository: &str,
-    item: ItemKey,
-    mark: SeenMark,
+    hiding: Hiding,
+    asked: Asked,
     calls: State<'_, Calls>,
 ) -> Result<(), Error> {
-    calls.keep_archived(RepositoryName::parse(repository)?, item, mark);
+    calls.keep_archived(RepositoryName::parse(repository)?, hiding, asked);
     Ok(())
 }
 
-/// Unarchives the item `item` names, and returns at once.
+/// Unarchives the item `item` names, and returns at once. The `changed` event follows, then `acted` with the
+/// list it left (#1052).
 #[tauri::command]
 #[specta::specta]
-fn unarchive(repository: &str, item: ItemKey, calls: State<'_, Calls>) -> Result<(), Error> {
-    calls.unarchive(RepositoryName::parse(repository)?, item);
+fn unarchive(
+    repository: &str,
+    item: ItemKey,
+    asked: Asked,
+    calls: State<'_, Calls>,
+) -> Result<(), Error> {
+    calls.unarchive(RepositoryName::parse(repository)?, item, asked);
     Ok(())
 }
 
-/// Mute on the item `item` names, with the Mark Seen the window drew for it in `mark` (#492). Returns at
-/// once, and the `changed` event follows.
+/// Mute on the item `hiding` names, with the Mark Seen the window drew for it (#492). Returns at once, and
+/// the `changed` event follows, then `acted` with the list it left (#1052).
 #[tauri::command]
 #[specta::specta]
 fn mute(
     repository: &str,
-    item: ItemKey,
-    mark: SeenMark,
+    hiding: Hiding,
+    asked: Asked,
     calls: State<'_, Calls>,
 ) -> Result<(), Error> {
-    calls.mute(RepositoryName::parse(repository)?, item, mark);
+    calls.mute(RepositoryName::parse(repository)?, hiding, asked);
     Ok(())
 }
 
@@ -367,11 +380,16 @@ fn unmute(repository: &str, item: ItemKey, calls: State<'_, Calls>) -> Result<()
 }
 
 /// Mute author on `author` in `repository` (#494). Returns at once: the core marks their open items seen in
-/// the background, and the `changed` event follows.
+/// the background, and the `changed` event follows, then `acted` with the list it left (#1052).
 #[tauri::command]
 #[specta::specta]
-fn mute_author(repository: &str, author: Login, calls: State<'_, Calls>) -> Result<(), Error> {
-    calls.mute_author(RepositoryName::parse(repository)?, author);
+fn mute_author(
+    repository: &str,
+    author: Login,
+    asked: Asked,
+    calls: State<'_, Calls>,
+) -> Result<(), Error> {
+    calls.mute_author(RepositoryName::parse(repository)?, author, asked);
     Ok(())
 }
 
@@ -383,19 +401,26 @@ fn unmute_author(repository: &str, author: Login, calls: State<'_, Calls>) -> Re
     Ok(())
 }
 
-/// Pins Issue `number` of `repository` (#488), and returns at once. The `changed` event follows.
+/// Pins Issue `number` of `repository` (#488), and returns at once. The `changed` event follows, then
+/// `acted` with the list it left (#1052).
 #[tauri::command]
 #[specta::specta]
-fn pin(repository: &str, number: u32, calls: State<'_, Calls>) -> Result<(), Error> {
-    calls.pin(RepositoryName::parse(repository)?, number);
+fn pin(repository: &str, number: u32, asked: Asked, calls: State<'_, Calls>) -> Result<(), Error> {
+    calls.pin(RepositoryName::parse(repository)?, number, asked);
     Ok(())
 }
 
-/// Unpins Issue `number` of `repository` (#488), and returns at once. The `changed` event follows.
+/// Unpins Issue `number` of `repository` (#488), and returns at once. The `changed` event follows, then
+/// `acted` with the list it left (#1052).
 #[tauri::command]
 #[specta::specta]
-fn unpin(repository: &str, number: u32, calls: State<'_, Calls>) -> Result<(), Error> {
-    calls.unpin(RepositoryName::parse(repository)?, number);
+fn unpin(
+    repository: &str,
+    number: u32,
+    asked: Asked,
+    calls: State<'_, Calls>,
+) -> Result<(), Error> {
+    calls.unpin(RepositoryName::parse(repository)?, number, asked);
     Ok(())
 }
 
@@ -986,6 +1011,11 @@ struct StatusChanged(Status);
 #[derive(Clone, Serialize, Type, Event)]
 struct Changed(Change);
 
+/// Sent when the core kept a user's action, with the list it showed as it now stands, so the cursor and the
+/// Detail pane move by that answer alone (#1052).
+#[derive(Clone, Serialize, Type, Event)]
+struct Acted(Answered);
+
 /// Sent when a read of an Issue or a PR on screen fails, so a view still waiting for what it says can say
 /// why (#189).
 #[derive(Clone, Serialize, Type, Event)]
@@ -1170,6 +1200,7 @@ pub fn specta_builder<R: tauri::Runtime>() -> Builder<R> {
         .events(collect_events![
             StatusChanged,
             Changed,
+            Acted,
             ReadFailed,
             LastSyncChanged,
             RepositorySyncChanged,

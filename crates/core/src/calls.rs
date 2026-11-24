@@ -37,7 +37,7 @@ use crate::session::write::read_only_reasons;
 use crate::settings::{Home, LoadedSettings, SettingsChanges, SettingsOwner, SettingsView};
 use crate::status::{ItemUnread, Shown};
 use crate::store::StoreReader;
-use crate::work::SeenMark;
+use crate::work::{Hiding, SeenMark, Unseen};
 use crate::workbench::inbox::{Inbox, InboxPage};
 use crate::workbench::issue_view::IssueView;
 use crate::workbench::pr_files::{
@@ -45,7 +45,7 @@ use crate::workbench::pr_files::{
 };
 use crate::workbench::pr_view::PrView;
 use crate::workbench::quick_open::{self, QuickOpenFound};
-use crate::workbench::{Workbench, WorkbenchView};
+use crate::workbench::{Asked, Workbench, WorkbenchView};
 
 /// The handle the app calls the core through, which it keeps as Tauri's state. Each screen's call answers
 /// what the screen shows. An action returns once the core has queued it, but for the checks, which wait for
@@ -420,33 +420,33 @@ impl Calls {
     }
 
     /// Mark Seen on what `mark` names.
-    pub fn mark_seen(&self, repository: RepositoryName, mark: SeenMark) {
-        self.fetching.mark_seen(repository, mark);
+    pub fn mark_seen(&self, repository: RepositoryName, mark: SeenMark, asked: Asked) {
+        self.fetching.mark_seen(repository, mark, Some(asked));
     }
 
-    /// Mark Unseen on Issue or PR `number`, which unarchives `archived`, the item that holds it.
-    pub fn mark_unseen(&self, repository: RepositoryName, number: u32, archived: Option<ItemKey>) {
-        self.fetching.mark_unseen(repository, number, archived);
+    /// Mark Unseen on what `unseen` names, which unarchives the item that holds it.
+    pub fn mark_unseen(&self, repository: RepositoryName, unseen: Unseen, asked: Asked) {
+        self.fetching.mark_unseen(repository, unseen, Some(asked));
     }
 
-    /// Archive on the item `item` names, with Mark Seen on what `mark` names.
-    pub fn archive(&self, repository: RepositoryName, item: ItemKey, mark: SeenMark) {
-        self.fetching.archive(repository, item, mark);
+    /// Archive on the item `hiding` names, with Mark Seen as the window drew it.
+    pub fn archive(&self, repository: RepositoryName, hiding: Hiding, asked: Asked) {
+        self.fetching.archive(repository, hiding, Some(asked));
     }
 
-    /// Mark Seen with `mark` on the item `item` names, which stays Archived.
-    pub fn keep_archived(&self, repository: RepositoryName, item: ItemKey, mark: SeenMark) {
-        self.fetching.keep_archived(repository, item, mark);
+    /// Mark Seen on the item `hiding` names, which stays Archived.
+    pub fn keep_archived(&self, repository: RepositoryName, hiding: Hiding, asked: Asked) {
+        self.fetching.keep_archived(repository, hiding, Some(asked));
     }
 
     /// Unarchives the item `item` names.
-    pub fn unarchive(&self, repository: RepositoryName, item: ItemKey) {
-        self.fetching.unarchive(repository, item);
+    pub fn unarchive(&self, repository: RepositoryName, item: ItemKey, asked: Asked) {
+        self.fetching.unarchive(repository, item, Some(asked));
     }
 
-    /// Mute on the item `item` names, with Mark Seen on what `mark` names.
-    pub fn mute(&self, repository: RepositoryName, item: ItemKey, mark: SeenMark) {
-        self.fetching.mute(repository, item, mark);
+    /// Mute on the item `hiding` names, with Mark Seen as the window drew it.
+    pub fn mute(&self, repository: RepositoryName, hiding: Hiding, asked: Asked) {
+        self.fetching.mute(repository, hiding, Some(asked));
     }
 
     /// Unmutes the item `item` names.
@@ -455,8 +455,8 @@ impl Calls {
     }
 
     /// Mute author on `author` in `repository`.
-    pub fn mute_author(&self, repository: RepositoryName, author: Login) {
-        self.fetching.mute_author(repository, author);
+    pub fn mute_author(&self, repository: RepositoryName, author: Login, asked: Asked) {
+        self.fetching.mute_author(repository, author, Some(asked));
     }
 
     /// Unmutes `author` in `repository`.
@@ -465,13 +465,13 @@ impl Calls {
     }
 
     /// Pins Issue `number` of `repository` (#488).
-    pub fn pin(&self, repository: RepositoryName, number: u32) {
-        self.fetching.pin(repository, number);
+    pub fn pin(&self, repository: RepositoryName, number: u32, asked: Asked) {
+        self.fetching.pin(repository, number, Some(asked));
     }
 
     /// Unpins Issue `number` of `repository` (#488).
-    pub fn unpin(&self, repository: RepositoryName, number: u32) {
-        self.fetching.unpin(repository, number);
+    pub fn unpin(&self, repository: RepositoryName, number: u32, asked: Asked) {
+        self.fetching.unpin(repository, number, Some(asked));
     }
 
     /// Turns "Show muted" on the Inbox of `repository` to `show` (#825), once the store has kept it.

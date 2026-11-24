@@ -2,6 +2,7 @@
 //! answers what needs no request (#997).
 
 use super::*;
+use crate::work::Unseen;
 use std::sync::mpsc::Receiver;
 
 /// Answers from `before` in order, then holds each question after them until the test lets go, and says
@@ -71,7 +72,14 @@ fn while_a_sync_step_hangs_the_session_keeps_marks_and_patch_ids_and_tells_of_a_
     asked.sync(gcmon());
     drop(held.asked.recv_timeout(PLENTY).unwrap());
 
-    asked.mark_unseen(gcmon(), 7, None);
+    asked.mark_unseen(
+        gcmon(),
+        Unseen {
+            number: 7,
+            archived: None,
+        },
+        None,
+    );
     let marked = changes.recv_timeout(PLENTY).unwrap();
     asked.settings_changed(bugs_saved(OnWorkbench::Off, SavedBy::HandEdit));
     let edited = changes.recv_timeout(PLENTY).unwrap();
@@ -202,7 +210,14 @@ fn fetch_queued_behind_a_step(name: &str) -> QueuedFetch {
     });
     // The session answers in order, so it has passed the fetch on once it tells of this mark. A fetch it
     // refuses it answers at once, so no answer yet means the GitHub thread holds it.
-    fetching.mark_unseen(gcmon(), 7, None);
+    fetching.mark_unseen(
+        gcmon(),
+        Unseen {
+            number: 7,
+            archived: None,
+        },
+        None,
+    );
     drop(changes.recv_timeout(PLENTY).unwrap());
     assert_eq!(answer.try_recv(), Err(TryRecvError::Empty));
     QueuedFetch {

@@ -117,6 +117,7 @@ vi.mock("$lib/data/bindings", async () => {
     },
     events: {
       ...prFilesEvents(() => async () => () => {}),
+      acted: { listen: async () => () => {} },
       statusChanged: {
         // The status bar listens, and so does the open Repository's state.
         listen: async (callback: (event: { payload: unknown }) => void) => {

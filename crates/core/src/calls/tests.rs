@@ -83,7 +83,7 @@ impl Setup {
                 | SessionMessage::Sync { .. }
                 | SessionMessage::Refresh
                 | SessionMessage::SettingsChanged(..)
-                | SessionMessage::Mark(_)
+                | SessionMessage::Mark { .. }
                 | SessionMessage::Patched(..)
                 | SessionMessage::Saved(_) => None,
             })
@@ -212,7 +212,7 @@ fn synced_and_saved(messages: &Receiver<SessionMessage>) -> Vec<String> {
             | SessionMessage::FetchUnstored { .. }
             | SessionMessage::ShowMuted { .. }
             | SessionMessage::Refresh
-            | SessionMessage::Mark(_)
+            | SessionMessage::Mark { .. }
             | SessionMessage::Patched(..)
             | SessionMessage::Saved(_) => None,
         })

@@ -742,6 +742,26 @@ fn pinned_of(
     rows.collect()
 }
 
+/// The Pinned issues of `items` whose closing waits for their unpin (#488).
+fn held_closings(
+    connection: &Connection,
+    repository: &RepositoryName,
+    items: Items<'_>,
+) -> rusqlite::Result<BTreeSet<u32>> {
+    let condition = items.condition("number");
+    let query = format!(
+        "SELECT number FROM closings
+         WHERE repository = :repository
+           AND EXISTS (SELECT 1 FROM pinned
+                       WHERE pinned.repository = closings.repository AND pinned.number = closings.number)
+           {condition}"
+    );
+    let mut statement = connection.prepare(&query)?;
+    let asked = items.with(vec![(":repository", repository)]);
+    let rows = statement.query_map(asked.as_slice(), |row| row.get("number"))?;
+    rows.collect()
+}
+
 /// The Pinned issues of `repository` (#488), each with whether a sync has read its tree since the pin.
 pub(super) fn pins(
     connection: &Connection,
@@ -1281,6 +1301,7 @@ pub(super) fn read_facts_of(
         muted: muted(connection, repository, items)?,
         muted_authors: muted_authors(connection, repository)?,
         pinned: pinned_of(connection, repository, items)?,
+        held_closings: held_closings(connection, repository, items)?,
         events: listed_events(connection, repository, (first_sync, viewer), items)?,
         ci_finished: moments(connection, &ci_finished, repository, items)?,
         failed_checks: failed_checks::read(connection, repository, items)?,

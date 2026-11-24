@@ -46,12 +46,88 @@ fn a_pinned_issue_no_filter_reaches_is_on_the_workbench_marked_pinned_until_unpi
     let unpinned = read();
 
     world.finish();
-    // A pin holds the Issue as a Filter would, closed or not, with the stranger's PR in its tree.
+    // A pin holds the Issue as a Filter would, closed or not, with the stranger's PR in its tree. Tsugiki
+    // first saw the Issue closed, so the unpin takes it off without archiving it.
     assert_eq!(outline(&pinned), [("issue", 1, vec![10])]);
     assert!(first_issue(&pinned).pinned);
+    assert_eq!(pinned.items[0].unpin, Unpin::Leaves);
     let sent = serde_json::to_value(&pinned).unwrap();
     assert_eq!(sent["items"][0]["pinned"], true);
+    assert_eq!(sent["items"][0]["unpin"], "leaves");
     assert_eq!(outline(&unpinned), []);
+}
+
+#[test]
+fn each_pin_says_what_its_unpin_does_to_the_issue_on_the_workbench() {
+    let world = ViewWorld::new("workbench-unpin-judged");
+    let closed = |number| crate::facts::issues::IssueFacts {
+        state: Some(crate::facts::issues::IssueState::Closed),
+        ..issue(number)
+    };
+    world.has(vec![], (1..=4).map(issue).collect());
+    let store = &world.db.store;
+    for number in 1..=4 {
+        store.pin(&cpython(), number).unwrap();
+    }
+    world.has(vec![], vec![closed(3)]);
+    let now = time::OffsetDateTime::now_utc();
+    let flagging = crate::store::Flagging::on(2);
+    store.mark_unseen(&cpython(), flagging, now).unwrap();
+    let archiving = crate::store::Archiving {
+        key: ItemKey::Issue { number: 4 },
+        numbers: vec![4],
+        up_to: None,
+        put_away: crate::facts::activity::PutAway::Now,
+        findings: vec![],
+    };
+    store.archive(&cpython(), archiving, now).unwrap();
+    let (view, order) = (&WorkbenchView::Pinned, ListOrder::Attention);
+    let pinned = Workbench::read(&world.db.reader, &world.settings(), view, order).unwrap();
+
+    world.finish();
+    let unpins: BTreeMap<u32, Unpin> = (pinned.items.iter())
+        .map(|listed| (listed.key.number(), listed.unpin))
+        .collect();
+    // Only the pin keeps Issue 1 on the Workbench, while Issue 2 Needs attention. Issue 3 closed while
+    // pinned, so the unpin archives it. An unpin leaves the Archived pin Archived.
+    let judged = [
+        (1, Unpin::Leaves),
+        (2, Unpin::Stays),
+        (3, Unpin::Archives),
+        (4, Unpin::Stays),
+    ];
+    assert_eq!(unpins, BTreeMap::from(judged));
+}
+
+#[test]
+fn an_unpin_leaves_a_muted_pin_muted_though_it_closed_and_nothing_else_keeps_it() {
+    let world = ViewWorld::new("workbench-unpin-muted");
+    world.has(vec![], vec![issue(1)]);
+    let store = &world.db.store;
+    store.pin(&cpython(), 1).unwrap();
+    let closed = crate::facts::issues::IssueFacts {
+        state: Some(crate::facts::issues::IssueState::Closed),
+        ..issue(1)
+    };
+    world.has(vec![], vec![closed]);
+    world.mute_issue(1, vec![1]);
+    let facts = world.db.reader.work_facts(&cpython()).unwrap();
+    let causes = Causes::of(&facts, world.settings().conventions);
+    let unpinned = unpinned_in_own_right(&facts, &world.settings(), &causes);
+    let held_closings = facts.activity.held_closings.clone();
+    let items = candidates_of(facts, &world.settings(), &BTreeSet::new(), &causes);
+
+    world.finish();
+    let judged: Vec<Unpin> = (items.into_iter())
+        .map(|item| {
+            ListedItem::of(&causes, item)
+                .unpin_judged(&unpinned, &held_closings)
+                .unpin
+        })
+        .collect();
+    // Muted hides more than the archive the unpin would make, and only a fresh ask brings it back.
+    assert_eq!(held_closings, BTreeSet::from([1]));
+    assert_eq!(judged, [Unpin::Stays]);
 }
 
 #[test]

@@ -28,7 +28,8 @@ use crate::patch_ids::PatchReads;
 use crate::repository::RepositoryName;
 use crate::repository_settings::{RepositoryCheck, SettingsSave};
 use crate::status::{Change, ItemUnread};
-use crate::work::SeenMark;
+use crate::work::{Hiding, SeenMark, Unseen};
+use crate::workbench::Asked;
 
 pub(crate) const NOT_CONNECTED: &str =
     "Tsugiki isn't connected to GitHub. The status bar says why.";
@@ -246,7 +247,12 @@ pub(crate) enum SessionMessage {
     Refresh,
     /// The user changed what a Repository's settings say, and nothing on GitHub changed with them.
     SettingsChanged(SettingsSave),
-    Mark(Marked),
+    /// The user's mark, with the number and the list it asks the core to answer about (#1052). Unmute and
+    /// Unmute author ask nothing, as they bring items back and leave the cursor where it is.
+    Mark {
+        marked: Marked,
+        asked: Option<Asked>,
+    },
     /// A read of what an item says. A demand that comes while the same read waits or runs shares its outcome.
     Fetch(Fetched),
     /// What the user did with an item on screen, or with the window.
@@ -448,86 +454,122 @@ impl Fetching {
 
     /// Mark Seen on what `mark` names, as the window drew it. A session that can't ask GitHub still records
     /// it.
-    pub fn mark_seen(&self, repository: RepositoryName, mark: SeenMark) {
-        self.to_session(SessionMessage::Mark(Marked::Seen { repository, mark }));
+    pub fn mark_seen(&self, repository: RepositoryName, mark: SeenMark, asked: Option<Asked>) {
+        let seen = Marked::Seen { repository, mark };
+        self.to_session(SessionMessage::Mark {
+            marked: seen,
+            asked,
+        });
     }
 
-    /// Mark Unseen on Issue or PR `number`, from now. It unarchives `archived`, the item that holds it, when
-    /// the window draws that Archived (#491).
-    pub fn mark_unseen(&self, repository: RepositoryName, number: u32, archived: Option<ItemKey>) {
+    /// Mark Unseen on what `unseen` names, from now. It unarchives the item that holds it, when the window
+    /// draws that Archived (#491).
+    pub fn mark_unseen(&self, repository: RepositoryName, unseen: Unseen, asked: Option<Asked>) {
         let at = OffsetDateTime::now_utc();
-        self.to_session(SessionMessage::Mark(Marked::Unseen {
+        let unseen = Marked::Unseen {
             repository,
-            number,
-            archived,
+            number: unseen.number,
+            archived: unseen.archived,
             at,
-        }));
+        };
+        self.to_session(SessionMessage::Mark {
+            marked: unseen,
+            asked,
+        });
     }
 
-    /// Archive on the item `key` names: Mark Seen with `mark`, as the window drew it, and the item put away
-    /// now, until something new Needs attention there.
-    pub fn archive(&self, repository: RepositoryName, key: ItemKey, mark: SeenMark) {
-        let archived = Marked::archived(repository, key, mark, PutAway::Now);
-        self.to_session(SessionMessage::Mark(archived));
+    /// Archive on the item `hiding` names: Mark Seen as the window drew it, and the item put away now, until
+    /// something new Needs attention there.
+    pub fn archive(&self, repository: RepositoryName, hiding: Hiding, asked: Option<Asked>) {
+        let archived = Marked::archived(repository, hiding.key, hiding.mark, PutAway::Now);
+        self.to_session(SessionMessage::Mark {
+            marked: archived,
+            asked,
+        });
     }
 
-    /// Mark Seen with `mark` on the item `key` names, which the window draws Archived: Archive that keeps
-    /// the item Archived in its place in the Archived view (#491).
-    pub fn keep_archived(&self, repository: RepositoryName, key: ItemKey, mark: SeenMark) {
-        let archived = Marked::archived(repository, key, mark, PutAway::AsBefore);
-        self.to_session(SessionMessage::Mark(archived));
+    /// Mark Seen on the item `hiding` names, which the window draws Archived: Archive that keeps the item
+    /// Archived in its place in the Archived view (#491).
+    pub fn keep_archived(&self, repository: RepositoryName, hiding: Hiding, asked: Option<Asked>) {
+        let archived = Marked::archived(repository, hiding.key, hiding.mark, PutAway::AsBefore);
+        self.to_session(SessionMessage::Mark {
+            marked: archived,
+            asked,
+        });
     }
 
     /// Unarchives the item `key` names.
-    pub fn unarchive(&self, repository: RepositoryName, key: ItemKey) {
-        self.to_session(SessionMessage::Mark(Marked::Unarchived { repository, key }));
+    pub fn unarchive(&self, repository: RepositoryName, key: ItemKey, asked: Option<Asked>) {
+        let unarchived = Marked::Unarchived { repository, key };
+        self.to_session(SessionMessage::Mark {
+            marked: unarchived,
+            asked,
+        });
     }
 
-    /// Mute on the item `key` names: Mark Seen with `mark`, as the window drew it, and the item hidden until
-    /// the user unmutes it (#492).
-    pub fn mute(&self, repository: RepositoryName, key: ItemKey, mark: SeenMark) {
+    /// Mute on the item `hiding` names: Mark Seen as the window drew it, and the item hidden until the user
+    /// unmutes it (#492).
+    pub fn mute(&self, repository: RepositoryName, hiding: Hiding, asked: Option<Asked>) {
         let at = OffsetDateTime::now_utc();
         let muted = Marked::Muted {
             repository,
-            key,
-            mark,
+            key: hiding.key,
+            mark: hiding.mark,
             at,
         };
-        self.to_session(SessionMessage::Mark(muted));
+        self.to_session(SessionMessage::Mark {
+            marked: muted,
+            asked,
+        });
     }
 
     /// Unmutes the item `key` names.
     pub fn unmute(&self, repository: RepositoryName, key: ItemKey) {
-        self.to_session(SessionMessage::Mark(Marked::Unmuted { repository, key }));
+        self.to_session(SessionMessage::Mark {
+            marked: Marked::Unmuted { repository, key },
+            asked: None,
+        });
     }
 
     /// Mute author on `author` in `repository` (#494): their items count as Muted, and the session marks
     /// their open items seen in the background, finding them under the Repository's settings.
-    pub fn mute_author(&self, repository: RepositoryName, author: Login) {
+    pub fn mute_author(&self, repository: RepositoryName, author: Login, asked: Option<Asked>) {
         let muted = Marked::AuthorMuted {
             repository,
             author,
             at: OffsetDateTime::now_utc(),
         };
-        self.to_session(SessionMessage::Mark(muted));
+        self.to_session(SessionMessage::Mark {
+            marked: muted,
+            asked,
+        });
     }
 
     /// Unmutes `author` in `repository`.
     pub fn unmute_author(&self, repository: RepositoryName, author: Login) {
         let unmuted = Marked::AuthorUnmuted { repository, author };
-        self.to_session(SessionMessage::Mark(unmuted));
+        self.to_session(SessionMessage::Mark {
+            marked: unmuted,
+            asked: None,
+        });
     }
 
     /// Pins Issue `number` of `repository` (#488): it stays on the Workbench until the user unpins it.
-    pub fn pin(&self, repository: RepositoryName, number: u32) {
+    pub fn pin(&self, repository: RepositoryName, number: u32, asked: Option<Asked>) {
         let pinned = Marked::Pinned { repository, number };
-        self.to_session(SessionMessage::Mark(pinned));
+        self.to_session(SessionMessage::Mark {
+            marked: pinned,
+            asked,
+        });
     }
 
     /// Unpins Issue `number` of `repository` (#488).
-    pub fn unpin(&self, repository: RepositoryName, number: u32) {
+    pub fn unpin(&self, repository: RepositoryName, number: u32, asked: Option<Asked>) {
         let unpinned = Marked::Unpinned { repository, number };
-        self.to_session(SessionMessage::Mark(unpinned));
+        self.to_session(SessionMessage::Mark {
+            marked: unpinned,
+            asked,
+        });
     }
 
     /// Turns "Show muted" on the Inbox of `repository` to `show` (#825), and waits for the session to save

@@ -268,14 +268,20 @@ pub struct PointsBack {
 
 type AnnouncePointsBack = Box<dyn FnMut(Option<&PointsBack>) + Send>;
 
-/// Tells the window that a Repository's stored facts changed, from whichever thread saved them: the GitHub
-/// thread for what GitHub answered, the session for what the user marked (ADR 0008).
-#[derive(Clone)]
-pub(crate) struct Changes(Arc<dyn Fn(&Change) + Send + Sync>);
+/// Tells the window of each `T` as it happens, from whichever thread announces it: the GitHub thread for
+/// what GitHub answered, the session for what the user marked (ADR 0008), and the session for what an action
+/// did to the list the window showed (#1052).
+pub(crate) struct Announced<T>(Arc<dyn Fn(&T) + Send + Sync>);
 
-impl Changes {
-    pub(crate) fn changed(&self, change: &Change) {
-        (self.0)(change);
+impl<T> Announced<T> {
+    pub(crate) fn announce(&self, value: &T) {
+        (self.0)(value);
+    }
+}
+
+impl<T> Clone for Announced<T> {
+    fn clone(&self) -> Self {
+        Self(Arc::clone(&self.0))
     }
 }
 
@@ -303,7 +309,7 @@ impl Shown {
 pub struct StatusBoard {
     current: Status,
     announce: Box<dyn FnMut(&Status) + Send>,
-    announce_change: Changes,
+    announce_change: Announced<Change>,
     announce_failed_read: Box<dyn FnMut(&FailedRead) + Send>,
     announce_last_sync: Box<dyn FnMut(&LastSync) + Send>,
     announce_repository_sync: Box<dyn FnMut(&RepositoryName) + Send>,
@@ -324,7 +330,7 @@ impl StatusBoard {
         Self {
             current: Status::default(),
             announce,
-            announce_change: Changes(Arc::new(|_| {})),
+            announce_change: Announced(Arc::new(|_| {})),
             announce_failed_read: Box::new(|_| {}),
             announce_last_sync: Box::new(|_| {}),
             announce_repository_sync: Box::new(|_| {}),
@@ -355,7 +361,7 @@ impl StatusBoard {
     /// Also tells `announce` when a Repository's stored facts change.
     #[must_use]
     pub fn with_changes(mut self, announce: Box<dyn Fn(&Change) + Send + Sync>) -> Self {
-        self.announce_change = Changes(Arc::from(announce));
+        self.announce_change = Announced(Arc::from(announce));
         self
     }
 
@@ -451,7 +457,7 @@ impl StatusBoard {
     }
 
     /// The way to tell the window of a change from another thread.
-    pub(crate) fn changes(&self) -> Changes {
+    pub(crate) fn changes(&self) -> Announced<Change> {
         self.announce_change.clone()
     }
 
@@ -463,7 +469,7 @@ impl StatusBoard {
     }
 
     pub(crate) fn changed(&mut self, change: &Change) {
-        self.announce_change.changed(change);
+        self.announce_change.announce(change);
     }
 
     pub(crate) fn failed_read(&mut self, failed: &FailedRead) {

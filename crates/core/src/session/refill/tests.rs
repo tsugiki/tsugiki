@@ -3,11 +3,12 @@ use std::sync::mpsc::{self, Receiver};
 use super::*;
 use crate::facts::pull_requests::PullRequestFacts;
 use crate::status::testing::quiet_board;
+use crate::status::{Announced, Change};
 use crate::store::testing::{kept_fixes, refuse_new_links, store_with_old_links};
 use crate::testing::{cpython, gcmon, pr_facts};
 
 /// Where changes go that passes on the Repository of each, with whether it named no item.
-fn repositories_board() -> (Changes, Receiver<(RepositoryName, bool)>) {
+fn repositories_board() -> (Announced<Change>, Receiver<(RepositoryName, bool)>) {
     let (heard, changes) = mpsc::channel();
     let board = quiet_board().with_changes(Box::new(move |change: &Change| {
         let named_none = change.items.is_empty();

@@ -36,7 +36,9 @@ use super::attention::summed;
 use super::backports::plant;
 use super::links::placed;
 use super::trees::Trees;
-use super::{Hidden, ListedItem, PrTree, TreeEntry, WorkbenchItem, WorkbenchRow, candidates};
+use super::{
+    Hidden, ListedItem, PrTree, TreeEntry, Unpin, WorkbenchItem, WorkbenchRow, candidates,
+};
 use crate::conventions::Conventions;
 use crate::error::Error;
 use crate::facts::WorkFacts;
@@ -221,6 +223,7 @@ impl ListedItem {
             hidden: Hidden::of(causes, key, &item.numbers()),
             key,
             item,
+            unpin: Unpin::Stays,
         })
     }
 }

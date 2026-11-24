@@ -18,10 +18,11 @@ use tsugiki_core::search::TextSearch;
 use tsugiki_core::session::{Connections, Intervals, Session};
 use tsugiki_core::settings::{SettingsFiles, SettingsOwner};
 use tsugiki_core::status::{Change, Status, StatusBoard};
+use tsugiki_core::workbench::Answered;
 
 use crate::first_frame;
 use crate::{
-    Changed, CloningChanged, FailedHeads, HeadsFetchFailed, HeadsFetched, HourPointsChanged,
+    Acted, Changed, CloningChanged, FailedHeads, HeadsFetchFailed, HeadsFetched, HourPointsChanged,
     InFlightChanged, LanguageServersChanged, LastSyncChanged, MirrorProblemChanged,
     MirrorQuestionChanged, MirrorStatesChanged, MirrorsHeld, MirrorsHeldChanged, NewVersionFound,
     PickPath, Picker, PointsBackChanged, ReadFailed, RepositorySyncChanged, StatusChanged,
@@ -187,13 +188,14 @@ pub(crate) fn connect_core<R: Runtime>(
         on_screen: ON_SCREEN_REFRESH,
     };
     let call_folders = folders.clone();
-    // The session hands the mirrors the rules' wants, takes the patch-ids they read, and reads each
-    // Repository's settings from the settings owner's view.
-    let connections = Connections {
-        github: outside.github,
-        mirrors: mirrors.requests(),
-        settings: settings.reader(),
-    };
+    let acted_handle = app.clone();
+    let acted = Box::new(move |answered: &Answered| {
+        log_if_unsent(Acted(answered.clone()).emit(&acted_handle));
+    });
+    // The session hands the mirrors the rules' wants, takes the patch-ids they read, reads each Repository's
+    // settings from the settings owner's view, and tells the window what each action it keeps did (#1052).
+    let connections =
+        Connections::new(outside.github, mirrors.requests(), settings.reader()).with_acted(acted);
     let session = Session::start(board, folders, connections, intervals);
     let (checkouts, view, idle_view) = (mirrors.requests(), settings.reader(), settings.reader());
     let rows_handle = app.clone();

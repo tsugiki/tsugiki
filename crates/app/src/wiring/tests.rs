@@ -72,6 +72,7 @@ struct Wired {
     webview: WebviewWindow<MockRuntime>,
     statuses: Receiver<Value>,
     workbenches: Receiver<Value>,
+    acted: Receiver<Value>,
     failed_reads: Receiver<Value>,
     last_syncs: Receiver<Value>,
     repository_syncs: Receiver<Value>,
@@ -130,6 +131,7 @@ impl Wired {
         builder.mount_events(&app);
         let statuses = hear(&app, "status-changed");
         let workbenches = hear(&app, "changed");
+        let acted = hear(&app, "acted");
         let failed_reads = hear(&app, "read-failed");
         let last_syncs = hear(&app, "last-sync-changed");
         let repository_syncs = hear(&app, "repository-sync-changed");
@@ -156,6 +158,7 @@ impl Wired {
             webview,
             statuses,
             workbenches,
+            acted,
             failed_reads,
             last_syncs,
             repository_syncs,
@@ -208,7 +211,11 @@ impl Wired {
     /// mark's. The session takes its messages in order, so the mark's change comes after those of what came
     /// before it.
     fn heard_until_marked(&self, number: u32) -> Vec<Value> {
-        let marked = json!({ "repository": CPYTHON, "number": number });
+        let marked = json!({
+            "repository": CPYTHON,
+            "unseen": { "number": number, "archived": null },
+            "asked": asking(1),
+        });
         self.call("mark_unseen", marked);
         let mut heard = Vec::new();
         while heard
@@ -224,6 +231,11 @@ impl Wired {
         self.core.stop(PLENTY);
         self
     }
+}
+
+/// The ask the window gives an action, about the Workbench view it shows (#1052).
+fn asking(id: u64) -> Value {
+    json!({ "id": id, "listing": { "kind": "workbench", "view": { "kind": "whole" } } })
 }
 
 /// Each payload of `event`, as the webview would get it.
@@ -1043,23 +1055,43 @@ fn opening_an_issue_moves_nothing_and_mark_unseen_and_mark_seen_tell_the_window(
     }
     drop(
         wired
-            .ask("mark_unseen", json!({ "repository": CPYTHON, "number": 8 }))
+            .ask(
+                "mark_unseen",
+                json!({
+                    "repository": CPYTHON,
+                    "unseen": { "number": 8, "archived": null },
+                    "asked": asking(1),
+                }),
+            )
             .unwrap(),
     );
     // The session takes its messages in order, so opening would have told the window first.
     let flagged = wired.workbenches.recv_timeout(PLENTY).unwrap();
+    let after_flag = wired.acted.recv_timeout(PLENTY).unwrap();
     drop(
         wired
-            .ask("mark_seen", json!({ "repository": CPYTHON, "mark": mark }))
+            .ask(
+                "mark_seen",
+                json!({ "repository": CPYTHON, "mark": mark, "asked": asking(2) }),
+            )
             .unwrap(),
     );
     let seen = wired.workbenches.recv_timeout(PLENTY).unwrap();
+    let after_seen = wired.acted.recv_timeout(PLENTY).unwrap();
     let held = wired.ask("issue", issue_7).unwrap();
     drop(wired.stop());
 
     assert_eq!(flagged, json!({ "repository": CPYTHON, "items": [8] }));
     assert_eq!(seen, json!({ "repository": CPYTHON, "items": [7, 8] }));
     assert_eq!(held, Value::Null, "nothing has saved an Issue #7");
+    // The core answers each action it kept with the list it showed (#1052).
+    for (after, id) in [(after_flag, 1), (after_seen, 2)] {
+        assert_eq!(
+            (&after["id"], &after["repository"]),
+            (&json!(id), &json!(CPYTHON))
+        );
+        assert_eq!(after["page"]["kind"], "workbench");
+    }
 }
 
 #[test]
@@ -1069,23 +1101,31 @@ fn archive_keep_archived_unarchive_and_mark_unseen_tell_the_window() {
     let item = json!({ "kind": "issue", "number": 7 });
     let mark = json!({ "numbers": [7, 8], "up_to": "2026-11-01T09:00:00Z", "findings": [] });
 
-    let archive = json!({ "repository": CPYTHON, "item": item, "mark": mark });
+    let archive = json!({
+        "repository": CPYTHON,
+        "hiding": { "key": item, "mark": mark },
+        "asked": asking(1),
+    });
     drop(wired.ask("archive", archive.clone()).unwrap());
     let archived = wired.workbenches.recv_timeout(PLENTY).unwrap();
     drop(wired.ask("keep_archived", archive.clone()).unwrap());
     let kept = wired.workbenches.recv_timeout(PLENTY).unwrap();
-    let unseen = json!({ "repository": CPYTHON, "number": 8, "archived": item });
+    let unseen = json!({
+        "repository": CPYTHON,
+        "unseen": { "number": 8, "archived": item },
+        "asked": asking(2),
+    });
     drop(wired.ask("mark_unseen", unseen).unwrap());
     let flagged = wired.workbenches.recv_timeout(PLENTY).unwrap();
     drop(wired.ask("archive", archive).unwrap());
     drop(wired.workbenches.recv_timeout(PLENTY).unwrap());
-    let unarchive = json!({ "repository": CPYTHON, "item": item });
+    let unarchive = json!({ "repository": CPYTHON, "item": item, "asked": asking(3) });
     drop(wired.ask("unarchive", unarchive).unwrap());
     let unarchived = wired.workbenches.recv_timeout(PLENTY).unwrap();
     let unknown = json!({ "kind": "dependency_updates" });
     let refused = wired.ask(
         "unarchive",
-        json!({ "repository": CPYTHON, "item": unknown }),
+        json!({ "repository": CPYTHON, "item": unknown, "asked": asking(4) }),
     );
     drop(wired.stop());
 
@@ -1103,7 +1143,11 @@ fn mute_and_unmute_tell_the_window() {
     let item = json!({ "kind": "pull_request", "number": 9 });
     let mark = json!({ "numbers": [9], "up_to": "2026-11-01T09:00:00Z", "findings": [] });
 
-    let mute = json!({ "repository": CPYTHON, "item": item, "mark": mark });
+    let mute = json!({
+        "repository": CPYTHON,
+        "hiding": { "key": item, "mark": mark },
+        "asked": asking(1),
+    });
     drop(wired.ask("mute", mute).unwrap());
     let muted = wired.workbenches.recv_timeout(PLENTY).unwrap();
     drop(
@@ -1122,13 +1166,16 @@ fn mute_and_unmute_tell_the_window() {
 fn pin_and_unpin_tell_the_window() {
     let (folders, _root) = temp_folders("wired-pin");
     let wired = Wired::start(Ok(folders), no_network());
-    let asked = json!({ "repository": CPYTHON, "number": 7 });
+    let asked = json!({ "repository": CPYTHON, "number": 7, "asked": asking(1) });
 
     drop(wired.ask("pin", asked.clone()).unwrap());
     let pinned = wired.workbenches.recv_timeout(PLENTY).unwrap();
     drop(wired.ask("unpin", asked).unwrap());
     let unpinned = wired.workbenches.recv_timeout(PLENTY).unwrap();
-    let refused = wired.ask("pin", json!({ "repository": "no-slash", "number": 7 }));
+    let refused = wired.ask(
+        "pin",
+        json!({ "repository": "no-slash", "number": 7, "asked": asking(2) }),
+    );
     drop(wired.stop());
 
     assert_eq!(pinned, json!({ "repository": CPYTHON, "items": [7] }));
@@ -1140,7 +1187,7 @@ fn pin_and_unpin_tell_the_window() {
 fn mute_author_and_unmute_author_tell_the_window() {
     let (folders, _root) = temp_folders("wired-mute-author");
     let wired = Wired::start(Ok(folders), no_network());
-    let asked = json!({ "repository": CPYTHON, "author": "some-author" });
+    let asked = json!({ "repository": CPYTHON, "author": "some-author", "asked": asking(1) });
 
     drop(wired.ask("mute_author", asked.clone()).unwrap());
     let muted = wired.workbenches.recv_timeout(PLENTY).unwrap();
@@ -1148,7 +1195,7 @@ fn mute_author_and_unmute_author_tell_the_window() {
     let unmuted = wired.workbenches.recv_timeout(PLENTY).unwrap();
     let refused = wired.ask(
         "mute_author",
-        json!({ "repository": "no-slash", "author": "a" }),
+        json!({ "repository": "no-slash", "author": "a", "asked": asking(2) }),
     );
     drop(wired.stop());
 
@@ -1200,14 +1247,21 @@ fn a_mark_seen_with_a_moment_or_a_commit_that_isnt_one_is_refused() {
     });
     let unparsed = json!({ "numbers": [7], "up_to": null, "findings": [finding] });
 
-    let refused = wired.ask("mark_seen", json!({ "repository": CPYTHON, "mark": mark }));
+    let refused = wired.ask(
+        "mark_seen",
+        json!({ "repository": CPYTHON, "mark": mark, "asked": asking(1) }),
+    );
     let bad_commit = wired.ask(
         "mark_seen",
-        json!({ "repository": CPYTHON, "mark": unparsed }),
+        json!({ "repository": CPYTHON, "mark": unparsed, "asked": asking(2) }),
     );
     let bad_name = wired.ask(
         "mark_unseen",
-        json!({ "repository": "not a name", "number": 7 }),
+        json!({
+            "repository": "not a name",
+            "unseen": { "number": 7, "archived": null },
+            "asked": asking(3),
+        }),
     );
     let wired = wired.stop();
 
@@ -1299,10 +1353,25 @@ fn started_with_no_network_on_a_synced_database_tsugiki_shows_what_it_holds_and_
     drop(offline.ask("open_issue", issue.clone()).unwrap());
     let failed = offline.failed_reads.recv_timeout(PLENTY).unwrap();
     let conversation = offline.ask("pull_request", pr).unwrap();
-    drop(offline.ask("mark_unseen", issue.clone()).unwrap());
+    drop(
+        offline
+            .ask(
+                "mark_unseen",
+                json!({
+                    "repository": CPYTHON,
+                    "unseen": { "number": number, "archived": null },
+                    "asked": asking(1),
+                }),
+            )
+            .unwrap(),
+    );
     wait_for_change_to(&offline.workbenches, &number);
     let flagged = offline.ask("issue", issue.clone()).unwrap();
-    let mark = json!({ "repository": CPYTHON, "mark": flagged["seen"]["mark"] });
+    let mark = json!({
+        "repository": CPYTHON,
+        "mark": flagged["seen"]["mark"],
+        "asked": asking(2),
+    });
     drop(offline.ask("mark_seen", mark).unwrap());
     wait_for_change_to(&offline.workbenches, &number);
     let seen = offline.ask("issue", issue).unwrap();

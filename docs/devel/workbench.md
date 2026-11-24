@@ -80,7 +80,8 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
   ([#489](https://github.com/tsugiki/tsugiki/issues/489)): each one the Workbench shows, in the Workbench's
   order, and the Archived ones too, each in its place, marked Archived as a Filter's view marks it. A Muted
   one stays hidden, as on the Workbench. ★ or `Ctrl+K P` on a row there unpins the Issue, and the row leaves
-  the view, with the cursor and the Detail pane moving on to the next item as on Archive. With no pin to
+  the view, with the cursor and the Detail pane moving on to the next item once the core has kept the action,
+  as on Archive ([layout.md](layout.md)). With no pin to
   show, as when the user has none or each one is Muted, the view says so and how to pin, naming the key as
   the user bound it. "View: Pinned Issues" in the command palette opens it.
 - Each Issue lists its **Matched PRs** first, followed by its other PRs that are open or that **Need
@@ -120,7 +121,13 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
   Issue whose tree holds it. Only Issues take a pin, so on a Standalone PR, or with nothing open, they do
   nothing, and the core refuses a number it knows is a PR's. Pinning an Archived Issue unarchives it, and
   pinning takes the Issue out of the Inbox; with the Inbox or Archived on show, the cursor and the Detail
-  pane move on to the next item, as on Archive. A Pinned issue the user mutes stays hidden while Muted.
+  pane move on to the next item once the core has kept the action, as on Archive. An unpin on the Workbench
+  moves them on the same way when only the pin kept the Issue there, or when the unpin archives it, as
+  below; in the Stale reviews, only when it archives it. The window decides at the keypress whether a pin or
+  unpin finishes the Issue, from the view and the `unpin` mark the core gives each listed Issue, and the
+  core's answer also finishes it when it says the item left the list
+  ([#1052](https://github.com/tsugiki/tsugiki/issues/1052)). A Pinned issue the user mutes stays hidden while
+  Muted.
   An Issue that closes while pinned keeps its closing for the unpin, which archives it at once: the pin had
   kept the Issue on the Workbench, so its closing means it's done, whatever a Filter finds. An Issue that
   closed before the pin, or that Tsugiki first saw closed, stays where it is when unpinned. A pin whose

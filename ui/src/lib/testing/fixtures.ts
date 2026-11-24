@@ -118,6 +118,7 @@ export const listedIssue = (
   attention: null,
   key: { kind: "issue", number },
   hidden: null,
+  unpin: "stays",
   ...overrides,
 });
 

@@ -14,6 +14,10 @@ mod review_state;
 
 use std::collections::BTreeSet;
 
+use serde::Deserialize;
+use specta::Type;
+
+use crate::facts::activity::ItemKey;
 use crate::links::BackportLink;
 
 pub(crate) use causes::{Cause, Causes};
@@ -21,11 +25,28 @@ pub use causes::{SeenMark, Why};
 pub use reach::MirrorWork;
 pub(crate) use reach::{
     ReachFrom, archived_by_closing, conversations_to_read, in_own_right, matched, moved, opened_on,
+    unpinned_in_own_right,
 };
 pub use reasons::WorkReason;
 pub(crate) use reasons::reasons;
 pub(crate) use review_state::SharedReviews;
 pub use review_state::{YourReview, checks_to_keep, findings_to_keep};
+
+/// The item Archive, Keep Archived or Mute acts on, and its tree's part in Mark Seen, as the window drew it
+/// (#490, #491, #492).
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Type)]
+pub struct Hiding {
+    pub key: ItemKey,
+    pub mark: SeenMark,
+}
+
+/// Mark Unseen's target: the Issue or PR, with the Archived item that holds it, if the window draws it
+/// Archived (#491).
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Type)]
+pub struct Unseen {
+    pub number: u32,
+    pub archived: Option<ItemKey>,
+}
 
 /// The PRs a Backport can sit under, of those each with its Backport link: the ones that aren't Backports
 /// too, which keeps a tree two levels deep. A Bot backport shares the review state of the one it sits under.

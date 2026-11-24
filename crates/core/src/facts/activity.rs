@@ -126,6 +126,8 @@ pub struct ActivityFacts {
     pub muted_authors: Vec<MutedAuthor>,
     /// The user's Pinned issues (#488).
     pub pinned: BTreeSet<u32>,
+    /// The Pinned issues that closed while pinned, whose closing waits for the unpin, which archives them.
+    pub held_closings: BTreeSet<u32>,
     /// Each event that names the user, and what happened after the first sync began on the items they wrote,
     /// reviewed, are assigned to or commented on, each at the time New activity goes by, oldest first. Only
     /// those can make an item Need attention, and a Repository holds too many others to read with each list.

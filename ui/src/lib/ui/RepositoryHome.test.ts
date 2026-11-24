@@ -2442,6 +2442,62 @@ it("opens the last row once the user takes the last item out from the Detail pan
   expect(screen.getByRole("button", { name: "#6 Next" }).getAttribute("aria-current")).toBe("true");
 });
 
+it("leaves the page's focus as it is when the only item goes with nothing focused (#1052)", async () => {
+  const changed = catchEveryListener();
+  const acted = catchActed();
+  core.workbench.mockResolvedValue(workbenchPage([{ ...standalone, attention: null }]));
+  render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onsettings: () => {} });
+  const row = await screen.findByRole("button", { name: "#5 Alone" });
+  await fireEvent.click(row);
+  await screen.findByRole("heading", { name: /PR 5/ });
+  (document.activeElement as HTMLElement | null)?.blur();
+
+  await press("e");
+  const after = workbenchPage([], { count: 0 });
+  core.workbench.mockResolvedValue(after);
+  changed("python/cpython", [5]);
+  acted({
+    id: lastAsked(core.archive) ?? 0,
+    repository: "python/cpython",
+    page: { kind: "workbench", workbench: after.data },
+  });
+
+  await vi.waitFor(() => {
+    expect(itemOrder()).toEqual([]);
+  });
+  await nextTask();
+  expect(document.activeElement).toBe(document.body);
+});
+
+it("moves the focus to the list once the only item goes while the pane holds the focus (#1052)", async () => {
+  const changed = catchEveryListener();
+  const acted = catchActed();
+  core.workbench.mockResolvedValue(workbenchPage([{ ...standalone, attention: null }]));
+  render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onsettings: () => {} });
+  const row = await screen.findByRole("button", { name: "#5 Alone" });
+  await fireEvent.click(row);
+  await screen.findByRole("heading", { name: /PR 5/ });
+  const button = await screen.findByRole("button", { name: "Mark Seen" });
+  button.focus();
+
+  await fireEvent.keyDown(button, { key: "m" });
+  const after = workbenchPage([], { count: 0 });
+  core.workbench.mockResolvedValue(after);
+  changed("python/cpython", [5]);
+  acted({
+    id: lastAsked(core.mute) ?? 0,
+    repository: "python/cpython",
+    page: { kind: "workbench", workbench: after.data },
+  });
+
+  await vi.waitFor(() => {
+    expect(itemOrder()).toEqual([]);
+  });
+  await nextTask();
+  expect(document.querySelector('[data-pane="detail"]')).toBeNull();
+  expect(document.activeElement).toBe(document.body);
+});
+
 it("leaves the pane as it is when the mark lands on the row it already shows (#1052)", async () => {
   const { markedSeen } = await threeAlone();
   const row = screen.getByRole("button", { name: "#8 Last" });

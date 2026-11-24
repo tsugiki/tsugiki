@@ -425,7 +425,7 @@ export class WorkbenchState {
     const cursor = this.cursor;
     const selected = this.#selected;
     if (key && cursor && selected && sameKey(selected.key, key)) {
-      this.#pending.set(id, { key, settles, was: cursor, after: this.#rowsAfter(key) });
+      this.#pending.set(id, { key, settles, was: cursor, after: this.#rowsAfter(selected) });
     }
     return { id, listing: this.#listing() };
   }
@@ -438,17 +438,12 @@ export class WorkbenchState {
       : { kind: "workbench", view: shown };
   }
 
-  /** The rows after the lines of the item `key` that the list shows (#1052). */
-  #rowsAfter(key: ItemKey): Stop[] {
+  /** The rows the list shows after the lines of the item `item`, which the cursor stands on (#1052). */
+  #rowsAfter(item: ListedItem): Stop[] {
     const items = this.#shownItems;
-    const item = items.find((listed) => sameKey(listed.key, key));
-    if (!item) return [];
     const open = (issue: number) => this.#open()?.has(issue) ?? false;
-    const lines = this.#lines(items, open).map((line) => line.stop);
-    const last = linesOf(item, open).at(-1)?.stop;
-    if (!last) return [];
-    const at = lines.findIndex((line) => sameStop(line, last));
-    return at === -1 ? [] : lines.slice(at + 1);
+    const after = items.slice(items.indexOf(item) + 1);
+    return this.#lines(after, open).map((line) => line.stop);
   }
 
   /**

@@ -75,6 +75,9 @@ pub struct Session {
     shown: LatestReader<Shown>,
 }
 
+/// Tells the window what each action the session kept did to the list it showed (#1052).
+pub type AnnounceActed = Box<dyn Fn(&Answered) + Send + Sync>;
+
 /// What a session reaches beyond its threads: GitHub with `gh`'s token, the Mirror worker, which it hands
 /// the rules' wants, which hands it the patch-ids it reads, and which asks it a Repository's size, and the
 /// settings owner's view, which it reads each Repository's settings from.
@@ -82,6 +85,32 @@ pub struct Connections {
     pub github: GitHubAccess,
     pub mirrors: MirrorRequests,
     pub settings: LatestReader<SettingsView>,
+    /// What each action the session keeps did to the list it showed (#1052). It starts silent, for a caller
+    /// that doesn't pass the answer on.
+    pub acted: AnnounceActed,
+}
+
+impl Connections {
+    /// Connections that answer no action.
+    pub fn new(
+        github: GitHubAccess,
+        mirrors: MirrorRequests,
+        settings: LatestReader<SettingsView>,
+    ) -> Self {
+        Self {
+            github,
+            mirrors,
+            settings,
+            acted: Box::new(|_| {}),
+        }
+    }
+
+    /// Also tells the window what each action the session keeps did to the list it showed (#1052).
+    #[must_use]
+    pub fn with_acted(mut self, acted: AnnounceActed) -> Self {
+        self.acted = acted;
+        self
+    }
 }
 
 /// How often a session asks GitHub again.
@@ -107,6 +136,7 @@ impl Session {
             github: access,
             mirrors,
             settings,
+            acted,
         } = connections;
         let (to_github, github_queue) = mpsc::channel();
         let shown = board.shown();
@@ -129,7 +159,7 @@ impl Session {
             reads,
             Telling {
                 changes: board.changes(),
-                acted: board.acted(),
+                acted,
                 github: to_github,
                 shown: shown.clone(),
                 refreshes_done,
@@ -225,7 +255,7 @@ struct Threads {
 struct Telling {
     changes: Announced<Change>,
     /// Each action's effect on the list the user saw when they made it (#1052).
-    acted: Announced<Answered>,
+    acted: AnnounceActed,
     github: Sender<GitHubMessage>,
     shown: LatestReader<Shown>,
     refreshes_done: LatestReader<u64>,
@@ -238,7 +268,7 @@ impl Telling {
 
     /// Tells the window what the action `answered` names did to the list it showed.
     fn answered(&self, answered: Answered) {
-        self.acted.announce(&answered);
+        (self.acted)(&answered);
     }
 
     /// Has the GitHub thread show `problem` on the status bar, once it has answered the request it waits on.

@@ -888,6 +888,25 @@ describe("WorkbenchState", () => {
     expect(commands.workbench).not.toHaveBeenCalled();
   });
 
+  it("says so when the answer listener can't start, with nothing to stop", async () => {
+    vi.mocked(events.changed.listen).mockResolvedValue(undefined as never);
+    vi.mocked(events.acted.listen).mockRejectedValue(new Error("no answers"));
+    const state = new WorkbenchState("python/cpython");
+    await state.load();
+    expect(state.error).toBe("Error: no answers");
+    expect(commands.workbench).not.toHaveBeenCalled();
+  });
+
+  it("stops the listener it has when the other can't start", async () => {
+    const { stop } = catchChanged();
+    vi.mocked(events.acted.listen).mockRejectedValue(new Error("no answers"));
+    const state = new WorkbenchState("python/cpython");
+    await state.load();
+    expect(state.error).toBe("Error: no answers");
+    expect(stop).toHaveBeenCalledOnce();
+    expect(commands.workbench).not.toHaveBeenCalled();
+  });
+
   it("stops listening when stopped", async () => {
     const { stop } = catchChanged();
     vi.mocked(commands.workbench).mockResolvedValue(answer());
@@ -1242,6 +1261,53 @@ describe("WorkbenchState", () => {
 
       expect([another, state.cursor]).toEqual([at(5), at(6)]);
       expect(landed).toHaveBeenCalledOnce();
+      state.stop();
+    });
+
+    it("moves on when the change puts the cursor on another line of the item before the answer (#1052)", async () => {
+      const { answer: acted } = catchChanged();
+      const issue = issueWith(7, 8);
+      vi.mocked(commands.workbench).mockResolvedValue(workbenchPage([issue, item(3)]));
+      vi.mocked(commands.archive).mockResolvedValue(done);
+      const landed = vi.fn();
+      const state = new WorkbenchState("python/cpython", { landed });
+      await state.load();
+      const onEight = { number: 8, kind: "pull_request" as const, issue: 7 };
+      state.moveTo(onEight);
+
+      await state.archive({ key: issue.key, mark: issue.seen.mark });
+      // A change put the cursor on the Issue's own row before the answer landed.
+      state.moveTo({ number: 7, kind: "issue", issue: undefined });
+      acted(answered(1, workbenchPage([item(3)])));
+
+      expect(state.cursor).toEqual(at(3));
+      expect(landed).toHaveBeenCalledOnce();
+      state.stop();
+    });
+
+    it("ignores an answer for another Repository (#1052)", async () => {
+      const { state, acted } = await listingWithCursor([4, 3, 2, 1], 1);
+      vi.mocked(commands.archive).mockResolvedValue(done);
+
+      await state.archive({ key: waiting(3).key, mark: waiting(3).seen.mark });
+      acted({
+        ...answered(1, workbenchPage([4, 2, 1].map(item))),
+        repository: "other/repo",
+      });
+
+      expect(state.cursor).toEqual(at(3));
+      state.stop();
+    });
+
+    it("moves nothing when the user moves the cursor to another item before the answer (#1052)", async () => {
+      const { state, acted } = await listingWithCursor([4, 3, 2, 1], 1);
+      vi.mocked(commands.archive).mockResolvedValue(done);
+
+      await state.archive({ key: waiting(3).key, mark: waiting(3).seen.mark });
+      state.moveTo(at(1));
+      acted(answered(1, workbenchPage([4, 2, 1].map(item))));
+
+      expect(state.cursor).toEqual(at(1));
       state.stop();
     });
 

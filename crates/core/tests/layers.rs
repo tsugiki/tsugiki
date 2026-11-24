@@ -361,11 +361,13 @@ const LAYERS: &[Layer] = &[
             "repository_settings",
             "status",
             "work",
+            "workbench",
         ],
         why: "Takes the user's demands and the rules' wants, and hands each to the queue that owns it: the \
               Mirror worker's through `mirror`, and the session's, whose messages it defines so the session \
               above can take them. A Mark Seen names what `work` marks, and Mute author the `login` it \
-              mutes. A PR whose Conversation read failed keeps the `status` failure, for its Files tab.",
+              mutes. A PR whose Conversation read failed keeps the `status` failure, for its Files tab. An \
+              action carries the `Asked`, the number and the `workbench` view the core answers with.",
     },
     Layer {
         module: "sync",

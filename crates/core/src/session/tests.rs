@@ -539,11 +539,7 @@ fn mirrors() -> MirrorRequests {
 
 /// GitHub through `access`, a Mirror worker that isn't there, and settings that list gcmon with no Filters.
 fn reaching(access: GitHubAccess) -> Connections {
-    Connections {
-        github: access,
-        mirrors: mirrors(),
-        settings: listed(vec![plain_gcmon()]),
-    }
+    Connections::new(access, mirrors(), listed(vec![plain_gcmon()]))
 }
 
 /// A handle that reaches neither a session nor a Mirror worker, for refreshes a test drives itself.
@@ -974,14 +970,11 @@ fn a_mark_answers_with_the_list_it_left() {
     stores_issue_5_with_its_prs(&store);
     store.close();
     let (sent, answered) = mpsc::channel();
-    let board = quiet_board().with_acted(Box::new(move |answer: &Answered| {
-        sent.send(answer.clone()).unwrap();
-    }));
-    let connections = Connections {
-        github: offline(),
-        mirrors: mirrors(),
-        settings: listed(vec![cpython_gcmon()]),
-    };
+    let board = quiet_board();
+    let connections = Connections::new(offline(), mirrors(), listed(vec![cpython_gcmon()]))
+        .with_acted(Box::new(move |answer: &Answered| {
+            sent.send(answer.clone()).unwrap();
+        }));
     let session = Session::start(board, Ok(folders.clone()), connections, HOURLY);
     let issue = ItemKey::Issue { number: 5 };
 
@@ -1073,7 +1066,7 @@ fn telling_through(
 ) -> Telling {
     Telling {
         changes: board.changes(),
-        acted: board.acted(),
+        acted: Box::new(|_| {}),
         github,
         shown: board.shown(),
         refreshes_done,
@@ -2436,11 +2429,7 @@ fn a_sync_hands_the_mirror_the_heads_it_saved_of_the_prs_the_users_work_reaches_
     let session = Session::start(
         quiet_board(),
         Ok(folders.clone()),
-        Connections {
-            github: access,
-            mirrors,
-            settings: listed(vec![plain_gcmon()]),
-        },
+        Connections::new(access, mirrors, listed(vec![plain_gcmon()])),
         HOURLY,
     );
 
@@ -2661,11 +2650,11 @@ fn a_hand_edit_to_the_settings_tells_the_window_and_the_windows_own_switch_doesn
     store.close();
     let (board, changes) = board_hearing_settings();
     let (mirrors, _heard) = HeardRequests::new();
-    let connections = Connections {
-        github: offline(),
+    let connections = Connections::new(
+        offline(),
         mirrors,
-        settings: listed(vec![bugs_switched(OnWorkbench::On)]),
-    };
+        listed(vec![bugs_switched(OnWorkbench::On)]),
+    );
     let session = Session::start(board, Ok(folders.clone()), connections, HOURLY);
     // GitHub's Conventions are those every Repository but CPython starts with.
     let regrouped = RepositorySettings {
@@ -2787,11 +2776,7 @@ fn session_taking(
     let (board, changes) = board_hearing_settings();
     let (mirrors, heard) = HeardRequests::new();
     let settings = listed(vec![save.saved().clone()]);
-    let connections = Connections {
-        github,
-        mirrors,
-        settings,
-    };
+    let connections = Connections::new(github, mirrors, settings);
     let session = Session::start(board, Ok(folders.clone()), connections, HOURLY);
 
     if let Some(opened) = opened {
@@ -2962,11 +2947,7 @@ fn mute_takes_an_issues_heads_from_the_mirror_and_unmute_hands_them_back_and_owe
     stores_issue_5_with_its_prs(&store);
     store.close();
     let (mirrors, heard) = HeardRequests::new();
-    let connections = Connections {
-        github: offline(),
-        mirrors,
-        settings: listed(vec![cpython_gcmon()]),
-    };
+    let connections = Connections::new(offline(), mirrors, listed(vec![cpython_gcmon()]));
     let session = Session::start(quiet_board(), Ok(folders.clone()), connections, HOURLY);
     let issue = ItemKey::Issue { number: 5 };
 
@@ -3012,11 +2993,7 @@ fn pin_hands_the_mirror_the_heads_of_an_issues_tree_and_owes_their_reads_and_unp
     store.save_pull_requests(&gcmon(), stored).unwrap();
     store.close();
     let (mirrors, heard) = HeardRequests::new();
-    let connections = Connections {
-        github: offline(),
-        mirrors,
-        settings: listed(vec![cpython_gcmon()]),
-    };
+    let connections = Connections::new(offline(), mirrors, listed(vec![cpython_gcmon()]));
     let (board, changes) = changes_board();
     let session = Session::start(board, Ok(folders.clone()), connections, HOURLY);
 
@@ -3063,11 +3040,7 @@ fn with_no_token_mute_tells_the_window_and_unmute_owes_the_read_of_a_pr_read_at_
         transport: Box::new(Canned(Err(Unreachable::Offline))),
         token_from: NO_GH,
     };
-    let connections = Connections {
-        github,
-        mirrors,
-        settings: listed(vec![cpython_gcmon()]),
-    };
+    let connections = Connections::new(github, mirrors, listed(vec![cpython_gcmon()]));
     let (board, changes) = changes_board();
     let session = Session::start(board, Ok(folders.clone()), connections, HOURLY);
     let issue = ItemKey::Issue { number: 5 };
@@ -3115,11 +3088,7 @@ fn mute_author_marks_their_items_seen_takes_their_trees_from_the_mirror_and_unmu
     store.save_issues(&gcmon(), vec![opened]).unwrap();
     store.close();
     let (mirrors, heard) = HeardRequests::new();
-    let connections = Connections {
-        github: offline(),
-        mirrors,
-        settings: listed(vec![cpython_gcmon()]),
-    };
+    let connections = Connections::new(offline(), mirrors, listed(vec![cpython_gcmon()]));
     let (board, changes) = changes_board();
     let session = Session::start(board, Ok(folders.clone()), connections, HOURLY);
 
@@ -3337,11 +3306,7 @@ fn synced_with_both_sides_read(name: &str, prepared: &str) -> (Vec<String>, Revi
     let session = Session::start(
         quiet_board(),
         Ok(folders.clone()),
-        Connections {
-            github: access,
-            mirrors,
-            settings: listed(vec![plain_gcmon()]),
-        },
+        Connections::new(access, mirrors, listed(vec![plain_gcmon()])),
         HOURLY,
     );
     session.fetching().sync(gcmon());
@@ -3711,11 +3676,7 @@ fn a_fetched_unstored_pr_in_a_syncing_repository_hands_its_head_to_the_mirror() 
     after_a_finished_sync(&folders);
     let (access, asked) = quiet_repository();
     let (mirrors, heard) = HeardRequests::new();
-    let connections = Connections {
-        github: access,
-        mirrors,
-        settings: listed(vec![plain_gcmon()]),
-    };
+    let connections = Connections::new(access, mirrors, listed(vec![plain_gcmon()]));
     let session = Session::start(quiet_board(), Ok(folders), connections, HOURLY);
     session.fetching().sync(gcmon());
     wait_for(&asked, "RefreshRepository");
@@ -4244,11 +4205,7 @@ fn reading_ahead_once_saved(name: &str, held: &'static str, save: fn(&SettingsOw
         }),
         token_from: SIGNED_IN,
     };
-    let connections = Connections {
-        github: access,
-        mirrors: mirrors(),
-        settings: owner.reader(),
-    };
+    let connections = Connections::new(access, mirrors(), owner.reader());
     let session = Session::start(quiet_board(), Ok(folders.clone()), connections, HOURLY);
     // As `Calls::launched` does.
     let told = session.fetching();

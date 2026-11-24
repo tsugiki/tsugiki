@@ -38,7 +38,7 @@ export function stamp(when: string): string {
   return new Date(when).toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
 }
 
-/** What a time measures, as the words of a tooltip. */
+/** The words of a tooltip that say what a time measures. */
 export type Measured = "Updated" | "Commented" | "Reviewed" | "Opened" | "Synced";
 
 /** The words of a tooltip: what the time measures, and when it was, as "Updated 23 Nov 2026, 03:42"

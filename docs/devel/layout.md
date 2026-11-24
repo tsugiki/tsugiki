@@ -133,8 +133,7 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
       Settings, which switches the choice ([settings.md](settings.md)).
     - The Issue view shows the title, an author line, the Origin PRs, the description, and recent comments,
       with a box to comment. The author line says who opened the Issue and how long ago, with the date and
-      the time in its tooltip, which says when they opened it, how many comments it has, and whom it is
-      assigned to, if anyone. Under it the
+      the time in its tooltip, how many comments it has, and whom it is assigned to, if anyone. Under it the
       Issue's labels show as plain chips in name order, as GitHub lists them, beside a row of buttons:
       Archive, which archives the Issue on show and reads Unarchive on an Archived Issue, Mute, which mutes
       it, "Mute <author>", which mutes the Issue's author and is off on the user's own Issue, then Mark

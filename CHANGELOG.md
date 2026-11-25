@@ -7,6 +7,74 @@ release's body, and fails without it
 
 ## WIP
 
+## Version 0.3.6 (2026-11-25)
+
+Settings gains a page for each Repository, where the user edits its Filters and chooses whether it is
+Read-only, and a new Repository starts Read-only until the user clears that choice. A Home page lists the
+Repositories, Issues can be pinned and gathered in a Pinned issues view, the rail shows a PR's changed
+files as a tree, and the Inbox hides Muted authors' rows behind Show muted. The status bar keeps who is
+signed in beside a problem, so a store failure no longer hides a missing token and its Try again.
+
+### Added
+
+- Settings › Repositories lists the Repositories added, with each one's number of Filters, whether its
+  mirror borrows from a clone, and its mirror's size on disk. A row opens the Repository's page, and Add
+  repository… opens the add dialog over Settings.
+- A Repository's page in Settings opens with `owner/name`, Read-only or Can write, the Repository's open
+  Issues and open PRs as GitHub counts them, and its last sync, as in "Can write · 1,204 open Issues ·
+  342 open PRs · Synced 2 min ago".
+- The page lists the Repository's Filters. The user edits each name and search in place, ↑ and ↓ move one,
+  Delete takes one out, and Add filter adds one. Apply writes them to `settings.toml`, keeping each
+  Filter's other keys and comments, and the Sidebar follows.
+- Add repository has a Read-only box, on by default, so a new Repository takes no writes until the user
+  clears it on the Repository's page in Settings.
+- ☆ on an Issue's row, Pin in the Issue view, Pin or Unpin in the command palette, and `Ctrl+K P` pin an
+  Issue, which stays on the Workbench, makes the sync fetch it and read its tree, and leaves the Inbox. ★
+  unpins it.
+- Pinned issues in the Sidebar, below the Filters, lists the pins with a count of those that Need
+  attention, and "View: Pinned Issues" in the command palette opens the view.
+- The Inbox leaves out the rows Muted authors wrote, and a "Show muted" switch over the list brings them
+  back greyed, in their places. The switch is kept per Repository and starts off.
+- The rail's Files tab shows a PR's changed files as a tree of folders, each file with its +/− counts, its
+  review threads and the user's drafts, and a Generated file greyed. The tree marks the file on screen and
+  follows it, a filter and the arrow keys find a file, and Enter opens it in the diff. Past 300 files the
+  folders start folded.
+- A Home page lists every Repository, the open one first, each with its "opened … ago", then Add
+  repository…. Enter opens a Repository on its Workbench, and `Alt+←` or Esc leaves for the Repository the
+  user came from. The Repository picker starts on Home, and "Go to Home" in the command palette opens it.
+- Try again sits beside the no-token problem in the status bar, on every screen and with no Repository
+  open, so a user who runs `gh auth login` needn't wait for the minute's read.
+- Every "… ago" in the window stays true while it shows, and its tooltip gives the date and time. An
+  Issue's tooltip breaks the row's time into the Issue's own update and each PR's, and a PR's row, the PR
+  view's header and the Issue view's PR lines give their update time there too.
+
+### Changed
+
+- The status bar says Offline when GitHub can't be reached, and Read-only only when the token can't write
+  to the Repository or the user chose it. The Issue and PR views say which, as in "Read-only: your token
+  can't write to python/cpython".
+- The status bar keeps who is signed in, Read-only, and a problem in separate parts, so a failed store
+  write no longer hides the missing token and its Try again, or the login, until the next check. A session
+  that stopped shows its problem alone.
+- Mark Seen, Archive, Mute and Unpin move the cursor and the Detail pane only once the core answers, so the
+  next item opens even when the item was on the list only because it was pinned, when a sync changes the
+  list in between, or when two actions touch one item. Mute author on a PR's row moves on when the PR
+  alone kept its Issue listed.
+- A failed read of the token writes its cause to `tsugiki.log` once, and again only when the cause changes,
+  where a Tsugiki left open without `gh` wrote the line every minute.
+
+### Fixed
+
+- A sync Tsugiki gives up on after 10 failed tries now tells the window what its last step saved, so the
+  Workbench and the Repository's page in Settings show what the database holds.
+- An Apply in Settings now reaches a Repository the window hasn't opened, so its page no longer keeps an
+  old Read-only or Can write until it is shown again.
+
+### Database
+
+0.3.6 moves the database forward and leaves a copy of the old one beside it, as `tsugiki.db.v39.bak`. 0.3.5
+won't open the new file: to go back, put the copy in its place. Tsugiki doesn't sync the cache again.
+
 ## Version 0.3.5 (2026-11-22)
 
 Quick open fetches an Issue or PR that Tsugiki lacks by its number, and the Detail pane opens the next item

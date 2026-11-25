@@ -142,14 +142,16 @@ describe("pinned tools", () => {
     expect(pins(ADVISORIES, "cargo-deny")).toEqual(pins(CI, "cargo-deny"));
   });
 
-  it("name cargo-llvm-cov's version once in CI, which both coverage jobs install", () => {
-    expect(pins(CI, "cargo-llvm-cov")).toHaveLength(1);
+  it("name each coverage job's tools once in CI, and have both jobs install them", () => {
+    for (const tool of ["cargo-llvm-cov", "nextest"]) {
+      expect(pins(CI, tool), tool).toHaveLength(1);
+    }
     for (const job of ["rust-coverage", "macos"]) {
       const tools = (CI_JOBS.get(job) ?? []).filter((line) => line.trim().startsWith("tool: "));
       expect(
         tools.map((line) => line.trim()),
         job,
-      ).toEqual(["tool: ${{ env.LLVM_COV_TOOL }}"]);
+      ).toEqual(["tool: ${{ env.LLVM_COV_TOOL }}, ${{ env.NEXTEST_TOOL }}"]);
     }
   });
 });

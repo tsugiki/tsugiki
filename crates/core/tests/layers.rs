@@ -18,8 +18,8 @@
 //! - This test has missed a real dependency, or we want rules it can't check, such as indirect chains
 //!   between modules.
 //!
-//! Look at arch-lint again only if we want many custom rules inside `cargo test` that Clippy can't express,
-//! and its path matching limits (globs, `pub use`, macros) don't affect those rules.
+//! Look at arch-lint again only if we want many custom rules inside the tests that Clippy can't express, and
+//! its path matching limits (globs, `pub use`, macros) don't affect those rules.
 
 use std::collections::BTreeMap;
 use std::fs;

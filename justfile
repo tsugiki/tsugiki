@@ -8,9 +8,10 @@
 # PowerShell. Keep every recipe a single command with no shell-specific syntax, so it works under both shells.
 set windows-shell := ["powershell.exe", "-NoProfile", "-Command"]
 
-# Someone is working on this computer while the checks run, so they leave cores free.
+# Someone is working on this computer while the checks run, so they leave cores free. Nextest starts a
+# process per test, and `tsugiki-core`'s tests take 62 seconds on four threads where two take 103 (#1099).
 export CARGO_BUILD_JOBS := env("CARGO_BUILD_JOBS", "4")
-export RUST_TEST_THREADS := env("RUST_TEST_THREADS", "2")
+export NEXTEST_TEST_THREADS := env("NEXTEST_TEST_THREADS", "4")
 
 # Show the available recipes
 default:
@@ -73,8 +74,8 @@ fmt:
     npm run fmt
 
 # Run every test CI runs, once each, one at a time. The coverage gate runs the Rust tests and checks the
-# bindings, so `cargo-test` and `stale-bindings` stay out. It runs no doctests, and the workspace has none.
-# `smoke` isn't one: it opens a window and presses real keys.
+# bindings, so `cargo-test` and `stale-bindings` stay out. It runs no doctests: nextest runs none, and the
+# workspace has none. `smoke` isn't one: it opens a window and presses real keys.
 # Like CI, it skips the Rust gates on a branch that changes only `ui/` and docs, and the Playwright specs on
 # one that changes only scripts and docs
 check: lint doc-width dupes svelte-check vitest rust-gates release-check
@@ -156,9 +157,9 @@ vitest-file +files:
 cargo-test:
     npm run cargo-test
 
-# Run one crate's tests the same way, and pass anything after the crate to cargo test
+# Run one crate's tests the same way, and pass anything after the crate to nextest, as a filter or a flag
 test-crate crate *args:
-    node scripts/test-servers.ts cargo test -p {{quote(crate)}} {{args}}
+    node scripts/test-servers.ts cargo nextest run -p {{quote(crate)}} {{args}}
 
 # Fetch the ty and clangd that the Rust tests start into target/tools, unless they are there, build their
 # fake server, and print the paths for TSUGIKI_TY, TSUGIKI_RUST_ANALYZER, TSUGIKI_CLANGD and
@@ -176,7 +177,7 @@ bindings:
 
 # Draw docs/schema.md afresh from the migrations, after a PR adds one
 schema $TSUGIKI_UPDATE_SCHEMA="1":
-    cargo test -p tsugiki-core --lib store::schema
+    cargo nextest run -p tsugiki-core --lib store::schema
 
 # Write the snapshot of each sample in crates/core/src/highlight/samples afresh, for you to read in git's diff
 highlight-samples $INSTA_UPDATE="always" $INSTA_FORCE_PASS="1":

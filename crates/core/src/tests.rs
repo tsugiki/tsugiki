@@ -2,6 +2,31 @@ use tsugiki_test_git::{Generated, GeneratedFile, check_generated};
 
 use super::*;
 
+#[test]
+fn a_mirror_built_for_one_call_is_copied_for_the_next() {
+    let root = testing::temp_path("mirror-copied");
+    let base = [("README.rst", "Python\n")];
+    let head = [("README.rst", "Python 3\n")];
+    let first = tsugiki_test_git::mirror_with_branch(
+        &root.join("work-1"),
+        &root.join("mirror-1.git"),
+        &base,
+        &head,
+    );
+    let second = tsugiki_test_git::mirror_with_branch(
+        &root.join("work-2"),
+        &root.join("mirror-2.git"),
+        &base,
+        &head,
+    );
+
+    assert_eq!(first, second);
+    assert_eq!(
+        tsugiki_test_git::git(&root.join("mirror-2.git"), &["rev-parse", "pr"]).trim(),
+        second
+    );
+}
+
 /// `diff --exit-code` fails on files that differ, and says how on stdout, where git says some failures.
 #[test]
 #[should_panic(expected = "diff --git a/Cargo.toml b/src/lib.rs")]

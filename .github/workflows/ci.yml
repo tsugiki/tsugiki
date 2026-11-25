@@ -13,9 +13,10 @@ permissions:
   contents: read
 
 env:
-  # The Windows and macOS coverage jobs install the same version. No name here starts with CARGO_:
+  # The Windows and macOS coverage jobs install the same versions. No name here starts with CARGO_:
   # rust-cache hashes those into its key, so a new value would miss every Rust cache main saved.
   LLVM_COV_TOOL: cargo-llvm-cov@0.9.1
+  NEXTEST_TOOL: nextest@0.9.152
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -162,7 +163,7 @@ jobs:
           persist-credentials: false
       - name: Install the Rust toolchain from rust-toolchain.toml
         run: rustup toolchain install
-      - uses: taiki-e/install-action@1919c4a95903d2c33e4a221102edca87309fc14b # v2.89.0
+      - uses: taiki-e/install-action@fe3acb53a98b62c772db35de75ce0e4595e7ca8c # v2.90.8
         with:
           tool: ${{ matrix.tool }}
           fallback: none
@@ -245,9 +246,10 @@ jobs:
           node-version-file: .node-version
       - name: Install the Rust toolchain from rust-toolchain.toml
         run: rustup toolchain install
-      - uses: taiki-e/install-action@1919c4a95903d2c33e4a221102edca87309fc14b # v2.89.0
+      - uses: taiki-e/install-action@fe3acb53a98b62c772db35de75ce0e4595e7ca8c # v2.90.8
         with:
-          tool: ${{ env.LLVM_COV_TOOL }}
+          tool: ${{ env.LLVM_COV_TOOL }}, ${{ env.NEXTEST_TOOL }}
+          fallback: none
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           key: rust-coverage
@@ -354,9 +356,10 @@ jobs:
         if: ${{ env.RUST_STEPS == 'true' }}
         run: rustup toolchain install
       - if: ${{ env.RUST_STEPS == 'true' }}
-        uses: taiki-e/install-action@1919c4a95903d2c33e4a221102edca87309fc14b # v2.89.0
+        uses: taiki-e/install-action@fe3acb53a98b62c772db35de75ce0e4595e7ca8c # v2.90.8
         with:
-          tool: ${{ env.LLVM_COV_TOOL }}
+          tool: ${{ env.LLVM_COV_TOOL }}, ${{ env.NEXTEST_TOOL }}
+          fallback: none
       - if: ${{ env.RUST_STEPS == 'true' }}
         uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:

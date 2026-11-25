@@ -74,7 +74,7 @@ release. Coverage is held at 100%, and CI fails below it.
   a passed run skips the Rust checks. Codecov carries the last figure forward for a side a run skips.
   `ui/package.json` and the generated bindings count for both sides, because Rust tests read them.
 - On those same pushes, on macOS: what can differ there, which is clippy, Vitest, Playwright on
-  WebKit, and both coverage gates. Rust's gate runs the tests, so `cargo test` has no job of its own there.
+  WebKit, and both coverage gates. Rust's gate runs the tests, so the tests have no job of their own there.
   The others read the source or generate the same output on any OS. These are steps of one job, which needs
   one runner. GitHub cancels a macOS job that waits too long for a runner, after 20 minutes on the run we
   looked at, and `timeout-minutes` doesn't extend that wait. A Free org also gets 5 macOS runners at a time,

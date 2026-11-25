@@ -23,12 +23,13 @@ cargo run
 
 ## Run the checks
 
-`just check` runs every test CI runs. Its gates call three cargo tools besides `just`, and `just lint` calls
+`just check` runs every test CI runs. Its gates call four cargo tools besides `just`, and `just lint` calls
 [pre-commit](https://pre-commit.com), which needs Python 3.11 or later. Install the versions that
 `.github/workflows/ci.yml` pins:
 
 ```
 cargo install cargo-llvm-cov --locked --version 0.9.1
+cargo install cargo-nextest --locked --version 0.9.152
 cargo install cargo-deny --locked --version 0.20.2
 cargo install cargo-machete --locked --version 0.9.2
 pipx install pre-commit==4.7.0

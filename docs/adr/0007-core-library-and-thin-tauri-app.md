@@ -7,7 +7,8 @@ commands and events onto the core and owns the windows. `crates/webview-keys` ho
 Tauri offers it ([ADR 0013](0013-webview2-browser-shortcuts-off-tsugiki-owns-its-keys.md)). `crates/token`
 (package `tsugiki-token`) holds the GitHub token and the only code that sends it
 ([ADR 0019](0019-the-token-and-the-only-code-that-sends-it-have-a-crate-of-their-own.md)). The frontend is a
-SvelteKit single-page app in `ui/`. The core is tested with plain `cargo test`, with no Tauri and no webview.
+SvelteKit single-page app in `ui/`. The core is tested with plain `cargo nextest run`, with no Tauri and no
+webview.
 That matters because, after [ADR 0005](0005-token-stays-in-the-rust-core.md), almost all of the logic lives in
 Rust.
 

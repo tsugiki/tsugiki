@@ -134,8 +134,8 @@ run failed on lines the file no longer had. With its line counts gone, an old bu
 can't hide a real one. So when `deps` holds two builds of one test target, the script cleans before the run,
 and after a failed `--no-clean` run it runs again clean.
 
-The workspace has no doctests. `cargo llvm-cov` runs them only on nightly, so a crate that gains one needs
-`cargo-test` back in `check`.
+The workspace has no doctests, and nextest runs none. A crate that gains one needs a `cargo test --doc` step
+of its own; putting `cargo-test` back in `check` no longer runs them.
 
 After the change, with no Rust changed since the last coverage run, `just check` took 147 seconds:
 
@@ -149,6 +149,26 @@ After the change, with no Rust changed since the last coverage run, `just check`
 | `deny`, `doc-width`, `machete`, `release-check` | 4.1 together |
 
 A change to `tsugiki-core` adds about 8 seconds of compiling to `rust-coverage`, as in runs 2 and 4.
+
+## Test runner
+
+Since #1099, `cargo nextest` runs the Rust tests, and `cargo llvm-cov nextest` runs them under the coverage
+gate. Nextest prints each test's result and time, one `Summary` line with the totals, and the failed tests
+together. `cargo test` prints one `test result:` line per binary and leaves the reader to add them up.
+
+Nextest runs each test in its own process, which costs 35 to 45 ms per test on Windows. The cost is divided
+by the number of test threads. Measured on 2026-11-25, warm build, `tsugiki-core`'s 2,206 tests, with
+`CARGO_BUILD_JOBS=4` and the project folder added to Windows Defender's exclusions:
+
+| Runner | 2 test threads | 4 test threads |
+|---|---|---|
+| `cargo test` | 64.9 s | 37.1 s |
+| `cargo nextest` | 102.9 s | 62.0 s |
+
+The justfile asks for four test threads rather than two, since at two nextest spends 38 seconds more than
+`cargo test` on the core's tests. In CI, the Windows `npm run rust-coverage` step took 5m59s, where main's
+last run before the change took 5m17s. The macOS step took 3m47s against 1m56s, but the job's other steps
+ran slower than on main, vitest and Playwright among them, so read that figure as the runner's day.
 
 ## Linker
 
@@ -176,8 +196,8 @@ example once `crates/app/tests/` holds several binaries that link Tauri.
    link it. A file in `crates/app/tests/` that uses `tsugiki_app` adds a link against Tauri and WebView2, and
    today only `bindings.rs` does. Stage 2's diff renderer and highlighting will make that binary bigger.
 2. **One test binary for `app`.** Past about 10 files that use `tsugiki_app`, make those modules of
-   `tests/app/main.rs`, and filter with `cargo test --test app <name>`. Leave out files that don't use it, or
-   they'll start linking Tauri. `stale-bindings` in `package.json` names `--test bindings`, so change it in
-   the same PR.
+   `tests/app/main.rs`, and filter with `cargo nextest run --test app <name>`. Leave out files that don't
+   use it, or they'll start linking Tauri. `stale-bindings` in `package.json` names `--test bindings`, so
+   change it in the same PR.
 3. **More crates.** This costs the most and gains the least, because a ticket that touches several crates
    rebuilds them anyway. Consider it only if builds stay slow after the steps above.

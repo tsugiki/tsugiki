@@ -77,7 +77,7 @@ fails a test, since Tsugiki would ignore it and highlight what the pattern meant
    - A pattern the query lacks, or one that loses to a pattern after it: a pattern of your own after the
      crate's query in `highlights`, with a comment that says why. JSON's entry has one.
    - A crate with no query, or one written for Neovim: a query copied from Helix, as the next section says.
-7. Run `cargo test -p tsugiki-core --lib highlight`. Its tests check that each query compiles and uses only
+7. Run `just test-crate tsugiki-core highlight`. Its tests check that each query compiles and uses only
    the predicates above, that no two languages claim the same file or name, and that each language has a
    sample.
 8. In the PR, say how much the grammar adds to the app: build `just build` with and without it, and compare

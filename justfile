@@ -148,9 +148,17 @@ test: vitest cargo-test stale-bindings
 vitest:
     npm run vitest -- --maxWorkers=2
 
+# Run the Vitest files named, without the coverage gate, their paths relative to ui/
+vitest-file *files:
+    npm run test -w ui -- --maxWorkers=2 {{files}}
+
 # Run the Rust tests, after fetching the ty and clangd they start and building their fake server
 cargo-test:
     npm run cargo-test
+
+# Run one crate's tests the same way, and pass anything after the crate to cargo test
+test-crate crate *args:
+    node scripts/test-servers.ts cargo test -p {{quote(crate)}} {{args}}
 
 # Fetch the ty and clangd that the Rust tests start into target/tools, unless they are there, build their
 # fake server, and print the paths for TSUGIKI_TY, TSUGIKI_RUST_ANALYZER, TSUGIKI_CLANGD and
@@ -192,9 +200,9 @@ machete:
 release-check tag="":
     node scripts/release-check.ts {{tag}}
 
-# Run the Playwright tests
-e2e:
-    npm run e2e -- --workers=2
+# Run the Playwright tests, all of them or the specs named, whose paths are relative to ui/
+e2e *args:
+    npm run e2e -- --workers=2 {{args}}
 
 # Open a real window and press real keys, which takes the foreground. `just smoke --at 3520,80` places it.
 smoke *args:

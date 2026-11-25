@@ -14,16 +14,15 @@ label it carries. Follow `AGENTS.md`, with these changes for a wave:
 
 - Run every command inside your worktree, with `CARGO_TARGET_DIR` unset, so Cargo builds into the
   worktree's own `target/`.
-- Run a crate's tests through `node scripts/test-servers.ts cargo test -p <crate>`, which fetches the
-  language servers some tests start: without them those tests fail, and Cargo stops before the crate's
-  integration tests.
+- Run a crate's tests through `just test-crate <crate>`, which fetches the language servers some tests
+  start: without them those tests fail, and Cargo stops before the crate's integration tests.
 - Put scratch files (probe scripts, copies of data, logs, message drafts) in your worktree's
   `.temp/scratchpad/`, not the scratchpad folder your system prompt names. Leave them there:
   `just worktree-remove` deletes them with the worktree, and the permission settings refuse your delete.
 - Skip `just smoke` and the full Playwright suite. Run the spec files in `ui/e2e/` that drive what you
-  changed, in both projects: `npx playwright test e2e/<file>.spec.ts` in `ui`. Grep them for the keys,
-  commands and components your branch touches. If the page calls a command it didn't call before, run every
-  spec: `ui/e2e/mock-core.ts` rejects a command a test doesn't answer.
+  changed, in both projects: `just e2e e2e/<file>.spec.ts`, whose path is relative to `ui/`. Grep them for
+  the keys, commands and components your branch touches. If the page calls a command it didn't call before,
+  run every spec: `ui/e2e/mock-core.ts` rejects a command a test doesn't answer.
 - Before you report the build, run the tests of the files and crates you changed and the e2e specs that drive
   them. Leave the full Vitest, the coverage gates and Clippy across the workspace to `just preflight`: it runs
   them after the review, so a run before it is spent twice.
@@ -58,7 +57,7 @@ Then read your diff for what only macOS's CI catches, as `AGENTS.md` says.
 ### After a sibling merges
 
 After the session says a sibling merged, run `git fetch origin`, then `git merge origin/main`. Fix the
-conflicts, then rerun the full `npm run vitest` and the tests of each crate either branch touched. A merge
+conflicts, then rerun `just vitest` and `just test-crate` for each crate either branch touched. A merge
 with no conflict can still break: a function's new signature, a new argument, a test that mocks a command's
 old answer. If both branches changed the generated bindings, run `just bindings`. Report the conflicts and
 each break you fixed. Don't rerun `just preflight` unless the session asks: CI runs the gates on the push.

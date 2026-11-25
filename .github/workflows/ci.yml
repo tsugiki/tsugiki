@@ -356,7 +356,7 @@ jobs:
         if: ${{ env.RUST_STEPS == 'true' }}
         run: rustup toolchain install
       - if: ${{ env.RUST_STEPS == 'true' }}
-        uses: taiki-e/install-action@1919c4a95903d2c33e4a221102edca87309fc14b # v2.89.0
+        uses: taiki-e/install-action@fe3acb53a98b62c772db35de75ce0e4595e7ca8c # v2.90.8
         with:
           tool: ${{ env.LLVM_COV_TOOL }}, ${{ env.NEXTEST_TOOL }}
           fallback: none

@@ -166,8 +166,9 @@ by the number of test threads. Measured on 2026-11-25, warm build, `tsugiki-core
 | `cargo nextest` | 102.9 s | 62.0 s |
 
 The justfile asks for four test threads rather than two, since at two nextest spends 38 seconds more than
-`cargo test` on the core's tests. CI runners have no Defender exclusion, so expect the gap there to be wider
-than these numbers say; the run that lands #1099 measures it.
+`cargo test` on the core's tests. In CI, the Windows `npm run rust-coverage` step took 5m59s, where main's
+last run before the change took 5m17s. The macOS step took 3m47s against 1m56s, but the job's other steps
+ran slower than on main, vitest and Playwright among them, so read that figure as the runner's day.
 
 ## Linker
 

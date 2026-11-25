@@ -10,7 +10,8 @@ Tsugiki is a Tauri app with five crates and a webview
 ([ADR 0007](adr/0007-core-library-and-thin-tauri-app.md)), and a sixth crate serves only the tests:
 
 - `crates/core` (`tsugiki-core`) knows and decides everything: GitHub, the database, the **Mirrors**, the
-  diff and every rule the screens show. It has no Tauri and no webview, and plain `cargo test` tests it.
+  diff and every rule the screens show. It has no Tauri and no webview, and plain `cargo nextest run` tests
+  it.
 - `crates/token` (`tsugiki-token`) holds the GitHub token, `gh` and the only HTTP client, and hides tokens
   in text ([ADR 0019](adr/0019-the-token-and-the-only-code-that-sends-it-have-a-crate-of-their-own.md)).
   Nothing outside it can read the token's string, and its client sends a GraphQL body only when it reads,

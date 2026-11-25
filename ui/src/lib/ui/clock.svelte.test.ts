@@ -78,3 +78,18 @@ it("stops its timer when the component goes", () => {
   clock.stop();
   expect(vi.getTimerCount()).toBe(0);
 });
+
+it("stops hearing the window when the component goes", () => {
+  vi.useFakeTimers({ now: OPENED });
+  const clock = windowClock();
+  expect(clock.now()).toBe("2026-11-22T07:05:00.000Z");
+
+  clock.stop();
+  // Neither a window coming back into view nor one taking the focus moves a clock whose component has gone.
+  vi.setSystemTime(new Date(OPENED.getTime() + DAY_MS));
+  document.dispatchEvent(new Event("visibilitychange"));
+  window.dispatchEvent(new Event("focus"));
+  flushSync();
+
+  expect(clock.now()).toBe("2026-11-22T07:05:00.000Z");
+});

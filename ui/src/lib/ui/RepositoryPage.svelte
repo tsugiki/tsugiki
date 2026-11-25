@@ -11,7 +11,7 @@
   import { minuteClock } from "./clock.svelte";
   import { openWords, writeWords } from "./repository-header";
   import StoredIn from "./StoredIn.svelte";
-  import { syncedWords } from "./synced";
+  import { syncedTip, syncedWords } from "./synced";
 
   let { dialog, repository }: { dialog: SettingsDialog; repository: string } = $props();
 
@@ -31,15 +31,23 @@
   });
 
   // "Synced 2 min ago" has to move on by itself between syncs.
-  const now = minuteClock();
+  const clock = minuteClock();
   const sync = $derived(syncView?.state);
+  /** One part of the line, with the tooltip its own time gives it, if it has one. */
+  const plain = (words: string | null) =>
+    words === null ? null : { words, title: undefined as string | undefined };
+  /** The sync's words come last, with the date and time of the last sync. */
   const parts = $derived(
     [
-      writeWords(stateView?.state, repository),
-      sync?.open ? openWords(sync.open) : null,
-      sync === undefined ? null : syncedWords(sync.last_sync, now),
+      plain(writeWords(stateView?.state, repository)),
+      plain(sync?.open ? openWords(sync.open) : null),
+      sync === undefined
+        ? null
+        : { words: syncedWords(sync.last_sync, clock.now), title: syncedTip(sync.last_sync) },
     ].filter((part) => part !== null),
   );
+  /** The words between the line's parts. */
+  const BETWEEN = " · ";
 
   /** Whether this page has Read-only on, once the dialog has read the files (#915). */
   const readOnly = $derived(dialog.readOnly(repository));
@@ -58,7 +66,11 @@
 
 <h3 class="mono">{repository}</h3>
 {#if parts.length > 0}
-  <p class="facts">{parts.join(" · ")}</p>
+  <p class="facts">
+    {#each parts as part, index (index)}{#if index > 0}{BETWEEN}{/if}<span title={part.title}
+        >{part.words}</span
+      >{/each}
+  </p>
 {/if}
 
 <div class="row">

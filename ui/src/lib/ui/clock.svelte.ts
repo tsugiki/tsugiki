@@ -1,5 +1,4 @@
 // Clocks that move words such as "3m ago" and "4 s" on by themselves.
-import { SvelteDate } from "svelte/reactivity";
 import { MINUTE_MS, SECOND_MS } from "./time";
 
 /** The time now in milliseconds, set as the moment `since` gives changes, then again `after` milliseconds
@@ -33,17 +32,30 @@ export function secondClock(since: () => string | null, after: number): { readon
 }
 
 /** The time now, set again each minute while the component that calls this as it starts is on screen, so
- * words such as "3m ago" move on between syncs. */
-export function minuteClock(): Date {
-  // SvelteDate extends the Date there was at import, so a test's fake clock reaches it only through `now()`.
-  const now = new SvelteDate(Date.now());
+ * words such as "3m ago" move on between syncs, and again when the window comes back into view or takes the
+ * focus.
+ * The time is a plain number, not a SvelteDate: a derived that read a SvelteDate's time once kept that time
+ * for good, so the window's words stopped at launch (#1066). */
+export function minuteClock(): { readonly now: Date } {
+  let at = $state(Date.now());
   $effect(() => {
-    const ticking = setInterval(() => {
-      now.setTime(Date.now());
-    }, MINUTE_MS);
+    const tick = () => {
+      at = Date.now();
+    };
+    const ticking = setInterval(tick, MINUTE_MS);
+    document.addEventListener("visibilitychange", tick);
+    window.addEventListener("focus", tick);
     return () => {
       clearInterval(ticking);
+      document.removeEventListener("visibilitychange", tick);
+      window.removeEventListener("focus", tick);
     };
   });
-  return now;
+  return {
+    get now() {
+      // Made anew on each read, so no reader can change it, and the `$state` above is what's reactive.
+      // eslint-disable-next-line svelte/prefer-svelte-reactivity
+      return new Date(at);
+    },
+  };
 }

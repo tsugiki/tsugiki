@@ -6,7 +6,7 @@
   import type { Opened } from "$lib/state/home.svelte";
   import { minuteClock } from "./clock.svelte";
   import { currentOs, keyName, withKey } from "./keys";
-  import { agoWords } from "./time";
+  import { agoWords, stampOf } from "./time";
 
   let {
     rows,
@@ -29,11 +29,18 @@
     onsettings: () => void;
   } = $props();
 
-  const now = minuteClock();
-  /** Each row's words for the time the user last opened its Repository, or nothing for one `recent` has no
-   * time for. */
+  const clock = minuteClock();
+  /** Each row's words for the time the user last opened its Repository, with the date and time for the
+   * tooltip, or nothing for one `recent` has no time for. */
   const opened = $derived(
-    rows.map((row) => (row.opened_at === null ? null : `opened ${agoWords(row.opened_at, now)}`)),
+    rows.map((row) =>
+      row.opened_at === null
+        ? null
+        : {
+            words: `opened ${agoWords(row.opened_at, clock.now)}`,
+            title: `Opened ${stampOf(row.opened_at)}`,
+          },
+    ),
   );
   const os = currentOs();
   /** The name of the row the cursor last went to. */
@@ -98,6 +105,7 @@
   </header>
   <ul class="row-list" aria-label="Repositories">
     {#each rows as row, at (row.name)}
+      {@const time = opened[at]}
       <li>
         <button
           bind:this={buttons[at]}
@@ -110,8 +118,8 @@
           }}
         >
           <span class="name mono">{row.name}</span>
-          {#if opened[at]}
-            <span class="opened">{opened[at]}</span>
+          {#if time}
+            <span class="opened" title={time.title}>{time.words}</span>
           {/if}
         </button>
       </li>

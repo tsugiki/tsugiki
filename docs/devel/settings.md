@@ -65,8 +65,9 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
   GitHub's as a sync last kept them ([sync.md](sync.md)), so a large Repository counts all it has open, not
   the window Tsugiki holds. They change as soon as a sync saves new ones, a first sync included, and before
   a sync has counted them they don't show. The last sync says "Not synced yet" before the first one
-  finishes, moves on each minute, and changes when a sync of that Repository finishes, open or not. Each
-  part waits for the core's answer, and the line shows once one has come. The page's first row, under the
+  finishes, moves on each minute, and changes when a sync of that Repository finishes, open or not. Its
+  words carry the date and time of that last sync in their tooltip. Each part waits for the core's answer,
+  and the line shows once one has come. The page's first row, under the
   header, is the "Read-only" switch, which shows the Repository's `read_only` as the files hold it. Apply
   saves it with the page's other rows, and Cancel puts it back. Nothing else shows the switch until Apply
   has saved it. Then the window hears of it, whether it opened the Repository since launch or not: the

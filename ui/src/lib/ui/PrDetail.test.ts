@@ -5,6 +5,7 @@ import { remapKeys } from "$lib/state/keymap.svelte";
 import { PanesState } from "$lib/state/panes.svelte";
 import { PrViewState, type PrView } from "$lib/state/pr-view.svelte";
 import { done, ok, readyFiles, refused, workbenchRow } from "$lib/testing/fixtures";
+import { stampOf } from "./time";
 import PrDetail from "./PrDetail.svelte";
 
 const core = vi.hoisted(() => ({
@@ -77,6 +78,31 @@ const view: PrView = {
 };
 
 const NOW = new Date("2026-11-04T11:00:00Z");
+const UPDATED = "2026-11-04T10:00:00Z";
+
+it("gives the header's update its date and time in a tooltip", async () => {
+  await shown(view, undefined);
+
+  const header = screen.getByText(/into main · updated/);
+
+  expect(header.textContent).toBe("into main · updated 1h ago");
+  expect(header.getAttribute("title")).toBe(`Updated ${stampOf(UPDATED)}`);
+});
+
+it("says the time since with a clock a day on", async () => {
+  const state = await shown(view, undefined);
+  cleanup();
+  render(PrDetail, {
+    repository: "python/cpython",
+    pr: state,
+    panes: new PanesState(),
+    now: new Date("2026-11-05T11:00:00Z"),
+    onback: vi.fn(),
+    onmark: vi.fn(),
+  });
+
+  expect(screen.getByText(/into main · updated/).textContent).toBe("into main · updated 1d ago");
+});
 
 /** The PR on show, which stops after each test, as its Files tab loads once it shows. */
 let onShow: PrViewState | undefined;

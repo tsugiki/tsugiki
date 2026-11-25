@@ -2,7 +2,7 @@
 // Repositories syncing, and for a mirror's clone and what keeps one from starting.
 import { counted } from "$lib/state/counted";
 import type { Cloning, MirrorProblem, RepositoryMirror, SyncActivity } from "$lib/state/status.svelte";
-import { agoWords } from "./time";
+import { agoWords, stampOf } from "./time";
 
 type OpenSync = NonNullable<SyncActivity["open"]>;
 
@@ -112,3 +112,7 @@ export function pausedWords(activity: SyncActivity | null): string | null {
   if (activity?.paused_until === null || activity === null) return null;
   return `Sync paused until ${clockTime(activity.paused_until)}: GitHub's rate limit is low`;
 }
+
+/** The tooltip beside a sync's words: the date and time of the last sync, or none before it has synced
+ * (#1066). */
+export const syncedTip = (at: string | null) => (at === null ? undefined : `Last synced ${stampOf(at)}`);

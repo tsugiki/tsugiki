@@ -3,6 +3,7 @@ import type { ListedItem_Serialize as ListedItem } from "../src/lib/data/binding
 import {
   done,
   HOUR_POINTS,
+  listedIssue,
   OCTOCAT_ONLINE,
   ok,
   refused,
@@ -20,19 +21,10 @@ const reviewRow = workbenchRow(160662, {
   reasons: ["review_request"],
 });
 
-const review: ListedItem = {
-  attention: { since: "2026-11-04T10:00:00Z", why: [{ kind: "review_requested" }] },
-  key: { kind: "issue", number: 112564 },
-  hidden: null,
-  unpin: "stays",
-  kind: "issue",
-  number: 112564,
+const review: ListedItem = listedIssue(112564, {
   title: "GIL drop during collection",
-  state: "OPEN",
   people: ["issue-author", "some-author"],
-  mute_author: { kind: "mute", login: "issue-author" },
-  pinned: false,
-  updated_at: "2026-11-04T10:00:00Z",
+  attention: { since: "2026-11-04T10:00:00Z", why: [{ kind: "review_requested" }] },
   pull_requests: [
     {
       kind: "pr",
@@ -54,7 +46,7 @@ const review: ListedItem = {
     mark: { numbers: [112564, 160662, 160700], up_to: null, findings: [] },
     state: "seen",
   },
-};
+});
 
 test("the Workbench lists what waits on the user", async ({ page }) => {
   await mockCore(page, { home, workbench: workbenchPage([review, own], { count: 2 }) });

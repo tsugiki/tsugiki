@@ -26,6 +26,9 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
     - the Issue's number and title, with the number of PRs and the time of the last update
     - a preview of what is waiting on the user
 
+    The list, and the rest of the window, show a time as "… ago", with its date and time in a tooltip
+    ([#1066](https://github.com/tsugiki/tsugiki/issues/1066)).
+
     A header over the list names the view on show. In the Workbench, a Built-in view, a Filter or Pinned
     issues, a switch at the header's far end, or "Sort by Attention" and "Sort by Last Update" in the command
     palette, picks one of two orders, and `machine.toml` keeps the choice:
@@ -130,7 +133,10 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
       Settings, which switches the choice ([settings.md](settings.md)).
     - The Issue view shows the title, an author line, the Origin PRs, the description, and recent comments,
       with a box to comment. The author line says who opened the Issue and how long ago, with the date and
-      time in its tooltip, how many comments it has, and whom it is assigned to, if anyone. Under it the
+      time in its tooltip, how many comments it has, and whom it is assigned to, if anyone. Each PR's line
+      in the Origin PRs gives its last update in its tooltip, as does each Backport's, and the line that
+      folds the merged PRs gives the latest of theirs, so no PR's time takes room on a line
+      ([#1066](https://github.com/tsugiki/tsugiki/issues/1066)). Under it the
       Issue's labels show as plain chips in name order, as GitHub lists them, beside a row of buttons:
       Archive, which archives the Issue on show and reads Unarchive on an Archived Issue, Mute, which mutes
       it, "Mute <author>", which mutes the Issue's author and is off on the user's own Issue, then Mark

@@ -23,6 +23,7 @@
     pausedWords,
     pointsBackWords,
     questionWords,
+    syncedTip,
     syncedWords,
     syncingWords,
   } from "./synced";
@@ -117,7 +118,7 @@
   const releasePage = new LinkOpener();
 
   // "Synced 2 min ago" has to move on by itself between syncs.
-  const now = minuteClock();
+  const clock = minuteClock();
   // The core says only when a request goes and ends, as its thread waits meanwhile, so the bar counts.
   // It ticks only once the part can show: on a bar the settings show, from the request's third second.
   const seconds = secondClock(() => (visible ? (inFlight?.since ?? null) : null), SLOW_MS);
@@ -195,7 +196,7 @@
   // The core says a clone waits for the network only while none is under way.
   const clone = $derived(cloningWords(cloning) ?? offlineCloneWords(mirrorStates));
   const syncWords = $derived(
-    [syncing ?? syncedWords(lastSync?.at ?? null, now), clone, elsewhere]
+    [syncing ?? syncedWords(lastSync?.at ?? null, clock.now), clone, elsewhere]
       .filter((words) => words !== null)
       .join(" · "),
   );
@@ -254,7 +255,11 @@
   <!-- Outside the live region, or a screen reader would read this out each minute, and each page of a
        sync. -->
   {#if lastSync !== null && showStatus}
-    <button class:offline onclick={onrefresh}>{syncWords}</button>
+    <button
+      class:offline
+      title={syncing === null ? syncedTip(lastSync?.at ?? null) : undefined}
+      onclick={onrefresh}>{syncWords}</button
+    >
   {/if}
   <!-- Outside the live region too, as it changes with each answer from GitHub. A screen reader can't reach a
        tooltip, so it reads the words and the tooltip from a copy of its own, once. -->

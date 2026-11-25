@@ -1864,6 +1864,8 @@ export type IssueItem_Deserialize = {
 	people: Login[],
 	/**  The latest update of the Issue and its PRs. */
 	updated_at: string,
+	/**  The Issue's own last update, apart from its PRs', which the row's tooltip names (#1066). */
+	issue_updated_at: string,
 	pull_requests: TreeEntry_Deserialize[],
 	/**  Its part in Mark Seen, which covers the Issue and every PR in its tree. */
 	seen: Seen_Deserialize,
@@ -1883,6 +1885,8 @@ export type IssueItem_Serialize = {
 	people: Login[],
 	/**  The latest update of the Issue and its PRs. */
 	updated_at: string,
+	/**  The Issue's own last update, apart from its PRs', which the row's tooltip names (#1066). */
+	issue_updated_at: string,
 	pull_requests: TreeEntry_Serialize[],
 	/**  Its part in Mark Seen, which covers the Issue and every PR in its tree. */
 	seen: Seen_Serialize,

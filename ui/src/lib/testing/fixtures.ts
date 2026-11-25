@@ -103,14 +103,15 @@ export const workbenchRow = (
  * hidden, with what `overrides` says instead. */
 export const listedIssue = (
   number: number,
-  overrides: Omit<Partial<ListedItem & { kind: "issue" }>, "kind" | "number"> = {},
-): ListedItem & { kind: "issue" } => ({
+  overrides: Omit<Partial<Extract<ListedItem, { kind: "issue" }>>, "kind" | "number"> = {},
+): Extract<ListedItem, { kind: "issue" }> => ({
   kind: "issue",
   number,
   title: `Issue ${String(number)}`,
   state: "OPEN",
   people: [],
   updated_at: "2026-11-04T10:00:00Z",
+  issue_updated_at: "2026-11-04T10:00:00Z",
   pull_requests: [],
   seen: { mark: { numbers: [number], up_to: null, findings: [] }, state: "seen" },
   mute_author: { kind: "mute", login: "issue-author" },

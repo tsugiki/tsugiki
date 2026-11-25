@@ -203,7 +203,7 @@ if (command === undefined) {
   const set = Object.entries(servers).map(([name, path]) => `${name}=${path}`);
   console.log(`Set ${set.join(", ")} to run the Rust tests with cargo alone.`);
   console.log(
-    "Run this again after a change to the fake server: `cargo test -p tsugiki-core` doesn't build it.",
+    "Run this again after a change to the fake server: `cargo nextest run -p tsugiki-core` doesn't build it.",
   );
 } else {
   const run = spawnSync(command, args, { stdio: "inherit", env: { ...process.env, ...servers } });

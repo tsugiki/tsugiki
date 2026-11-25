@@ -35,6 +35,7 @@ mkdirSync("target/coverage", { recursive: true });
 const ignore = EXCLUDED.join("|").replaceAll("/", "[/\\\\]");
 const args = [
   "llvm-cov",
+  "nextest",
   "--workspace",
   "--lcov",
   "--output-path",

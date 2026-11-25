@@ -110,7 +110,7 @@ fn assert_succeeded(args: &[&str], ran: &Ran) {
 
 /// Makes a bare repository for `name`, an `owner/name`, under `remotes` where GitHub keeps it:
 /// `owner/name.git`. It has one commit on `main` and the tag `v3.15.0a0`, and no remote of its own. The
-/// working copy it came from stays at `work/owner/name`, for a test to commit in and push from. A test run
+/// working copy it came from stays at `work/owner/name`, for a test to commit in and push from. A process
 /// builds the remote of each `name` once, and later calls copy it.
 pub fn remote(remotes: &Path, name: &str) {
     /// The working copy and the bare repository of each `name` built so far.
@@ -178,7 +178,7 @@ fn commit_all(dir: &Path, message: &str) {
 /// Makes a bare repository at `mirror`, as a Mirror holds a PR, whose `main` holds the files `base`, each a
 /// path and its text, and whose branch `pr` writes the files `head` on top of them, deleting each whose text
 /// is empty. Gives the commit at the end of `pr`. The repository it clones from is built at `work` and gone
-/// by the time this returns, and the mirror has no remote. A test run builds the mirror of the same files
+/// by the time this returns, and the mirror has no remote. A process builds the mirror of the same files
 /// once, and later calls copy it.
 pub fn mirror_with_branch(
     work: &Path,

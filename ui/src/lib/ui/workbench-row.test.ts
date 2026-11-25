@@ -126,7 +126,7 @@ it("gives a PR's own update in the tooltip beside its time", () => {
   expect(updatedTip(row)).toBe(`Updated ${stampOf("2026-11-04T10:00:00Z")}`);
 });
 
-it("lists in an Issue's tooltip its own update and each PR's, saying which is the latest", () => {
+it("lists in an Issue's tooltip its own update and each PR's", () => {
   const timed: IssueItem = {
     ...issue,
     updated_at: "2026-11-04T12:00:00Z",
@@ -138,11 +138,19 @@ it("lists in an Issue's tooltip its own update and each PR's, saying which is th
   };
   expect(ageTip({ kind: "issue", ...timed, ...unmarked })).toBe(
     [
-      `Latest update of this Issue or its PRs: ${stampOf("2026-11-04T12:00:00Z")}`,
-      `Issue #112564, updated ${stampOf("2026-11-04T10:00:00Z")}`,
-      `PR #160662, updated ${stampOf("2026-11-04T12:00:00Z")}`,
-      `PR #160663, updated ${stampOf("2026-11-04T09:00:00Z")}`,
+      `Issue updated ${stampOf("2026-11-04T10:00:00Z")}`,
+      `#160662 updated ${stampOf("2026-11-04T12:00:00Z")}`,
+      `#160663 updated ${stampOf("2026-11-04T09:00:00Z")}`,
     ].join("\n"),
+  );
+});
+
+it("names a Standalone PR or a Backport in its row's tooltip", () => {
+  expect(ageTip({ kind: "standalone_pr", ...row, backports: [], ...unmarked })).toBe(
+    `PR updated ${stampOf(row.updated_at)}`,
+  );
+  expect(ageTip({ kind: "standalone_backport", ...row, backport: "bot", ...unmarked })).toBe(
+    `Backport updated ${stampOf(row.updated_at)}`,
   );
 });
 

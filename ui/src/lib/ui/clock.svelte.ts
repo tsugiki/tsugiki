@@ -32,7 +32,8 @@ export function secondClock(since: () => string | null, after: number): { readon
 }
 
 /** The time now, set again each minute while the component that calls this as it starts is on screen, so
- * words such as "3m ago" move on between syncs, and again when the window is shown after being hidden.
+ * words such as "3m ago" move on between syncs, and again when the window comes back into view or takes the
+ * focus.
  * The time is a plain number, not a SvelteDate: a derived that read a SvelteDate's time once kept that time
  * for good, so the window's words stopped at launch (#1066). */
 export function minuteClock(): { readonly now: Date } {
@@ -43,9 +44,11 @@ export function minuteClock(): { readonly now: Date } {
     };
     const ticking = setInterval(tick, MINUTE_MS);
     document.addEventListener("visibilitychange", tick);
+    window.addEventListener("focus", tick);
     return () => {
       clearInterval(ticking);
       document.removeEventListener("visibilitychange", tick);
+      window.removeEventListener("focus", tick);
     };
   });
   return {

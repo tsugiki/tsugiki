@@ -55,6 +55,22 @@ it("reads the time again when the window comes back into view", () => {
   clock.stop();
 });
 
+it("reads the time again when the window takes the focus", () => {
+  vi.useFakeTimers({ now: OPENED });
+  const clock = windowClock();
+
+  // A minimized window may let no timer run, so the time moves on with nothing ticking.
+  vi.setSystemTime(new Date(OPENED.getTime() + DAY_MS));
+  flushSync();
+  expect(clock.shown()).toBe("1 h ago");
+
+  window.dispatchEvent(new Event("focus"));
+  flushSync();
+
+  expect(clock.shown()).toBe("1 d ago");
+  clock.stop();
+});
+
 it("stops its timer when the component goes", () => {
   vi.useFakeTimers();
   const clock = windowClock();

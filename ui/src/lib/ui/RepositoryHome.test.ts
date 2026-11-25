@@ -289,9 +289,8 @@ it("names what an Issue's time measures, with its own update and each PR's in it
 
   expect(age.getAttribute("title")).toBe(
     [
-      `Latest update of this Issue or its PRs: ${stampOf("2026-11-04T10:00:00Z")}`,
-      `Issue #112564, updated ${stampOf("2026-11-04T10:00:00Z")}`,
-      `PR #160662, updated ${stampOf("2026-11-04T10:00:00Z")}`,
+      `Issue updated ${stampOf("2026-11-04T10:00:00Z")}`,
+      `#160662 updated ${stampOf("2026-11-04T10:00:00Z")}`,
     ].join("\n"),
   );
 });

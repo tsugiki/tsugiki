@@ -95,17 +95,17 @@ export function ago(updatedAt: string, now: Date): string {
 /** A PR's or a Backport's update, for the tooltip beside its "… ago". */
 export const updatedTip = (row: { updated_at: string }) => `Updated ${stampOf(row.updated_at)}`;
 
-/** An item's time, for the tooltip beside its "… ago" (#1066). A PR's is its own update. An Issue's is the
- * latest of its own and its PRs', so the tooltip lists each one with its date and time, to show which update
- * put the Issue in the list. */
+/** An item's time, for the tooltip beside its "… ago" (#1066), saying what it measures. A Standalone PR's
+ * or Backport's is its own update. An Issue's tooltip lists its own update and each PR's in its tree, each
+ * with its date and time, so the user sees which update put it in the list, and when. */
 export function ageTip(item: ListedItem): string {
-  if (item.kind !== "issue") return updatedTip(item);
+  if (item.kind !== "issue") {
+    const what = item.kind === "standalone_backport" ? "Backport" : "PR";
+    return `${what} updated ${stampOf(item.updated_at)}`;
+  }
   const lines = [
-    `Latest update of this Issue or its PRs: ${stampOf(item.updated_at)}`,
-    `Issue #${String(item.number)}, updated ${stampOf(item.issue_updated_at)}`,
-    ...treeRows(item.pull_requests).map(
-      (row) => `PR #${String(row.number)}, updated ${stampOf(row.updated_at)}`,
-    ),
+    `Issue updated ${stampOf(item.issue_updated_at)}`,
+    ...treeRows(item.pull_requests).map((row) => `#${String(row.number)} updated ${stampOf(row.updated_at)}`),
   ];
   return lines.join("\n");
 }

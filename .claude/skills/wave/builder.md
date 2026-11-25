@@ -57,10 +57,11 @@ Then read your diff for what only macOS's CI catches, as `AGENTS.md` says.
 ### After a sibling merges
 
 After the session says a sibling merged, run `git fetch origin`, then `git merge origin/main`. Fix the
-conflicts, then rerun `just vitest` and `just test-crate` for each crate either branch touched. A merge
-with no conflict can still break: a function's new signature, a new argument, a test that mocks a command's
-old answer. If both branches changed the generated bindings, run `just bindings`. Report the conflicts and
-each break you fixed. Don't rerun `just preflight` unless the session asks: CI runs the gates on the push.
+conflicts, then rerun `just vitest` and `just test-crate <crate>` for each crate either branch touched.
+A merge with no conflict can still break: a function's new signature, a new argument, a test that mocks a
+command's old answer. If both branches changed the generated bindings, run `just bindings`. Report the
+conflicts and each break you fixed. Don't rerun `just preflight` unless the session asks: CI runs the gates on
+the push.
 
 ### What a blocker built
 

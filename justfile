@@ -149,7 +149,7 @@ vitest:
     npm run vitest -- --maxWorkers=2
 
 # Run the Vitest files named, without the coverage gate, their paths relative to ui/
-vitest-file *files:
+vitest-file +files:
     npm run test -w ui -- --maxWorkers=2 {{files}}
 
 # Run the Rust tests, after fetching the ty and clangd they start and building their fake server

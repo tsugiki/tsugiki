@@ -222,6 +222,34 @@ kbd {
   text-decoration: underline;
 }
 
+/* A heading that holds a state icon and the title beside it (#1082): the icon centres on the title's first
+   line, and a title too long for the line wraps beside it, its later lines under the title's start. */
+.title-line {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+/* A state icon beside a title (#1082), in a box as tall as a line of the text: the icon centres on the
+   title's line while a longer title wraps below it. `1.2em` stands in on a WKWebView before Safari 16.4,
+   which has no `lh`, and is close to the system font's line height there. */
+.state-icon {
+  display: flex;
+  flex: none;
+  align-items: center;
+  height: 1.2em;
+  height: 1lh;
+}
+
+/* A button lays out as one box in a flex line, so the title wraps at its spaces there, where an inline button
+   stays whole and moves to the next line. It still hugs a short title, and shrinks to wrap a long one. */
+.title-line .link {
+  flex: 0 1 auto;
+  min-width: 0;
+  text-align: start;
+  white-space: normal;
+}
+
 :where(input:not([type="radio"], [type="checkbox"]), textarea, select) {
   padding: 2px 6px;
   font: inherit;

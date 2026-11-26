@@ -5,7 +5,13 @@ import type {
   TreeEntry_Serialize as TreeEntry,
 } from "../src/lib/data/bindings.ts";
 import { done, ok, workbenchPage, workbenchRow } from "../src/lib/testing/fixtures.ts";
-import { dragEdge, home, palette } from "./fixtures.ts";
+import {
+  dragEdge,
+  expectShortTitleHugsItsText,
+  expectTitleBesideItsIcon,
+  home,
+  palette,
+} from "./fixtures.ts";
 import { changeAnswer, emitFromCore, mockCore } from "./mock-core.ts";
 import { cspViolations, imageHosts, serveUnderTauriCsp, watchCspViolations } from "./tauri-csp.ts";
 import { themes } from "./themes.ts";
@@ -112,6 +118,34 @@ test("an Issue opens in the Detail pane and stops looking unread", async ({ page
   await changeAnswer(page, "workbench", listing(false));
   await emitFromCore(page, "changed", { repository: "python/cpython", items: [7] });
   await expect(page.getByRole("button", { name: "#7 Issue 7" }).locator("strong")).toHaveCount(0);
+});
+
+test("a title that wraps keeps the state icon on its first line", async ({ page }) => {
+  await page.setViewportSize({ width: 900, height: 600 });
+  const title =
+    "A title long enough that it cannot fit on one line beside its icon in a narrow pane, whatever the Theme";
+  await mockCore(page, { ...answers("<p>It crashes</p>"), issue: ok({ ...view(""), title }) });
+  await page.goto("/");
+
+  await page.getByRole("button", { name: "#7 Issue 7" }).click();
+
+  const heading = page.getByRole("region", { name: "Issue view" }).getByRole("heading", { level: 2 });
+  await expectTitleBesideItsIcon(heading);
+});
+
+test("a title that fits on one line leaves the rest of its heading to no link", async ({ page }) => {
+  await page.setViewportSize({ width: 900, height: 600 });
+  await mockCore(page, answers("<p>It crashes</p>"));
+  await page.goto("/");
+
+  await page.getByRole("button", { name: "#7 Issue 7" }).click();
+
+  const pane = page.getByRole("region", { name: "Issue view" });
+  await expectShortTitleHugsItsText(
+    page,
+    pane.getByRole("heading", { level: 2 }),
+    pane.getByRole("button", { name: "#7 Issue 7" }),
+  );
 });
 
 test("a row above the tree counts the PRs of each state, and mutes a state at 0", async ({ page }) => {

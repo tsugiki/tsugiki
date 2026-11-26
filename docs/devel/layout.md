@@ -170,8 +170,10 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
       drops the fetch's answer, though the database still keeps what it brought.
     - **Look**, which the prototype settled, with colours from the Theme's tokens ([themes.md](themes.md)):
       - A muted 12 px line over the title gives the Issue's state, or the Issue a PR was opened under, the
-        branch it goes into and when it changed. The title is 18 px. The 13 px line under it names the
-        author in the text colour at weight 600, and a PR's state words follow.
+        branch it goes into and when it changed. The title is 18 px, its state icon centred on its first
+        line; a title too long for the line wraps beside the icon, its later lines under the title's start.
+        The 13 px line under it names the author in the text colour at weight 600, and a PR's state words
+        follow.
       - The Issue view keeps to 900 px and the Conversation to 860 px, so lines stay short in a wide
         window. Section headings, "Origin PRs" and "Description", are 13 px with 18 px above.
       - The PR tree is a box with 6 px corners and a line between rows. Each row is 13 px, with the number
@@ -246,8 +248,9 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
     - The list's header, 8 px by 10 px with a line under it, names the view. Each item is three lines of
       13 px, 7 px above and below, with a line between items: the people; the state icon, the number in the
       code font, the title, then the PR count and the age in muted 12 px; and the preview in muted 12 px.
-      An Issue with nothing waiting on the user counts its open PRs on the third line, or says it has none
-      yet, and a PR gives its facts there. An ellipsis cuts a long title, people or preview.
+      The state icon, and an Issue's fold chevron, centre on the title's line. An Issue with nothing waiting
+      on the user counts its open PRs on the third line, or says it has none yet, and a PR gives its facts
+      there. An ellipsis cuts a long title, people or preview.
     - An item that Needs attention looks like unread mail: a 3 px accent bar on its left edge, the title in
       the accent colour at weight 600, the people at weight 600 and the age in the accent colour.
     - The row under the cursor takes the selected tint, and a row under the pointer a light tint of the

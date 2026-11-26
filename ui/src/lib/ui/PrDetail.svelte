@@ -181,8 +181,8 @@
   {:else if pr.view}
     {@const view = pr.view}
     {@const stale = staleReviewLine(view.your_review, view.shares_review_of)}
-    <h2>
-      <StateIcon icon={prIcon(view)} />
+    <h2 class="title-line">
+      <span class="state-icon"><StateIcon icon={prIcon(view)} /></span>
       <button
         class="link"
         onclick={() => void links.openOnGitHub(repository, { kind: "pull_request", number: view.number })}

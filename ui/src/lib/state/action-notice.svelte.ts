@@ -23,18 +23,8 @@ export function authorWords(login: string, did: "muted" | "unmuted"): string {
   return `${did === "muted" ? "Muted" : "Unmuted"} ${login}`;
 }
 
-/** Whether the point `x`, `y` is over `rect`. The panel takes no click, so a row under it keeps its own. */
-export function overRect(rect: Pick<DOMRect, "left" | "right" | "top" | "bottom">, x: number, y: number) {
-  return x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom;
-}
-
-/** Whether the pointer is over `panel`, which may not be in the page yet. */
-export function overPanel(
-  panel: HTMLElement | undefined,
-  point: { clientX: number; clientY: number },
-): boolean {
-  return panel !== undefined && overRect(panel.getBoundingClientRect(), point.clientX, point.clientY);
-}
+/** The room the panel leaves between itself and the bar or the window's edge, in pixels. */
+export const PANEL_GAP = 8;
 
 /**
  * The action panel's text and its countdown (#1072). It says what the last action did and goes after five

@@ -175,6 +175,12 @@
   /** The fetch of an Issue or a PR the database lacks, which the Detail pane shows while nothing else is
    * on show there, until the item it found opens (#981). */
   let unstored = $state<UnstoredViewState>();
+  /** The height the action panel draws at, which the list leaves out of its room while the panel shows and
+   * no Detail pane sits beside it (#1072). */
+  let panelHeight = $state(0);
+  /** Whether the list fills the window beside the action panel, so the panel would sit over its rows: no
+   * Detail pane shows, and the panel says something. */
+  const panelReserved = $derived(notice.text !== undefined && detail === undefined && unstored === undefined);
   /** The view the Detail pane took the focus for while the list shows, which then takes it as it would with
    * the list hidden: the view of the item after the one the user finished with (#982), or the one F6 moved
    * the focus to. It keeps that until the focus goes elsewhere in the page, so the palette or another app in
@@ -1776,6 +1782,7 @@
          one. -->
     <section
       class={["list", { sized: panes.list !== null && detail !== undefined }]}
+      style:margin-bottom={panelReserved ? `${String(panelHeight)}px` : undefined}
       aria-label="Issue list"
       data-pane="list"
       tabindex="-1"
@@ -1948,7 +1955,7 @@
 
 <!-- Says what the last action on an item did (#1072). It stays in the page while it says nothing, so a
      screen reader announces each change. -->
-<ActionPanel {notice} {hud} {statusBarHeight} />
+<ActionPanel {notice} {hud} {statusBarHeight} onheight={(height) => (panelHeight = height)} />
 
 <style>
   /* The panes take the window's height, and each scrolls by itself. The wheel stops at a pane's end, even

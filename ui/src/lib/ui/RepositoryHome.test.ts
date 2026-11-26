@@ -6283,6 +6283,33 @@ it("keeps the action panel in the page empty as a polite live region before any 
   expect(actionPanel().textContent).toBe("");
 });
 
+it("leaves the action panel's height out of a list that fills the window, until a Detail pane shows", async () => {
+  vi.spyOn(HTMLElement.prototype, "offsetHeight", "get").mockReturnValue(28);
+  onTestFinished(() => {
+    vi.restoreAllMocks();
+  });
+  const { component, treeRow } = await listing();
+  const list = () => screen.getByRole("region", { name: "Issue list" });
+
+  expect(list().style.marginBottom).toBe("");
+  treeRow.focus();
+  await fireEvent.keyDown(treeRow, { key: "ArrowDown" });
+  await fireEvent.keyDown(treeRow, { key: "ArrowUp" });
+  component.runChord("pin", chordEnd());
+  await vi.waitFor(() => expect(actionPanel().textContent).toBe("Issue #112564 pinned"));
+  expect(list().style.marginBottom).toBe("28px");
+
+  await fireEvent.click(treeRow);
+  await vi.waitFor(() => expect(list().style.marginBottom).toBe(""));
+
+  // An item being fetched also takes the Detail pane, so the list keeps its room beside the panel.
+  expect(actionPanel().textContent).toBe("Issue #112564 pinned");
+  core.fetchItem.mockReturnValue(new Promise(() => {}));
+  component.fetchUnstored(99);
+  await screen.findByText(/Fetching python\/cpython #99/);
+  expect(list().style.marginBottom).toBe("");
+});
+
 it("says an Issue was archived after E on its row", async () => {
   const { treeRow } = await listing();
   treeRow.focus();

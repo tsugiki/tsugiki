@@ -1,13 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import {
-  ActionNotice,
-  authorWords,
-  didWords,
-  itemName,
-  NOTICE_MS,
-  overPanel,
-  overRect,
-} from "./action-notice.svelte";
+import { ActionNotice, authorWords, didWords, itemName, NOTICE_MS } from "./action-notice.svelte";
 
 afterEach(() => {
   vi.useRealTimers();
@@ -112,32 +104,5 @@ describe("the countdown", () => {
     notice.release();
     notice.clear();
     expect(notice.text).toBeUndefined();
-  });
-});
-
-describe("where the pointer is", () => {
-  const rect = { left: 10, right: 20, top: 10, bottom: 20 };
-
-  it("reads a point inside the box, and outside it on each side", () => {
-    expect(overRect(rect, 15, 15)).toBe(true);
-    expect(overRect(rect, 5, 15)).toBe(false);
-    expect(overRect(rect, 25, 15)).toBe(false);
-    expect(overRect(rect, 15, 5)).toBe(false);
-    expect(overRect(rect, 15, 25)).toBe(false);
-  });
-
-  it("is over no panel before the panel is in the page, and over it by its box after", () => {
-    expect(overPanel(undefined, { clientX: 15, clientY: 15 })).toBe(false);
-
-    const panel = document.createElement("aside");
-    panel.getBoundingClientRect = () => ({
-      ...rect,
-      width: 10,
-      height: 10,
-      x: 10,
-      y: 10,
-      toJSON: () => ({}),
-    });
-    expect(overPanel(panel, { clientX: 15, clientY: 15 })).toBe(true);
   });
 });

@@ -1,6 +1,6 @@
 import { fireEvent, render, screen } from "@testing-library/svelte";
 import { tick } from "svelte";
-import { afterEach, expect, it, vi } from "vitest";
+import { afterEach, expect, it, onTestFinished, vi } from "vitest";
 import { ActionNotice, NOTICE_MS } from "$lib/state/action-notice.svelte";
 import { HUD_BOTTOM } from "$lib/state/hud.svelte";
 import { testHud } from "$lib/testing/state";
@@ -16,24 +16,6 @@ function harness() {
 }
 
 const panel = () => screen.getByRole("log", { name: "What the action did" });
-
-/** The panel's box, which jsdom draws at nothing. */
-const overPanel = () => {
-  vi.spyOn(panel(), "getBoundingClientRect").mockReturnValue({
-    left: 0,
-    top: 0,
-    right: 100,
-    bottom: 20,
-    width: 100,
-    height: 20,
-    x: 0,
-    y: 0,
-    toJSON: () => ({}),
-  });
-};
-
-const moveTo = (x: number, y: number) =>
-  fireEvent(window, new MouseEvent("pointermove", { clientX: x, clientY: y }));
 
 afterEach(() => {
   vi.useRealTimers();
@@ -69,22 +51,19 @@ it("says what an action did, and goes five seconds after it shows", async () => 
   expect(panel().textContent).toBe("");
 });
 
-it("holds the countdown while the pointer is over the panel, and resumes it when it leaves", async () => {
+it("holds the countdown while the pointer is on the panel, and resumes it when it leaves", async () => {
   vi.useFakeTimers();
   const { hud, notice } = harness();
   render(ActionPanel, { notice, hud });
-  overPanel();
   notice.show("PR #162138 muted");
   await tick();
 
-  await moveTo(50, 10);
+  await fireEvent(panel(), new Event("pointerenter"));
   vi.advanceTimersByTime(NOTICE_MS * 2);
   await tick();
   expect(panel().textContent).toBe("PR #162138 muted");
 
-  // The pointer stays over the panel, as it moves there.
-  await moveTo(60, 10);
-  await moveTo(200, 200);
+  await fireEvent(panel(), new Event("pointerleave"));
   vi.advanceTimersByTime(NOTICE_MS - 1);
   await tick();
   expect(panel().textContent).toBe("PR #162138 muted");
@@ -93,25 +72,15 @@ it("holds the countdown while the pointer is over the panel, and resumes it when
   expect(panel().textContent).toBe("");
 });
 
-it("resumes the countdown when the pointer leaves the window", async () => {
-  vi.useFakeTimers();
+it("says how tall it draws, so a list that fills the window can leave it the room", () => {
+  vi.spyOn(HTMLElement.prototype, "offsetHeight", "get").mockReturnValue(28);
+  onTestFinished(() => {
+    vi.restoreAllMocks();
+  });
   const { hud, notice } = harness();
-  render(ActionPanel, { notice, hud });
-  overPanel();
-  notice.show("Issue #141148 archived");
-  await tick();
-
-  await moveTo(50, 10);
-  await fireEvent(window, new Event("pointerleave"));
-  vi.advanceTimersByTime(NOTICE_MS);
-  await tick();
-  expect(panel().textContent).toBe("");
-
-  // Leaving a window the pointer never held changes nothing.
-  await fireEvent(window, new Event("pointerleave"));
-  notice.show("Issue #141148 archived");
-  await tick();
-  expect(panel().textContent).toBe("Issue #141148 archived");
+  const onheight = vi.fn();
+  render(ActionPanel, { notice, hud, onheight });
+  expect(onheight).toHaveBeenLastCalledWith(28);
 });
 
 it("sits above the status bar at the height it draws, at the edge while it draws nothing, and above the HUD", async () => {

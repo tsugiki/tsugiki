@@ -283,5 +283,6 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
   did ([#1072](https://github.com/tsugiki/tsugiki/issues/1072)). It sits above the status bar at the height
   the bar draws, or at the window's bottom edge while the bar draws nothing, over the rail's foot while the
   rail is open. While the performance HUD shows, the HUD keeps the bottom of the corner and the panel sits
-  above it. It takes no focus, and a click on a row under it still reaches the row.
-  [workbench.md](workbench.md) says which actions show it and how it behaves.
+  above it. With no Detail pane open, the Issue list leaves the panel's height out of its room while the
+  panel shows, so the panel stays clear of its rows; the panel's own pointer events only hold its countdown.
+  It takes no focus. [workbench.md](workbench.md) says which actions show it and how it behaves.

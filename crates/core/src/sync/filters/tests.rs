@@ -720,6 +720,7 @@ fn a_narrowed_search_github_cuts_off_removes_nothing_and_counts_as_a_change() {
         store: &harness.db.store,
         repository: &repository,
         filters: &[],
+        keep_filters: Vec::new(),
         window_since: None,
     };
 

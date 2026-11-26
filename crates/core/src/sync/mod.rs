@@ -51,6 +51,17 @@ pub const SEARCH_PAGE: usize = 50;
 /// The number of PRs one fetch asks for: fewer than a search's, because CI rollups are slow (ADR 0015).
 pub const FETCH_BATCH: usize = 25;
 
+/// The distinct searches of `repository`'s Filters, each once, in the file's order.
+fn filter_queries(repository: &RepositorySettings) -> Vec<FilterQuery> {
+    let mut queries: Vec<FilterQuery> = Vec::new();
+    for filter in &repository.filters {
+        if !queries.contains(&filter.query) {
+            queries.push(filter.query.clone());
+        }
+    }
+    queries
+}
+
 /// The progress of one Repository's sync.
 struct UserWorkSync {
     repository: RepositoryName,
@@ -334,6 +345,9 @@ struct Link<'a> {
     store: &'a Store,
     repository: &'a RepositoryName,
     filters: &'a [FilterQuery],
+    /// The Filters whose results the store keeps: the Repository's as they are now, so a Filter saved while
+    /// the sync runs keeps the results of its first search (#471).
+    keep_filters: Vec<FilterQuery>,
     /// The start of a first sync's window. A refresh has no window.
     window_since: Option<OffsetDateTime>,
 }
@@ -343,15 +357,9 @@ type Moved = (Step, Option<Phase>);
 
 impl UserWorkSync {
     fn new(repository: &RepositorySettings) -> Self {
-        let mut filters: Vec<FilterQuery> = Vec::new();
-        for filter in &repository.filters {
-            if !filters.contains(&filter.query) {
-                filters.push(filter.query.clone());
-            }
-        }
         Self {
             repository: repository.name.clone(),
-            filters,
+            filters: filter_queries(repository),
             phase: Phase::Starting,
             fetched: BTreeSet::new(),
             pin_trees: BTreeMap::new(),
@@ -370,6 +378,17 @@ impl UserWorkSync {
             ..Reading::default()
         })
         .into();
+        sync.kind = Kind::Tree;
+        sync
+    }
+
+    /// The whole first search of the Filter that searches `query`, and what it finds (#471). It runs as a
+    /// tree does: the queue drops it once its steps end, so it moves neither the Repository's last sync nor
+    /// the other Filters' results.
+    fn filter_of(repository: &RepositorySettings, query: FilterQuery) -> Self {
+        let mut sync = Self::new(repository);
+        sync.filters = vec![query.clone()];
+        sync.phase = Resumable::SearchingFilters(FilterWalk::new(&[query], Vec::new())).into();
         sync.kind = Kind::Tree;
         sync
     }
@@ -536,6 +555,7 @@ impl UserWorkSync {
             store,
             repository: &self.repository,
             filters: &self.filters,
+            keep_filters: filter_queries(settings),
             window_since: self
                 .first_sync()
                 .map(|_| self.started_at - Duration::days(WINDOW_DAYS.into())),
@@ -611,15 +631,21 @@ impl UserWorkSync {
         Ok(step)
     }
 
+    /// Marks read the trees of the pins this sync read (#488), so a later sync doesn't read them again.
+    fn mark_pin_trees_read(&self, store: &Store) -> Result<(), Error> {
+        if self.pin_trees.is_empty() {
+            return Ok(());
+        }
+        store.read_pin_trees(&self.repository, self.pin_trees.clone())
+    }
+
     /// Saves that this sync finished, and says when. The store keeps whole seconds, so the window hears what
     /// a later start reads back. Only a refresh, which read ahead what the store owed, has it forget those
     /// reads. One a Filter switch owed during a first sync waits for the next refresh (#900).
     /// It marks read the trees of the pins it read (#488) first, so a failure to fails the finish, which the
     /// queue tries again.
     fn finish(&self, store: &Store) -> Result<LastSync, Error> {
-        if !self.pin_trees.is_empty() {
-            store.read_pin_trees(&self.repository, self.pin_trees.clone())?;
-        }
+        self.mark_pin_trees_read(store)?;
         let now = OffsetDateTime::now_utc();
         let finished_at = now.replace_nanosecond(0).unwrap_or(now);
         let state = SyncState {

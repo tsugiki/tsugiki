@@ -55,6 +55,21 @@ impl FilterQuery {
     pub fn as_str(&self) -> &str {
         &self.0
     }
+
+    /// `text` with Tsugiki's additions spelled out: `is:open` unless it names a state (#464), with the spaces
+    /// around it gone. Nothing for a blank text, which names no Filter (#471).
+    pub(crate) fn with_additions(text: &str) -> Option<Self> {
+        let text = text.trim();
+        if text.is_empty() {
+            return None;
+        }
+        let text = if text.split_whitespace().any(names_a_state) {
+            text.to_owned()
+        } else {
+            format!("{text} is:open")
+        };
+        Some(Self(text))
+    }
 }
 
 /// A saved GitHub search, as `settings.toml` holds it.

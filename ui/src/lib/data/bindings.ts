@@ -151,6 +151,12 @@ export const commands = {
 	 *  and the database, and never on GitHub.
 	 */
 	switchShowMuted: (repository: string, show: ShowMuted) => typedError<null, Error_Serialize>(__TAURI_INVOKE("switch_show_muted", { repository, show })),
+	/**
+	 *  Saves a Filter named `name` that searches `query` at the end of `repository`'s Filters, off the Workbench,
+	 *  and starts its first search at once (#471). The window then opens it in place of the Inbox. This waits on
+	 *  a small file and never on GitHub or git.
+	 */
+	saveFilter: (repository: string, name: FilterName, query: FilterQuery) => typedError<null, Error_Serialize>(__TAURI_INVOKE("save_filter", { repository, name, query })),
 	/**  The settings Tsugiki last read, and what was wrong with their files (ADR 0014). */
 	settings: () => __TAURI_INVOKE<LoadedSettings_Serialize>("settings"),
 	/**
@@ -1744,6 +1750,11 @@ export type Inbox_Deserialize = {
 	 *  (#465).
 	 */
 	truncated?: Truncated | null,
+	/**
+	 *  The Filter the box's search would save as: its text with Tsugiki's additions spelled out, or nothing
+	 *  while the box is empty (#471).
+	 */
+	filter_query?: FilterQuery | null,
 };
 
 /**  A page of the Inbox. It is empty only when the Inbox is, as before anyone signs in. */
@@ -1770,6 +1781,11 @@ export type Inbox_Serialize = {
 	 *  (#465).
 	 */
 	truncated: Truncated | null,
+	/**
+	 *  The Filter the box's search would save as: its text with Tsugiki's additions spelled out, or nothing
+	 *  while the box is empty (#471).
+	 */
+	filter_query: FilterQuery | null,
 };
 
 /**

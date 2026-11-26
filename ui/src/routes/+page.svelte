@@ -52,6 +52,7 @@
   import PerformanceHud from "$lib/ui/PerformanceHud.svelte";
   import HomePage from "$lib/ui/HomePage.svelte";
   import RepositoryHome from "$lib/ui/RepositoryHome.svelte";
+  import SaveFilterDialog from "$lib/ui/SaveFilterDialog.svelte";
   import Settings from "$lib/ui/Settings.svelte";
   import StatusBar from "$lib/ui/StatusBar.svelte";
   import ThemePicker from "$lib/ui/ThemePicker.svelte";
@@ -106,6 +107,8 @@
   let keysHere = $state<KeysHere>();
   /** The Repository whose mirror's question the dialog asks, while it's open. */
   let questionFor = $state<string>();
+  /** The Inbox search the Save as Filter dialog holds, while it's open (#471). */
+  let saveFilterDraft = $state<{ name: string; query: string }>();
   /** Whether a dialog, the palette or a picker is open. Each closes on Esc, so one on top of another would
    * lose what the user typed below, and none opens over another: a control behind one, which a press or Tab
    * can still reach, does nothing. A command run from the palette runs once it has closed. */
@@ -116,7 +119,8 @@
       themePickerOpen ||
       settingsOpen ||
       keysHere !== undefined ||
-      questionFor !== undefined,
+      questionFor !== undefined ||
+      saveFilterDraft !== undefined,
   );
   const openAdd = () => {
     if (!dialogOpen) addOpen = true;
@@ -568,6 +572,9 @@
         name={home.current.repository.name}
         onpick={openPicker}
         onsettings={openSettings}
+        onsavefilter={(draft) => {
+          saveFilterDraft = draft;
+        }}
         {keysActive}
         diffFiles={settings.diffFiles}
         diffPeek={settings.diffPeek}
@@ -633,6 +640,19 @@
     onswitch={(name) => {
       addOpen = false;
       openNamed(name);
+    }}
+  />
+{/if}
+{#if saveFilterDraft !== undefined}
+  <SaveFilterDialog
+    name={saveFilterDraft.name}
+    query={saveFilterDraft.query}
+    onsave={async (name, query) => {
+      // Only the Repository's screen, which is what saved this search, opens this dialog.
+      return repositoryHome!.saveFilter(name, query);
+    }}
+    onclose={() => {
+      saveFilterDraft = undefined;
     }}
   />
 {/if}

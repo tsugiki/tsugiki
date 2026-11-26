@@ -7,12 +7,14 @@ import { settingsAsk } from "$lib/state/settings-ask.svelte";
 import {
   diffFile,
   done,
+  inboxPage,
   listedIssue,
   loadedSettings,
   OCTOCAT_ONLINE,
   ok,
   openOn,
   readyFiles,
+  refused,
   statusOf,
   workbenchPage,
   workbenchRow,
@@ -29,6 +31,9 @@ const core = vi.hoisted(() => ({
   addRepository: vi.fn(),
   openRepository: vi.fn(),
   workbench: vi.fn(),
+  inbox: vi.fn(),
+  searchInbox: vi.fn(),
+  saveFilter: vi.fn(),
   mirrorProblem: vi.fn(),
   checkMirrorsAgain: vi.fn(),
   mirrorQuestion: vi.fn(),
@@ -318,6 +323,156 @@ it("reopens the Repository the core names, and the window title names it", async
   render(Page);
   expect(await screen.findByRole("button", { name: gcmon.name })).toBeTruthy();
   expect(document.title).toBe("some-maintainer/gcmon · Tsugiki 1.2.3");
+});
+
+it("saves the Inbox search as a Filter from its Save dialog, then opens it with the box cleared", async () => {
+  core.home.mockResolvedValue(gcmonHome);
+  core.inbox.mockResolvedValue(inboxPage([]));
+  const bugs = { name: "Bugs", query: "label:bug is:open", on_workbench: false, count: 0, problem: null };
+  core.workbench.mockResolvedValue(workbenchPage([], { filters: [bugs] }));
+  core.saveFilter.mockResolvedValue(done);
+  render(Page);
+  await fireEvent.click(await screen.findByRole("button", { name: "Inbox" }));
+  await screen.findByRole("heading", { name: "Inbox" });
+
+  core.inbox.mockResolvedValue(
+    inboxPage([listedIssue(7, { title: "It crashes" })], null, "off", false, null, "label:bug is:open"),
+  );
+  await fireEvent.input(screen.getByRole("searchbox", { name: "Search the Inbox" }), {
+    target: { value: "label:bug" },
+  });
+  // The row lands once the core's answer for this text is on show, which spells out the query.
+  await screen.findByRole("button", { name: "#7 It crashes" });
+  await fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+  const dialog = await screen.findByRole("dialog", { name: "Save as Filter" });
+  const name = within(dialog).getByRole("textbox", { name: "Name" }) as HTMLInputElement;
+  const query = within(dialog).getByRole("textbox", { name: "Query" }) as HTMLInputElement;
+  expect(name.value).toBe("label:bug");
+  expect(query.value).toBe("label:bug is:open");
+  await fireEvent.input(name, { target: { value: "Bugs" } });
+  await fireEvent.click(within(dialog).getByRole("button", { name: "Save" }));
+
+  await vi.waitFor(() => {
+    expect(core.saveFilter).toHaveBeenCalledExactlyOnceWith(
+      "some-maintainer/gcmon",
+      "Bugs",
+      "label:bug is:open",
+    );
+  });
+  await vi.waitFor(() => {
+    expect(screen.queryByRole("dialog", { name: "Save as Filter" })).toBeNull();
+  });
+  expect(await screen.findByRole("heading", { name: "Bugs" })).toBeTruthy();
+  expect(screen.queryByRole("searchbox", { name: "Search the Inbox" })).toBeNull();
+  expect(core.workbench).toHaveBeenLastCalledWith("some-maintainer/gcmon", {
+    kind: "filter",
+    query: "label:bug is:open",
+  });
+});
+
+it("keeps the Save dialog open and says why the core refused the Filter's name", async () => {
+  core.home.mockResolvedValue(gcmonHome);
+  core.inbox.mockResolvedValue(inboxPage([]));
+  const refusal = "some-maintainer/gcmon already has a Filter named Bugs. Choose another name.";
+  core.saveFilter.mockResolvedValue(refused(refusal));
+  render(Page);
+  await fireEvent.click(await screen.findByRole("button", { name: "Inbox" }));
+  await screen.findByRole("heading", { name: "Inbox" });
+  core.inbox.mockResolvedValue(
+    inboxPage([listedIssue(7, { title: "It crashes" })], null, "off", false, null, "label:bug is:open"),
+  );
+  await fireEvent.input(screen.getByRole("searchbox", { name: "Search the Inbox" }), {
+    target: { value: "label:bug" },
+  });
+  await screen.findByRole("button", { name: "#7 It crashes" });
+  await fireEvent.click(screen.getByRole("button", { name: "Save" }));
+  const dialog = await screen.findByRole("dialog", { name: "Save as Filter" });
+
+  await fireEvent.input(within(dialog).getByRole("textbox", { name: "Name" }), {
+    target: { value: "Bugs" },
+  });
+  await fireEvent.click(within(dialog).getByRole("button", { name: "Save" }));
+
+  expect((await within(dialog).findByRole("alert")).textContent).toBe(refusal);
+  expect(screen.getByRole("dialog", { name: "Save as Filter" })).toBeTruthy();
+  // The Inbox stays behind the dialog, with its search still in the box.
+  expect((screen.getByRole("searchbox", { name: "Search the Inbox" }) as HTMLInputElement).value).toBe(
+    "label:bug",
+  );
+  // An edit says the refusal spoke of what the fields held, so it goes.
+  await fireEvent.input(within(dialog).getByRole("textbox", { name: "Name" }), {
+    target: { value: "Crash bugs" },
+  });
+  expect(within(dialog).queryByRole("alert")).toBeNull();
+  await fireEvent.click(within(dialog).getByRole("button", { name: "Save" }));
+  await within(dialog).findByRole("alert");
+  await fireEvent.input(within(dialog).getByRole("textbox", { name: "Query" }), {
+    target: { value: "label:crash is:open" },
+  });
+  expect(within(dialog).queryByRole("alert")).toBeNull();
+});
+
+it("takes no edits to the Save dialog's fields while the save is in flight", async () => {
+  core.home.mockResolvedValue(gcmonHome);
+  core.inbox.mockResolvedValue(inboxPage([]));
+  core.saveFilter.mockReturnValue(new Promise(() => {}));
+  render(Page);
+  await fireEvent.click(await screen.findByRole("button", { name: "Inbox" }));
+  await screen.findByRole("heading", { name: "Inbox" });
+  core.inbox.mockResolvedValue(
+    inboxPage([listedIssue(7, { title: "It crashes" })], null, "off", false, null, "label:bug is:open"),
+  );
+  await fireEvent.input(screen.getByRole("searchbox", { name: "Search the Inbox" }), {
+    target: { value: "label:bug" },
+  });
+  await screen.findByRole("button", { name: "#7 It crashes" });
+  await fireEvent.click(screen.getByRole("button", { name: "Save" }));
+  const dialog = await screen.findByRole("dialog", { name: "Save as Filter" });
+
+  await fireEvent.click(within(dialog).getByRole("button", { name: "Save" }));
+
+  // The fields take no edits while the save is in flight, so an answer lands on the values it speaks of,
+  // and they stay focusable, which a disabled field would not.
+  const name = within(dialog).getByRole("textbox", { name: "Name" }) as HTMLInputElement;
+  const query = within(dialog).getByRole("textbox", { name: "Query" }) as HTMLInputElement;
+  expect(name.readOnly).toBe(true);
+  expect(query.readOnly).toBe(true);
+  name.focus();
+  expect(document.activeElement).toBe(name);
+
+  // A second submit waits for the one in flight, as the button does.
+  await fireEvent.submit(dialog.querySelector("form")!);
+  expect(core.saveFilter).toHaveBeenCalledTimes(1);
+});
+
+it("saves no Filter while a field is empty, even when the form is submitted", async () => {
+  core.home.mockResolvedValue(gcmonHome);
+  core.inbox.mockResolvedValue(inboxPage([]));
+  render(Page);
+  await fireEvent.click(await screen.findByRole("button", { name: "Inbox" }));
+  await screen.findByRole("heading", { name: "Inbox" });
+  core.inbox.mockResolvedValue(
+    inboxPage([listedIssue(7, { title: "It crashes" })], null, "off", false, null, "label:bug is:open"),
+  );
+  await fireEvent.input(screen.getByRole("searchbox", { name: "Search the Inbox" }), {
+    target: { value: "label:bug" },
+  });
+  await screen.findByRole("button", { name: "#7 It crashes" });
+  await fireEvent.click(screen.getByRole("button", { name: "Save" }));
+  const dialog = await screen.findByRole("dialog", { name: "Save as Filter" });
+  await fireEvent.input(within(dialog).getByRole("textbox", { name: "Query" }), {
+    target: { value: "  " },
+  });
+
+  await fireEvent.submit(dialog.querySelector("form")!);
+
+  expect(core.saveFilter).not.toHaveBeenCalled();
+
+  await fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+  await vi.waitFor(() => {
+    expect(screen.queryByRole("dialog", { name: "Save as Filter" })).toBeNull();
+  });
 });
 
 it("says a Read-only Repository is so in the status bar and atop its Issue view, until the core says otherwise", async () => {

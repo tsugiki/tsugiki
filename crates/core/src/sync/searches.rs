@@ -35,7 +35,7 @@ pub(super) fn search(
 ) -> Result<Moved, Error> {
     let Some(search) = WORK_SEARCHES.get(*next_search) else {
         link.store
-            .keep_only_filters(link.repository, link.filters.to_vec())?;
+            .keep_only_filters(link.repository, link.keep_filters.clone())?;
         let walk = FilterWalk::new(link.filters, std::mem::take(found));
         let next = Resumable::SearchingFilters(walk).into();
         return Ok((Step::Moved, Some(next)));

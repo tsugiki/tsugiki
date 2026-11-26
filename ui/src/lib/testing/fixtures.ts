@@ -49,15 +49,17 @@ export const refused = (message: string) => ({
 });
 
 /** A page of the Inbox holding `items`, whose next older page starts at `older`, with "Show muted" as
- * `show_muted` says, `needs_github` for a search the cache doesn't read, and `truncated` when a search past
- * GitHub's 1,000 results stopped there (#465). The items keep the caller's types, as in `workbenchPage`. */
+ * `show_muted` says, `needs_github` for a search the cache doesn't read, `truncated` when a search past
+ * GitHub's 1,000 results stopped there (#465), and the Filter the search would save as (#471). The items
+ * keep the caller's types, as in `workbenchPage`. */
 export const inboxPage = <Item>(
   items: Item[],
   older: InboxCursor | null = null,
   show_muted: ShowMuted = "off",
   needs_github = false,
   truncated: Truncated | null = null,
-) => ok({ items, older, show_muted, needs_github, truncated });
+  filter_query: string | null = null,
+) => ok({ items, older, show_muted, needs_github, truncated, filter_query });
 
 /** A result a search found that the cache lacks, as the Inbox draws it in GitHub's order (#465). */
 export const placeholderItem = (

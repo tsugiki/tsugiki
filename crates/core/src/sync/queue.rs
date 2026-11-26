@@ -8,6 +8,7 @@ use time::OffsetDateTime;
 use super::issues::fetch_issue_batch;
 use super::{Link, Step, UserWorkSync};
 use crate::error::{Error, ErrorKind};
+use crate::filters::FilterQuery;
 use crate::github::GitHub;
 use crate::github::in_flight::Asking;
 use crate::latest::LatestReader;
@@ -99,11 +100,19 @@ struct StateFill {
     numbers: Option<Vec<u32>>,
 }
 
+/// The read of the whole search of a Filter the user just saved (#471). It goes ahead of `queue` for its few
+/// requests, as an opened Issue's tree does.
+struct FilterSearch {
+    sync: UserWorkSync,
+}
+
 /// The work that takes a step.
 #[derive(Debug)]
 enum Turn {
     /// The first of the opened Issues' trees.
     Tree,
+    /// The whole search of a Filter the user just saved.
+    Filter,
     /// The first of the fetches of Issues with no state.
     Fill,
     /// The queued sync of this Repository.
@@ -134,6 +143,12 @@ fn unfinished(step: Step) -> Option<Stepped> {
 /// and the others take theirs in the order they were asked for, the latest first.
 pub struct Syncs {
     queue: VecDeque<Queued>,
+    /// The whole searches of the Filters the user just saved, which go ahead of `queue` for their few
+    /// requests, as `trees` do (#471).
+    searches: VecDeque<FilterSearch>,
+    /// The searches of a Repository that isn't open any more, waiting for it to open again (#471). The status
+    /// bar can't show them meanwhile, and the open Repository's sync mustn't wait behind them.
+    parked: VecDeque<FilterSearch>,
     /// The trees of Issues the user opened with no first sync's queue to put them in. Each goes ahead of
     /// `queue` for its few requests, and leaves no trace of a sync behind it.
     trees: VecDeque<OpenedTree>,
@@ -163,6 +178,8 @@ impl Syncs {
     pub fn new(settings: LatestReader<SettingsView>) -> Self {
         Self {
             queue: VecDeque::new(),
+            searches: VecDeque::new(),
+            parked: VecDeque::new(),
             trees: VecDeque::new(),
             settings,
             repositories_opened: Vec::new(),
@@ -181,6 +198,22 @@ impl Syncs {
         if !self.is_open(&repository) {
             self.opened.clear();
             self.trees.clear();
+            // A saved Filter's search belongs to the Repository it was saved in, so it waits, set aside,
+            // while another Repository is open. It comes back ahead of the queue when its own opens again
+            // (#471).
+            self.parked.extend(
+                (self.searches.drain(..))
+                    .filter(|search| !search.sync.repository.is_same(&repository)),
+            );
+            let mut parked = VecDeque::new();
+            while let Some(search) = self.parked.pop_front() {
+                if search.sync.repository.is_same(&repository) {
+                    self.searches.push_back(search);
+                } else {
+                    parked.push_back(search);
+                }
+            }
+            self.parked = parked;
         }
         if !self.was_opened(&repository) {
             self.repositories_opened.push(repository.clone());
@@ -230,12 +263,26 @@ impl Syncs {
         }
     }
 
+    /// Queues the whole first search of the Filter that searches `query`, which the user just saved (#471).
+    /// It goes ahead of the queue, whose sync was built before the Filter existed and so wouldn't search it.
+    /// Only the open Repository's Filters come from the window, so any other queues nothing.
+    pub fn search_filter(&mut self, repository: &RepositoryName, query: FilterQuery) {
+        if !self.is_open(repository) {
+            return;
+        }
+        let settings = self.settings_of(repository);
+        self.searches.push_back(FilterSearch {
+            sync: UserWorkSync::filter_of(&settings, query),
+        });
+    }
+
     /// The work going on, for the status bar. The other Repositories go by name, so their turns don't
     /// change it.
     pub fn activity(&self) -> Option<SyncActivity> {
-        let open = match self.trees.front() {
-            Some(tree) => Some((&tree.sync, SyncPart::Trees)),
-            None => self
+        let open = match (self.searches.front(), self.trees.front()) {
+            (Some(search), _) => Some((&search.sync, search.sync.part())),
+            (None, Some(tree)) => Some((&tree.sync, SyncPart::Trees)),
+            (None, None) => self
                 .queue
                 .iter()
                 .find(|queued| self.is_open(&queued.sync.repository))
@@ -281,13 +328,12 @@ impl Syncs {
         if queued {
             return;
         }
-        if let Some(open) = self.open_settings() {
-            self.trees.push_back(OpenedTree {
-                number,
-                sync: UserWorkSync::tree_of(&open, number),
-                failures: 0,
-            });
-        }
+        let open = self.settings_of(repository);
+        self.trees.push_back(OpenedTree {
+            number,
+            sync: UserWorkSync::tree_of(&open, number),
+            failures: 0,
+        });
     }
 
     /// The settings of `repository` in the settings owner's view now, or the defaults for one they don't
@@ -341,9 +387,16 @@ impl Syncs {
         self.position(&next.sync.repository)
     }
 
+    /// The place and the sync that take the next step, taken out of the queue.
+    fn take_next(&mut self) -> Option<(usize, Queued)> {
+        let at = self.next_sync()?;
+        let queued = self.queue.remove(at)?;
+        Some((at, queued))
+    }
+
     /// The time the next step can run, if there is one.
     pub fn ready_at(&self) -> Option<Instant> {
-        let free = if self.trees.is_empty() && self.fills.is_empty() {
+        let free = if self.searches.is_empty() && self.trees.is_empty() && self.fills.is_empty() {
             self.queue
                 .iter()
                 .map(|queued| queued.held_until.unwrap_or_else(Instant::now))
@@ -382,8 +435,11 @@ impl Syncs {
                     queued.held_until = Some(hold.until());
                 }
             }
-            // A tree's or a fill's own trouble ends it in the step, so they fail only for all of GitHub.
-            Turn::Sync(_) | Turn::Tree | Turn::Fill => self.not_before = Some(hold),
+            // A tree's, a search's or a fill's own trouble ends it in the step, so they fail only for all of
+            // GitHub.
+            Turn::Sync(_) | Turn::Tree | Turn::Filter | Turn::Fill => {
+                self.not_before = Some(hold);
+            }
         }
         given_up
     }
@@ -402,6 +458,8 @@ impl Syncs {
         match turn {
             // A fill costs a request a try, and waits for the next refresh like the rest.
             Turn::Fill => None,
+            // A search ended in its step, so it holds no step whose place failed to save.
+            Turn::Filter => None,
             // A tree keeps no place, so it holds no step whose place failed to save.
             Turn::Tree => {
                 let gave_up = self.trees.front_mut().is_some_and(|tree| {
@@ -448,7 +506,11 @@ impl Syncs {
         github: &GitHub,
         store: &Store,
     ) -> Result<Option<Progress>, StepFailure> {
-        // A tree goes first, and a fill only when no sync is ready.
+        // A Filter the user just saved searches first, then an opened Issue's tree, then a fill when no sync
+        // is ready.
+        if let Some(search) = self.searches.pop_front() {
+            return self.step_search(search, github, store);
+        }
         if let Some(tree) = self.trees.pop_front() {
             return self.step_tree(tree, github, store);
         }
@@ -458,10 +520,7 @@ impl Syncs {
         {
             return self.step_fill(fill, github, store);
         }
-        let Some(taken) = self
-            .next_sync()
-            .and_then(|at| Some((at, self.queue.remove(at)?)))
-        else {
+        let Some(taken) = self.take_next() else {
             return Ok(None);
         };
         self.step_sync(taken, github, store)
@@ -498,6 +557,52 @@ impl Syncs {
             return Ok(None);
         };
         self.trees.push_front(tree);
+        Ok(self.after_step(repository, stepped, github))
+    }
+
+    /// Runs a step of `search`, the whole search of a Filter the user just saved, which goes back to the
+    /// front until it finishes (#471). It is not a sync of the Repository, so it moves neither the time of
+    /// the last one nor any other Filter's results. A trouble of its own ends it, as one ends a tree, and
+    /// one that speaks for all of GitHub waits for the next refresh.
+    fn step_search(
+        &mut self,
+        mut search: FilterSearch,
+        github: &GitHub,
+        store: &Store,
+    ) -> Result<Option<Progress>, StepFailure> {
+        self.not_before = None;
+        let settings = self.settings_of(&search.sync.repository);
+        let step = match search.sync.step(github, store, &settings) {
+            Ok(step) => step,
+            Err(problem) if !problem.kind.speaks_for_all_of_github() => {
+                let query = search.sync.filters.first().map_or("", FilterQuery::as_str);
+                log::warn!(
+                    "Tsugiki couldn't search the saved Filter {query:?}: {}",
+                    problem.message
+                );
+                return Ok(None);
+            }
+            Err(problem) => {
+                self.searches.push_front(search);
+                return Err(StepFailure {
+                    problem,
+                    turn: Turn::Filter,
+                });
+            }
+        };
+        let repository = search.sync.repository.clone();
+        let Some(stepped) = unfinished(step) else {
+            // The queue drops a search once its steps end, so no `finish` marks read the pin trees it read.
+            // A store that won't take them leaves them for the next sync, as a tree's trouble ends the tree.
+            if let Err(problem) = search.sync.mark_pin_trees_read(store) {
+                log::warn!(
+                    "Tsugiki couldn't save the trees the saved Filter's search read: {}",
+                    problem.message
+                );
+            }
+            return Ok(None);
+        };
+        self.searches.push_front(search);
         Ok(self.after_step(repository, stepped, github))
     }
 
@@ -639,6 +744,7 @@ fn fill_step(fill: &mut StateFill, github: &GitHub, store: &Store) -> Result<Ste
         store,
         repository: &fill.repository,
         filters: &[],
+        keep_filters: Vec::new(),
         window_since: None,
     };
     let asked = Asking::Sync {

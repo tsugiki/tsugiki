@@ -276,7 +276,12 @@ afterEach(() => {
 const issueList = () => document.querySelector('[data-pane="list"]');
 
 it("names the Repository in its hidden heading and atop the Sidebar, and starts the list with the view", async () => {
-  render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onsettings: () => {} });
+  render(RepositoryHome, {
+    name: "python/cpython",
+    onpick: () => {},
+    onsettings: () => {},
+    onsavefilter: () => {},
+  });
   await screen.findByText(/^Nothing here yet/);
   const list = within(issueList() as HTMLElement);
   const sidebar = within(screen.getByRole("navigation", { name: "Sidebar" }));
@@ -289,7 +294,12 @@ it("names the Repository in its hidden heading and atop the Sidebar, and starts 
 
 it("names the Repository in its hidden heading with the Sidebar hidden", async () => {
   core.paneLayout.mockResolvedValue({ ...DEFAULT_LAYOUT, sidebar_hidden: true });
-  render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onsettings: () => {} });
+  render(RepositoryHome, {
+    name: "python/cpython",
+    onpick: () => {},
+    onsettings: () => {},
+    onsavefilter: () => {},
+  });
   await vi.waitFor(() => {
     expect(screen.queryByRole("navigation", { name: "Sidebar" })).toBeNull();
   });
@@ -299,7 +309,7 @@ it("names the Repository in its hidden heading with the Sidebar hidden", async (
 
 it("opens the Repository picker from the name atop the Sidebar", async () => {
   const onpick = vi.fn();
-  render(RepositoryHome, { name: "python/cpython", onpick, onsettings: () => {} });
+  render(RepositoryHome, { name: "python/cpython", onpick, onsettings: () => {}, onsavefilter: () => {} });
   await fireEvent.click(screen.getByRole("button", { name: "python/cpython" }));
   expect(onpick).toHaveBeenCalledOnce();
 });
@@ -309,7 +319,12 @@ it("lists a Standalone PR with the time it changed", async () => {
   core.workbench.mockResolvedValue(
     workbenchPage([{ kind: "standalone_pr", ...row, backports: [] }], { count: 1 }),
   );
-  render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onsettings: () => {} });
+  render(RepositoryHome, {
+    name: "python/cpython",
+    onpick: () => {},
+    onsettings: () => {},
+    onsavefilter: () => {},
+  });
 
   const item = await screen.findByRole("listitem");
 
@@ -325,7 +340,12 @@ it("lists a Standalone PR with the time it changed", async () => {
 it("names what an Issue's time measures, with its own update and each PR's in its tooltip", async () => {
   vi.setSystemTime("2026-11-04T13:00:00Z");
   core.workbench.mockResolvedValue(workbenchPage([issue], { count: 1 }));
-  render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onsettings: () => {} });
+  render(RepositoryHome, {
+    name: "python/cpython",
+    onpick: () => {},
+    onsettings: () => {},
+    onsavefilter: () => {},
+  });
 
   const age = await screen.findByText("3h ago");
 
@@ -339,7 +359,12 @@ it("names what an Issue's time measures, with its own update and each PR's in it
 
 it("gives a PR under an Issue its time in a tooltip, with no time on its line", async () => {
   core.workbench.mockResolvedValue(workbenchPage([issue], { count: 1 }));
-  render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onsettings: () => {} });
+  render(RepositoryHome, {
+    name: "python/cpython",
+    onpick: () => {},
+    onsettings: () => {},
+    onsavefilter: () => {},
+  });
 
   await fireEvent.click(await screen.findByRole("button", { name: "PRs of #112564" }));
   const line = screen.getByText("Review request · some-author · into main · Open · CI passed");
@@ -354,7 +379,12 @@ it("moves a time on by a day while the window stays open", async () => {
   vi.useFakeTimers({ toFake: ["Date", "setInterval", "clearInterval"] });
   vi.setSystemTime("2026-11-04T13:00:00Z");
   core.workbench.mockResolvedValue(workbenchPage([issue], { count: 1 }));
-  render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onsettings: () => {} });
+  render(RepositoryHome, {
+    name: "python/cpython",
+    onpick: () => {},
+    onsettings: () => {},
+    onsavefilter: () => {},
+  });
   await screen.findByText("3h ago");
 
   await vi.advanceTimersByTimeAsync(24 * 60 * 60_000);
@@ -371,6 +401,7 @@ it("moves a time on while the window stays open", async () => {
     name: "python/cpython",
     onpick: () => {},
     onsettings: () => {},
+    onsavefilter: () => {},
   });
   await screen.findByText("3h ago");
 
@@ -385,7 +416,12 @@ it("says an Issue has no PR yet, with no count of none", async () => {
   core.workbench.mockResolvedValue(
     workbenchPage([{ ...issue, people: [], pull_requests: [] }], { count: 1 }),
   );
-  render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onsettings: () => {} });
+  render(RepositoryHome, {
+    name: "python/cpython",
+    onpick: () => {},
+    onsettings: () => {},
+    onsavefilter: () => {},
+  });
 
   const item = await screen.findByRole("listitem");
 
@@ -400,7 +436,12 @@ it("lists an Issue folded, and its PRs under it once unfolded", async () => {
   vi.setSystemTime("2026-11-04T13:00:00Z");
   const attention = { since: "2026-11-04T10:00:00Z", why: [{ kind: "review_requested" }] };
   core.workbench.mockResolvedValue(workbenchPage([{ ...issue, attention }]));
-  render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onsettings: () => {} });
+  render(RepositoryHome, {
+    name: "python/cpython",
+    onpick: () => {},
+    onsettings: () => {},
+    onsavefilter: () => {},
+  });
   const fold = await screen.findByRole("button", { name: "PRs of #112564", expanded: false });
   const folded = [screen.getAllByRole("listitem").length, fold.textContent];
   // The folded row still says why the Issue Needs attention, though the PR that does is folded away.
@@ -432,7 +473,12 @@ it("lists an Issue folded, and its PRs under it once unfolded", async () => {
 });
 
 it("says so while there is nothing to list", async () => {
-  render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onsettings: () => {} });
+  render(RepositoryHome, {
+    name: "python/cpython",
+    onpick: () => {},
+    onsettings: () => {},
+    onsavefilter: () => {},
+  });
   expect(await screen.findByText(/Nothing here yet/)).toBeTruthy();
 });
 
@@ -441,7 +487,12 @@ it("shows a Filter's Issues when the user selects it, with the Sidebar's counts"
   core.workbench.mockImplementation(async (_: string, selected: { kind: string }) =>
     workbenchPage(selected.kind === "whole" ? [] : [issue], { count: 7, filters: [mine] }),
   );
-  render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onsettings: () => {} });
+  render(RepositoryHome, {
+    name: "python/cpython",
+    onpick: () => {},
+    onsettings: () => {},
+    onsavefilter: () => {},
+  });
 
   await fireEvent.click(await screen.findByRole("button", { name: "Mine 1" }));
 
@@ -458,7 +509,12 @@ it("marks what Needs attention the way unread mail is, and says why", async () =
   };
   const unread = { kind: "standalone_pr", ...row, backports: [], attention };
   core.workbench.mockResolvedValue(workbenchPage([unread]));
-  render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onsettings: () => {} });
+  render(RepositoryHome, {
+    name: "python/cpython",
+    onpick: () => {},
+    onsettings: () => {},
+    onsavefilter: () => {},
+  });
 
   const item = await screen.findByRole("listitem");
 
@@ -474,7 +530,12 @@ it("lists the items with nothing waiting in the one list, in the core's order, w
   const standalone = { kind: "standalone_pr", ...row, number: 7, backports: [], attention: null };
   const other = { ...issue, number: 8, title: "Another" };
   core.workbench.mockResolvedValue(workbenchPage([standalone, issue, other]));
-  render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onsettings: () => {} });
+  render(RepositoryHome, {
+    name: "python/cpython",
+    onpick: () => {},
+    onsettings: () => {},
+    onsavefilter: () => {},
+  });
 
   const title = await screen.findByRole("button", { name: "#7 gh-112564: Fix UAF for gc debug print" });
   expect(title.querySelector("strong")).toBeNull();
@@ -491,7 +552,12 @@ it("lists the items with nothing waiting in the one list, in the core's order, w
 
 it("says when nobody has asked for a review", async () => {
   core.workbench.mockResolvedValue(workbenchPage([]));
-  render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onsettings: () => {} });
+  render(RepositoryHome, {
+    name: "python/cpython",
+    onpick: () => {},
+    onsettings: () => {},
+    onsavefilter: () => {},
+  });
 
   await fireEvent.click(await screen.findByRole("button", { name: "Review requests 0" }));
 
@@ -501,7 +567,12 @@ it("says when nobody has asked for a review", async () => {
 
 it("asks for Stale reviews when the user picks it, and says when no Review of theirs is stale", async () => {
   core.workbench.mockResolvedValue(workbenchPage([], { stale_reviews: 2 }));
-  render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onsettings: () => {} });
+  render(RepositoryHome, {
+    name: "python/cpython",
+    onpick: () => {},
+    onsettings: () => {},
+    onsavefilter: () => {},
+  });
 
   await fireEvent.click(await screen.findByRole("button", { name: "Stale reviews 2" }));
 
@@ -520,7 +591,12 @@ it("switches a Filter on and off the Workbench from its view, and only there", a
     saved = on;
     return done;
   });
-  render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onsettings: () => {} });
+  render(RepositoryHome, {
+    name: "python/cpython",
+    onpick: () => {},
+    onsettings: () => {},
+    onsavefilter: () => {},
+  });
   await screen.findByRole("button", { name: "Mine 0" });
   expect(screen.queryByRole("checkbox", { name: "On the Workbench" })).toBeNull();
 
@@ -549,7 +625,12 @@ it("keeps a Filter's switch in focus while its change saves, and saves the next 
   const save = Promise.withResolvers<{ status: "ok"; data: null }>();
   core.putFilterOnWorkbench.mockReturnValueOnce(save.promise);
   core.putFilterOnWorkbench.mockResolvedValue(done);
-  render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onsettings: () => {} });
+  render(RepositoryHome, {
+    name: "python/cpython",
+    onpick: () => {},
+    onsettings: () => {},
+    onsavefilter: () => {},
+  });
 
   await fireEvent.click(await screen.findByRole("button", { name: "Mine 0" }));
   const onWorkbench = await screen.findByRole<HTMLInputElement>("checkbox", { name: "On the Workbench" });
@@ -584,7 +665,12 @@ it("turns a Filter's switch back and says why when the core can't save it", asyn
     status: "error",
     error: { kind: "internal", message: "settings.toml is read-only" },
   });
-  render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onsettings: () => {} });
+  render(RepositoryHome, {
+    name: "python/cpython",
+    onpick: () => {},
+    onsettings: () => {},
+    onsavefilter: () => {},
+  });
 
   await fireEvent.click(await screen.findByRole("button", { name: "Mine 0" }));
   const onWorkbench = await screen.findByRole<HTMLInputElement>("checkbox", { name: "On the Workbench" });
@@ -601,7 +687,12 @@ it("turns a Filter's switch back and says why when the core can't save it", asyn
 it("says how to check a Filter that holds nothing", async () => {
   const mine = { name: "Mine", query: "is:open author:@me", on_workbench: true, count: 0, problem: null };
   core.workbench.mockResolvedValue(workbenchPage([], { filters: [mine] }));
-  render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onsettings: () => {} });
+  render(RepositoryHome, {
+    name: "python/cpython",
+    onpick: () => {},
+    onsettings: () => {},
+    onsavefilter: () => {},
+  });
 
   await fireEvent.click(await screen.findByRole("button", { name: "Mine 0" }));
 
@@ -611,7 +702,12 @@ it("says how to check a Filter that holds nothing", async () => {
 
 it("says why it can't read the Workbench", async () => {
   core.workbench.mockResolvedValue({ status: "error", error: { kind: "internal", message: "no database" } });
-  render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onsettings: () => {} });
+  render(RepositoryHome, {
+    name: "python/cpython",
+    onpick: () => {},
+    onsettings: () => {},
+    onsavefilter: () => {},
+  });
   expect((await screen.findByRole("alert")).textContent).toBe(
     "Tsugiki can't read this Workbench: no database",
   );
@@ -623,6 +719,7 @@ it("opens the other Repository's Workbench and stops listening for the last", as
     name: "python/cpython",
     onpick: () => {},
     onsettings: () => {},
+    onsavefilter: () => {},
   });
   await screen.findByText(/Nothing here yet/);
 
@@ -640,6 +737,7 @@ it("stops listening when it goes", async () => {
     name: "python/cpython",
     onpick: () => {},
     onsettings: () => {},
+    onsavefilter: () => {},
   });
   await screen.findByText(/Nothing here yet/);
   unmount();
@@ -663,7 +761,12 @@ const backportRow = {
 
 it("lists an Origin PR's Backports beneath it in the Issue", async () => {
   answering({ ...issue, pull_requests: [{ kind: "pr", ...row, backports: [backportRow] }] });
-  render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onsettings: () => {} });
+  render(RepositoryHome, {
+    name: "python/cpython",
+    onpick: () => {},
+    onsettings: () => {},
+    onsavefilter: () => {},
+  });
   await unfoldAll();
 
   const origin = (await screen.findByRole("button", { name: /^#160662 / })).closest("li") as HTMLElement;
@@ -676,7 +779,12 @@ it("lists an Origin PR's Backports beneath it in the Issue", async () => {
 
 it("lists a Backport with no Origin PR directly under its Issue", async () => {
   answering({ ...issue, pull_requests: [{ kind: "backport", ...backportRow }] });
-  render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onsettings: () => {} });
+  render(RepositoryHome, {
+    name: "python/cpython",
+    onpick: () => {},
+    onsettings: () => {},
+    onsavefilter: () => {},
+  });
   await unfoldAll();
 
   expect(await screen.findByText("Bot backport · some-author · into 3.14 · Open · CI passed")).toBeTruthy();
@@ -694,7 +802,12 @@ const staleHover = "Changed since your Review: 2 files\nLib/ast.py\nPython/ast.c
 it("shows a Stale review on a PR's row in the Issue's tree, with the files changed in its hover", async () => {
   const stale = { ...row, reasons: ["reviewed"], your_review: staleReview };
   answering({ ...issue, pull_requests: [{ kind: "pr", ...stale, backports: [] }] });
-  render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onsettings: () => {} });
+  render(RepositoryHome, {
+    name: "python/cpython",
+    onpick: () => {},
+    onsettings: () => {},
+    onsavefilter: () => {},
+  });
   await unfoldAll();
 
   const badge = await screen.findByText("Stale review");
@@ -711,7 +824,12 @@ it("shows the Origin PR's review state on each Bot backport's row beneath it", a
   ];
   const origin = { kind: "pr", ...row, reasons: ["reviewed"], your_review: staleReview, backports };
   answering({ ...issue, pull_requests: [origin] });
-  render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onsettings: () => {} });
+  render(RepositoryHome, {
+    name: "python/cpython",
+    onpick: () => {},
+    onsettings: () => {},
+    onsavefilter: () => {},
+  });
   await unfoldAll();
 
   const facts = (number: number) => {
@@ -730,14 +848,24 @@ it.each([
   ["Backport with no Issue", { kind: "standalone_backport", ...row, backport: "manual" }],
 ])("shows a Stale review on a %s's row while nothing else about it waits", async (_, item) => {
   answering({ ...item, your_review: staleReview, attention: null });
-  render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onsettings: () => {} });
+  render(RepositoryHome, {
+    name: "python/cpython",
+    onpick: () => {},
+    onsettings: () => {},
+    onsavefilter: () => {},
+  });
 
   expect((await screen.findByText("Stale review")).title).toBe(staleHover);
 });
 
 it("lists a Standalone PR's Backports beneath it", async () => {
   answering({ kind: "standalone_pr", ...row, backports: [backportRow] });
-  render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onsettings: () => {} });
+  render(RepositoryHome, {
+    name: "python/cpython",
+    onpick: () => {},
+    onsettings: () => {},
+    onsavefilter: () => {},
+  });
 
   const origin = (await screen.findByRole("button", { name: /^#160662 / })).closest("li") as HTMLElement;
 
@@ -746,7 +874,12 @@ it("lists a Standalone PR's Backports beneath it", async () => {
 
 it("lists a Backport with no Issue and no Origin PR by itself", async () => {
   answering({ kind: "standalone_backport", ...backportRow });
-  render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onsettings: () => {} });
+  render(RepositoryHome, {
+    name: "python/cpython",
+    onpick: () => {},
+    onsettings: () => {},
+    onsavefilter: () => {},
+  });
 
   expect(await screen.findByRole("button", { name: /^#160700 / })).toBeTruthy();
   expect(screen.getAllByRole("listitem")).toHaveLength(1);
@@ -774,6 +907,7 @@ const listing = async (settings: { diffFiles?: FilesMode; diffPeek?: PeekLayout 
     name: "python/cpython",
     onpick: () => {},
     onsettings: () => {},
+    onsavefilter: () => {},
     ...settings,
   });
   const issueRow = await screen.findByRole("button", { name: "#112564 GIL drop during collection" });
@@ -898,7 +1032,12 @@ it("swaps the Detail pane for the next Issue", async () => {
       { ...issue, number: 2, title: "Next", attention: null },
     ]),
   );
-  render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onsettings: () => {} });
+  render(RepositoryHome, {
+    name: "python/cpython",
+    onpick: () => {},
+    onsettings: () => {},
+    onsavefilter: () => {},
+  });
 
   await fireEvent.click(await screen.findByRole("button", { name: "#112564 GIL drop during collection" }));
   await fireEvent.click(screen.getByRole("button", { name: "#2 Next" }));
@@ -1008,7 +1147,12 @@ it("opens a PR that fixes two Issues again from its line under the other one", a
       holding: { key: { kind: "issue", number: 112565 }, mark: issue.seen.mark },
     }),
   );
-  render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onsettings: () => {} });
+  render(RepositoryHome, {
+    name: "python/cpython",
+    onpick: () => {},
+    onsettings: () => {},
+    onsavefilter: () => {},
+  });
   await unfoldAll();
   const [first, second] = await screen.findAllByRole("button", { name: /^#160662 / });
 
@@ -1159,7 +1303,12 @@ it("opens a Backport in the list in the PR view, with its Issue to go back to", 
       holding: { key: { kind: "issue", number: issue.number }, mark: issue.seen.mark },
     }),
   );
-  render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onsettings: () => {} });
+  render(RepositoryHome, {
+    name: "python/cpython",
+    onpick: () => {},
+    onsettings: () => {},
+    onsavefilter: () => {},
+  });
   await unfoldAll();
 
   await fireEvent.click(await screen.findByRole("button", { name: /^#160700 / }));
@@ -1170,7 +1319,12 @@ it("opens a Backport in the list in the PR view, with its Issue to go back to", 
 
 it("opens a Standalone PR's Backport in the PR view, with no Issue to go back to", async () => {
   answering({ kind: "standalone_pr", ...row, backports: [backportRow] });
-  render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onsettings: () => {} });
+  render(RepositoryHome, {
+    name: "python/cpython",
+    onpick: () => {},
+    onsettings: () => {},
+    onsavefilter: () => {},
+  });
 
   await fireEvent.click(await screen.findByRole("button", { name: /^#160700 / }));
 
@@ -1209,7 +1363,12 @@ it.each([
   ["a Backport with no Issue", { kind: "standalone_backport", ...backportRow }, /^#160700 /],
 ])("leaves %s on show on Esc, with no Issue under it", async (_, item, name) => {
   answering(item);
-  render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onsettings: () => {} });
+  render(RepositoryHome, {
+    name: "python/cpython",
+    onpick: () => {},
+    onsettings: () => {},
+    onsavefilter: () => {},
+  });
   const prRow = await screen.findByRole("button", { name });
   await fireEvent.click(prRow);
   await screen.findByRole("tab", { name: "Conversation" });
@@ -1416,6 +1575,7 @@ it("opens what quick open found on its line, unfolded, which takes the focus, or
     name: "python/cpython",
     onpick: () => {},
     onsettings: () => {},
+    onsavefilter: () => {},
   });
   await screen.findByRole("button", { name: "#112564 GIL drop during collection" });
 
@@ -2237,6 +2397,7 @@ it("leaves the mouse's own buttons to a dialog on top, and still keeps the page 
     name: "python/cpython",
     onpick: () => {},
     onsettings: () => {},
+    onsavefilter: () => {},
     keysActive: false,
   });
   await fireEvent.click(await screen.findByRole("button", { name: "#112564 GIL drop during collection" }));
@@ -2363,6 +2524,7 @@ const threeAlone = async ({ inbox = false } = {}) => {
     name: "python/cpython",
     onpick: () => {},
     onsettings: () => {},
+    onsavefilter: () => {},
   });
   if (inbox) {
     await fireEvent.click(await screen.findByRole("button", { name: "Inbox" }));
@@ -2652,7 +2814,12 @@ it("leaves the page's focus as it is when the only item goes with nothing focuse
   const changed = catchEveryListener();
   const acted = catchActed();
   core.workbench.mockResolvedValue(workbenchPage([{ ...standalone, attention: null }]));
-  render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onsettings: () => {} });
+  render(RepositoryHome, {
+    name: "python/cpython",
+    onpick: () => {},
+    onsettings: () => {},
+    onsavefilter: () => {},
+  });
   const row = await screen.findByRole("button", { name: "#5 Alone" });
   await fireEvent.click(row);
   await screen.findByRole("heading", { name: /PR 5/ });
@@ -2679,7 +2846,12 @@ it("moves the focus to the list once the only item goes while the pane holds the
   const changed = catchEveryListener();
   const acted = catchActed();
   core.workbench.mockResolvedValue(workbenchPage([{ ...standalone, attention: null }]));
-  render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onsettings: () => {} });
+  render(RepositoryHome, {
+    name: "python/cpython",
+    onpick: () => {},
+    onsettings: () => {},
+    onsavefilter: () => {},
+  });
   const row = await screen.findByRole("button", { name: "#5 Alone" });
   await fireEvent.click(row);
   await screen.findByRole("heading", { name: /PR 5/ });
@@ -2726,7 +2898,12 @@ it("shows nothing open, with no row under the cursor, once the user takes the on
   const send = catchEveryListener();
   const acted = catchActed();
   core.workbench.mockResolvedValue(workbenchPage([{ ...standalone, attention: null }]));
-  render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onsettings: () => {} });
+  render(RepositoryHome, {
+    name: "python/cpython",
+    onpick: () => {},
+    onsettings: () => {},
+    onsavefilter: () => {},
+  });
   const row = await screen.findByRole("button", { name: "#5 Alone" });
   await fireEvent.click(row);
   await screen.findByRole("heading", { name: /PR 5/ });
@@ -2829,7 +3006,12 @@ it("leaves the Issue on show as it is on Q on a PR's row in its tree, though the
       { ...standalone, attention: null },
     ]),
   );
-  render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onsettings: () => {} });
+  render(RepositoryHome, {
+    name: "python/cpython",
+    onpick: () => {},
+    onsettings: () => {},
+    onsavefilter: () => {},
+  });
   const issueRow = await screen.findByRole("button", { name: "#112564 GIL drop during collection" });
   await unfoldAll();
   await fireEvent.click(issueRow);
@@ -2870,7 +3052,12 @@ it("leaves the focus where it was when a sync empties the list under a hidden li
       },
     ]),
   );
-  render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onsettings: () => {} });
+  render(RepositoryHome, {
+    name: "python/cpython",
+    onpick: () => {},
+    onsettings: () => {},
+    onsavefilter: () => {},
+  });
   await fireEvent.click(await screen.findByRole("button", { name: "#5 Alone" }));
   await fireEvent.keyDown(window, { key: "b", code: "KeyB", ctrlKey: true, altKey: true });
   await detailFocused();
@@ -3317,7 +3504,12 @@ it("archives the Issue on show from its button, opens the next item, and Alt+←
 
 it("says a Review request's PR on the list is Archived", async () => {
   core.workbench.mockResolvedValue(workbenchPage([{ ...standalone, attention: null, hidden: "archived" }]));
-  render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onsettings: () => {} });
+  render(RepositoryHome, {
+    name: "python/cpython",
+    onpick: () => {},
+    onsettings: () => {},
+    onsavefilter: () => {},
+  });
 
   const item = await screen.findByRole("listitem");
 
@@ -3327,7 +3519,12 @@ it("says a Review request's PR on the list is Archived", async () => {
 it("keeps an Archived item Archived on Mark Seen, from its row and from the Issue view's button", async () => {
   const archived = { ...standalone, attention: null, hidden: "archived" };
   core.workbench.mockResolvedValue(workbenchPage([archived]));
-  render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onsettings: () => {} });
+  render(RepositoryHome, {
+    name: "python/cpython",
+    onpick: () => {},
+    onsettings: () => {},
+    onsavefilter: () => {},
+  });
   const row = await screen.findByRole("button", { name: "#5 Alone" });
   row.focus();
   await fireEvent.keyDown(row, { key: "ArrowDown" });
@@ -3375,7 +3572,12 @@ it("pins and unpins an Issue from the ★ on its row, which a Standalone PR's ro
       { ...standalone, attention: null },
     ]),
   );
-  render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onsettings: () => {} });
+  render(RepositoryHome, {
+    name: "python/cpython",
+    onpick: () => {},
+    onsettings: () => {},
+    onsavefilter: () => {},
+  });
 
   await fireEvent.click(await screen.findByRole("button", { name: "Pin #112564" }));
   const unpin = screen.getByRole("button", { name: "Unpin #7" });
@@ -3555,7 +3757,12 @@ it("mutes the Issue on show from its button, the list follows, and back on the I
 it("says a Muted row is Muted, where Q, Shift+Q and E do nothing and M unmutes it", async () => {
   const muted = { ...standalone, attention: null, hidden: "muted" };
   core.workbench.mockResolvedValue(workbenchPage([muted]));
-  render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onsettings: () => {} });
+  render(RepositoryHome, {
+    name: "python/cpython",
+    onpick: () => {},
+    onsettings: () => {},
+    onsavefilter: () => {},
+  });
   const row = await screen.findByRole("button", { name: "#5 Alone" });
   row.focus();
   await fireEvent.keyDown(row, { key: "ArrowDown" });
@@ -3626,6 +3833,7 @@ it("offers Unmute Author on a Muted author's row, where Q, Shift+Q, E and M do n
     name: "python/cpython",
     onpick: () => {},
     onsettings: () => {},
+    onsavefilter: () => {},
   });
   const row = await screen.findByRole("button", { name: "#5 Alone" });
   row.focus();
@@ -3649,7 +3857,12 @@ it("does nothing on M in the Detail pane before a Muted author's PR view arrives
   core.pullRequest.mockReturnValue(new Promise(() => {}));
   const theirs = { ...standalone, attention: null, hidden: "muted_author" };
   core.workbench.mockResolvedValue(workbenchPage([theirs]));
-  render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onsettings: () => {} });
+  render(RepositoryHome, {
+    name: "python/cpython",
+    onpick: () => {},
+    onsettings: () => {},
+    onsavefilter: () => {},
+  });
   await fireEvent.click(await screen.findByRole("button", { name: "#5 Alone" }));
   const view = await screen.findByRole("region", { name: "PR view" });
 
@@ -3666,6 +3879,7 @@ it("leaves Mute Author out of the palette on the user's own row", async () => {
     name: "python/cpython",
     onpick: () => {},
     onsettings: () => {},
+    onsavefilter: () => {},
   });
   const row = await screen.findByRole("button", { name: "#5 Alone" });
   row.focus();
@@ -3715,7 +3929,12 @@ it("mutes the author of the Issue on show from its button, the list follows, and
 it("folds the Muted items at the list's end behind a line that shows and hides them", async () => {
   const muted = { ...standalone, attention: null, hidden: "muted" };
   core.workbench.mockResolvedValue(workbenchPage([], { muted: [muted] }));
-  render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onsettings: () => {} });
+  render(RepositoryHome, {
+    name: "python/cpython",
+    onpick: () => {},
+    onsettings: () => {},
+    onsavefilter: () => {},
+  });
 
   const fold = await screen.findByRole("button", { name: "Show 1 muted" });
   const folded = screen.queryByRole("button", { name: "#5 Alone" });
@@ -3770,7 +3989,12 @@ it("archives the Standalone PR that holds the Backport on show from its button",
       holding: { key: standalone.key, mark: standalone.seen.mark },
     },
   });
-  render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onsettings: () => {} });
+  render(RepositoryHome, {
+    name: "python/cpython",
+    onpick: () => {},
+    onsettings: () => {},
+    onsavefilter: () => {},
+  });
 
   await fireEvent.click(await screen.findByRole("button", { name: /^#160700 / }));
   await screen.findByRole("region", { name: "PR view" });
@@ -3822,7 +4046,12 @@ it("unarchives an Archived Standalone PR from its button", async () => {
       holding: { key: standalone.key, mark: standalone.seen.mark },
     }),
   );
-  render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onsettings: () => {} });
+  render(RepositoryHome, {
+    name: "python/cpython",
+    onpick: () => {},
+    onsettings: () => {},
+    onsavefilter: () => {},
+  });
 
   await fireEvent.click(await screen.findByRole("button", { name: "#5 Alone" }));
   await screen.findByRole("region", { name: "PR view" });
@@ -3902,6 +4131,7 @@ const archivedView = async () => {
     name: "python/cpython",
     onpick: () => {},
     onsettings: () => {},
+    onsavefilter: () => {},
   });
   await fireEvent.click(await screen.findByRole("button", { name: "Archived" }));
   await screen.findByRole("heading", { name: "Archived" });
@@ -3984,6 +4214,7 @@ it("offers the palette Archived, which shows the list with that view, and says w
     name: "python/cpython",
     onpick: () => {},
     onsettings: () => {},
+    onsavefilter: () => {},
   });
   await screen.findByRole("navigation", { name: "Sidebar" });
 
@@ -4004,6 +4235,7 @@ it("offers the palette Pinned Issues, which shows the list with that view, and n
     name: "python/cpython",
     onpick: () => {},
     onsettings: () => {},
+    onsavefilter: () => {},
   });
   await screen.findByRole("navigation", { name: "Sidebar" });
 
@@ -4040,7 +4272,12 @@ it("opens the next item once the Issue on show, unpinned from its view, leaves t
   const shown = (await core.issue()) as { data: object };
   core.issue.mockResolvedValue({ ...shown, data: { ...shown.data, pinned: true } });
   core.issue.mockClear();
-  render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onsettings: () => {} });
+  render(RepositoryHome, {
+    name: "python/cpython",
+    onpick: () => {},
+    onsettings: () => {},
+    onsavefilter: () => {},
+  });
   await fireEvent.click(await screen.findByRole("button", { name: /^Pinned issues/ }));
   await fireEvent.click(await screen.findByRole("button", { name: "#112564 GIL drop during collection" }));
 
@@ -4225,6 +4462,7 @@ it("offers no command to fold the items with nothing waiting", async () => {
     name: "python/cpython",
     onpick: () => {},
     onsettings: () => {},
+    onsavefilter: () => {},
   });
   await screen.findByRole("button", { name: "#112564 GIL drop during collection" });
 
@@ -4242,6 +4480,7 @@ it("shows another Repository as a launch does: its Workbench, an empty Detail pa
     name: "python/cpython",
     onpick: () => {},
     onsettings: () => {},
+    onsavefilter: () => {},
   });
   await fireEvent.click(await screen.findByRole("button", { name: "Mine 1" }));
   await unfoldAll();
@@ -4348,6 +4587,7 @@ it("starts the way back fresh in another Repository", async () => {
     name: "python/cpython",
     onpick: () => {},
     onsettings: () => {},
+    onsavefilter: () => {},
   });
   await fireEvent.click(await screen.findByRole("button", { name: "#112564 GIL drop during collection" }));
   await rerender({ name: "python/other" });
@@ -4410,6 +4650,7 @@ it("leaves the browser's problem behind with the Repository it came from", async
     name: "python/cpython",
     onpick: () => {},
     onsettings: () => {},
+    onsavefilter: () => {},
   });
   await screen.findByRole("button", { name: "#112564 GIL drop during collection" });
   await press("ArrowDown");
@@ -4440,7 +4681,12 @@ it("moves through the list and the PRs in its trees with the arrows, and focus f
 });
 
 it("does nothing on the arrows with an empty list", async () => {
-  render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onsettings: () => {} });
+  render(RepositoryHome, {
+    name: "python/cpython",
+    onpick: () => {},
+    onsettings: () => {},
+    onsavefilter: () => {},
+  });
   await screen.findByText(/Nothing here yet/);
 
   await press("ArrowDown");
@@ -4514,6 +4760,7 @@ it("leaves its keys alone while a dialog is on top", async () => {
     name: "python/cpython",
     onpick: () => {},
     onsettings: () => {},
+    onsavefilter: () => {},
     keysActive: false,
   });
   await screen.findByRole("button", { name: "#112564 GIL drop during collection" });
@@ -4574,6 +4821,7 @@ it("closes the Detail pane when the Repository changes", async () => {
     name: "python/cpython",
     onpick: () => {},
     onsettings: () => {},
+    onsavefilter: () => {},
   });
   await fireEvent.click(await screen.findByRole("button", { name: "#112564 GIL drop during collection" }));
   expect(await screen.findByRole("region", { name: "Issue view" })).toBeTruthy();
@@ -4609,7 +4857,12 @@ it("marks the panes as out of focus while another app is in front", async () => 
 
 it("drags the Sidebar's edge between its minimum and maximum, saves where it stops, and resets on a double-click", async () => {
   laidOut(200, 600, 0);
-  render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onsettings: () => {} });
+  render(RepositoryHome, {
+    name: "python/cpython",
+    onpick: () => {},
+    onsettings: () => {},
+    onsavefilter: () => {},
+  });
   const edge = await screen.findByRole("separator", { name: "Sidebar width" });
   // A click that doesn't move the edge has nothing to save.
   await fireEvent.pointerDown(edge, { button: 0, clientX: 300, pointerId: 1 });
@@ -4641,7 +4894,12 @@ it("drags the Sidebar's edge between its minimum and maximum, saves where it sto
 
 it("stops the Sidebar's edge where the list would go under its minimum", async () => {
   laidOut(200, 300, 0);
-  render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onsettings: () => {} });
+  render(RepositoryHome, {
+    name: "python/cpython",
+    onpick: () => {},
+    onsettings: () => {},
+    onsavefilter: () => {},
+  });
   const edge = await screen.findByRole("separator", { name: "Sidebar width" });
 
   await fireEvent.pointerDown(edge, { button: 0, clientX: 300, pointerId: 1 });
@@ -4705,7 +4963,12 @@ it("lets the Sidebar grow into the room the Detail pane has to spare", async () 
 
 it("moves an edge with the bare arrow keys, and saves a held key once, as it comes up", async () => {
   laidOut(200, 600, 0);
-  render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onsettings: () => {} });
+  render(RepositoryHome, {
+    name: "python/cpython",
+    onpick: () => {},
+    onsettings: () => {},
+    onsavefilter: () => {},
+  });
   const edge = await screen.findByRole("separator", { name: "Sidebar width" });
 
   await fireEvent.keyDown(edge, { key: "ArrowRight" });
@@ -4732,7 +4995,12 @@ it("opens with the widths saved on this machine, and says when it can't save the
   core.paneLayout.mockResolvedValue({ ...DEFAULT_LAYOUT, sidebar: 260, list: 500 });
   core.savePaneLayout.mockResolvedValue({ status: "error", error: { kind: "internal", message: "locked" } });
   laidOut(260, 500, 0);
-  render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onsettings: () => {} });
+  render(RepositoryHome, {
+    name: "python/cpython",
+    onpick: () => {},
+    onsettings: () => {},
+    onsavefilter: () => {},
+  });
   const edge = await screen.findByRole("separator", { name: "Sidebar width" });
   await vi.waitFor(() => {
     expect(edge.getAttribute("aria-valuenow")).toBe("260");
@@ -4747,7 +5015,12 @@ it("opens with the widths saved on this machine, and says when it can't save the
 
 it("hides the Sidebar and its edge with Ctrl+B, and brings them back at their width", async () => {
   core.paneLayout.mockResolvedValue({ ...DEFAULT_LAYOUT, sidebar: 260 });
-  render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onsettings: () => {} });
+  render(RepositoryHome, {
+    name: "python/cpython",
+    onpick: () => {},
+    onsettings: () => {},
+    onsavefilter: () => {},
+  });
   const edge = await screen.findByRole("separator", { name: "Sidebar width" });
   await vi.waitFor(() => {
     expect(edge.getAttribute("aria-valuenow")).toBe("260");
@@ -4772,7 +5045,12 @@ it("hides the Sidebar and its edge with Ctrl+B, and brings them back at their wi
 
 it("leaves a text box the key [keys] gives Hide or Show the Sidebar when it types there", async () => {
   remapKeys({ toggle_sidebar: "s" });
-  render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onsettings: () => {} });
+  render(RepositoryHome, {
+    name: "python/cpython",
+    onpick: () => {},
+    onsettings: () => {},
+    onsavefilter: () => {},
+  });
   await screen.findByRole("navigation", { name: "Sidebar" });
   const box = document.createElement("input");
   document.body.append(box);
@@ -4789,7 +5067,12 @@ it("leaves a text box the key [keys] gives Hide or Show the Sidebar when it type
 
 it("opens with the Sidebar hidden when it was hidden on this machine", async () => {
   core.paneLayout.mockResolvedValue({ ...DEFAULT_LAYOUT, sidebar_hidden: true });
-  render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onsettings: () => {} });
+  render(RepositoryHome, {
+    name: "python/cpython",
+    onpick: () => {},
+    onsettings: () => {},
+    onsavefilter: () => {},
+  });
 
   await vi.waitFor(() => {
     expect(screen.queryByRole("navigation")).toBeNull();
@@ -4801,6 +5084,7 @@ it("leaves the Sidebar alone on Ctrl+B while a dialog is on top", async () => {
     name: "python/cpython",
     onpick: () => {},
     onsettings: () => {},
+    onsavefilter: () => {},
     keysActive: false,
   });
   await screen.findByRole("navigation", { name: "Sidebar" });
@@ -4816,6 +5100,7 @@ it("offers the palette a command that hides or shows the Sidebar, named for what
     name: "python/cpython",
     onpick: () => {},
     onsettings: () => {},
+    onsavefilter: () => {},
   });
   await screen.findByRole("navigation", { name: "Sidebar" });
   const hide = paletteRow(component, "toggle_sidebar");
@@ -4883,7 +5168,12 @@ it("shrinks the Sidebar to icons with «, and a click on an icon brings it back 
 
 it("brings back the full Sidebar and a hidden list with one save for a click on an icon", async () => {
   core.paneLayout.mockResolvedValue({ ...DEFAULT_LAYOUT, sidebar_icons: true, list_hidden: true });
-  render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onsettings: () => {} });
+  render(RepositoryHome, {
+    name: "python/cpython",
+    onpick: () => {},
+    onsettings: () => {},
+    onsavefilter: () => {},
+  });
   await vi.waitFor(() => {
     expect(sidebarShape()).toBe("icons");
   });
@@ -4911,7 +5201,12 @@ it("brings back the full Sidebar on the view on show with a click on the Reposit
 
 it("brings the icons back with Ctrl+B twice when they were showing", async () => {
   core.paneLayout.mockResolvedValue({ ...DEFAULT_LAYOUT, sidebar_icons: true });
-  render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onsettings: () => {} });
+  render(RepositoryHome, {
+    name: "python/cpython",
+    onpick: () => {},
+    onsettings: () => {},
+    onsavefilter: () => {},
+  });
   await vi.waitFor(() => {
     expect(sidebarShape()).toBe("icons");
   });
@@ -4928,6 +5223,7 @@ it("offers the palette each shape of the Sidebar but the one on show, and both w
     name: "python/cpython",
     onpick: () => {},
     onsettings: () => {},
+    onsavefilter: () => {},
   });
   await screen.findByRole("navigation", { name: "Sidebar" });
   const shapes = () =>
@@ -4956,7 +5252,12 @@ it("offers the palette each shape of the Sidebar but the one on show, and both w
 
 it("folds the Sidebar to icons on a drag past its least width, and keeps the width it had for the full one", async () => {
   laidOut(200, 600, 0);
-  render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onsettings: () => {} });
+  render(RepositoryHome, {
+    name: "python/cpython",
+    onpick: () => {},
+    onsettings: () => {},
+    onsavefilter: () => {},
+  });
   const edge = await screen.findByRole("separator", { name: "Sidebar width" });
 
   await fireEvent.pointerDown(edge, { button: 0, clientX: 300, pointerId: 1 });
@@ -4986,7 +5287,12 @@ it("folds the Sidebar with ← on its edge at its least width, and unfolds it wi
   // A fractional scale may measure the Sidebar a hair over its least width.
   laidOut(140.0001, 600, 0);
   core.paneLayout.mockResolvedValue({ ...DEFAULT_LAYOUT, sidebar: 140 });
-  render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onsettings: () => {} });
+  render(RepositoryHome, {
+    name: "python/cpython",
+    onpick: () => {},
+    onsettings: () => {},
+    onsavefilter: () => {},
+  });
   const edge = await screen.findByRole("separator", { name: "Sidebar width" });
   await vi.waitFor(() => {
     expect(edge.getAttribute("aria-valuenow")).toBe("140");
@@ -5020,7 +5326,12 @@ it("folds the Sidebar with ← on its edge at its least width, and unfolds it wi
 
 it("brings the Sidebar back at the width the last key let go at, when ← walks it down to fold", async () => {
   core.paneLayout.mockResolvedValue({ ...DEFAULT_LAYOUT, sidebar: 200 });
-  render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onsettings: () => {} });
+  render(RepositoryHome, {
+    name: "python/cpython",
+    onpick: () => {},
+    onsettings: () => {},
+    onsavefilter: () => {},
+  });
   const edge = await screen.findByRole("separator", { name: "Sidebar width" });
   await vi.waitFor(() => {
     expect(edge.getAttribute("aria-valuenow")).toBe("200");
@@ -5048,7 +5359,12 @@ it("brings the Sidebar back at the width the last key let go at, when ← walks 
 
 it("brings the Sidebar back at the width the last drag let go at, when a second drag folds it", async () => {
   laidOut(200, 600, 0);
-  render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onsettings: () => {} });
+  render(RepositoryHome, {
+    name: "python/cpython",
+    onpick: () => {},
+    onsettings: () => {},
+    onsavefilter: () => {},
+  });
   const edge = await screen.findByRole("separator", { name: "Sidebar width" });
   await fireEvent.pointerDown(edge, { button: 0, clientX: 300, pointerId: 1 });
   await fireEvent.pointerMove(edge, { clientX: 240 });
@@ -5075,6 +5391,7 @@ it("puts back the full Sidebar on Reset Layout", async () => {
     name: "python/cpython",
     onpick: () => {},
     onsettings: () => {},
+    onsavefilter: () => {},
   });
   await vi.waitFor(() => {
     expect(core.paneLayout).toHaveBeenCalled();
@@ -5129,7 +5446,12 @@ it("hides the Issue list and its edge with Ctrl+Alt+B, and brings them back at t
 
 it("opens with the Issue list hidden when it was hidden on this machine", async () => {
   core.paneLayout.mockResolvedValue({ ...DEFAULT_LAYOUT, list_hidden: true });
-  render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onsettings: () => {} });
+  render(RepositoryHome, {
+    name: "python/cpython",
+    onpick: () => {},
+    onsettings: () => {},
+    onsavefilter: () => {},
+  });
 
   await vi.waitFor(() => {
     expect(issueList()).toBeNull();
@@ -5141,6 +5463,7 @@ it("leaves the Issue list alone on Ctrl+Alt+B while a dialog is on top, and in a
     name: "python/cpython",
     onpick: () => {},
     onsettings: () => {},
+    onsavefilter: () => {},
     keysActive: false,
   });
   await vi.waitFor(() => {
@@ -5164,6 +5487,7 @@ it("offers the palette a command that hides or shows the Issue list, named for w
     name: "python/cpython",
     onpick: () => {},
     onsettings: () => {},
+    onsavefilter: () => {},
   });
   await screen.findByRole("navigation", { name: "Sidebar" });
   const command = () => paletteRow(component, "toggle_issue_list");
@@ -5183,6 +5507,7 @@ it("offers the palette Stale reviews, which shows the list with that view", asyn
     name: "python/cpython",
     onpick: () => {},
     onsettings: () => {},
+    onsavefilter: () => {},
   });
   await screen.findByRole("navigation", { name: "Sidebar" });
   paletteRow(component, "toggle_issue_list")?.run();
@@ -5320,6 +5645,7 @@ it("offers the palette Ctrl+K Z's command, named for what it does", async () => 
     name: "python/cpython",
     onpick: () => {},
     onsettings: () => {},
+    onsavefilter: () => {},
   });
   await screen.findByRole("navigation", { name: "Sidebar" });
   const command = () => paletteRow(component, "toggle_detail_only");
@@ -5843,7 +6169,12 @@ it("moves the focus with the cursor once Q clears the item while the list itself
 
 it("says what went wrong above the panes while the list is hidden", async () => {
   core.savePaneLayout.mockResolvedValue({ status: "error", error: { kind: "internal", message: "locked" } });
-  render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onsettings: () => {} });
+  render(RepositoryHome, {
+    name: "python/cpython",
+    onpick: () => {},
+    onsettings: () => {},
+    onsavefilter: () => {},
+  });
   await screen.findByRole("navigation", { name: "Sidebar" });
 
   await toggleList();
@@ -5975,7 +6306,12 @@ it("marks each Issue and PR in the list with the icon of its state", async () =>
       { ...standalone, is_draft: true, attention: null },
     ]),
   );
-  render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onsettings: () => {} });
+  render(RepositoryHome, {
+    name: "python/cpython",
+    onpick: () => {},
+    onsettings: () => {},
+    onsavefilter: () => {},
+  });
   await unfoldAll();
 
   const icons = screen.getAllByRole("img").map((icon) => icon.getAttribute("title"));
@@ -6001,7 +6337,12 @@ function listRoom(content: number) {
 it("lists the Inbox from the Sidebar, each Issue with its PRs, in its own order", async () => {
   core.workbench.mockResolvedValue(workbenchPage([{ ...standalone, attention: null }]));
   core.inbox.mockResolvedValue(pageOf([{ ...issue, attention: null }]));
-  render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onsettings: () => {} });
+  render(RepositoryHome, {
+    name: "python/cpython",
+    onpick: () => {},
+    onsettings: () => {},
+    onsavefilter: () => {},
+  });
   await screen.findByRole("button", { name: "#5 Alone" });
   expect(issueList()?.querySelector("ul.lazy")).toBeNull();
 
@@ -6023,7 +6364,12 @@ it("lists the Inbox from the Sidebar, each Issue with its PRs, in its own order"
 it("narrows the Inbox from its search box, and says why a search lists nothing", async () => {
   core.workbench.mockResolvedValue(workbenchPage([]));
   core.inbox.mockResolvedValue(pageOf([{ ...issue, attention: null }]));
-  render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onsettings: () => {} });
+  render(RepositoryHome, {
+    name: "python/cpython",
+    onpick: () => {},
+    onsettings: () => {},
+    onsavefilter: () => {},
+  });
   await fireEvent.click(await screen.findByRole("button", { name: "Inbox" }));
   await screen.findByRole("heading", { name: "Inbox" });
   const box = screen.getByRole("searchbox", { name: "Search the Inbox" }) as HTMLInputElement;
@@ -6044,7 +6390,12 @@ it("narrows the Inbox from its search box, and says why a search lists nothing",
 it("sends the Inbox search to GitHub on Enter", async () => {
   core.workbench.mockResolvedValue(workbenchPage([]));
   core.inbox.mockResolvedValue(pageOf([]));
-  render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onsettings: () => {} });
+  render(RepositoryHome, {
+    name: "python/cpython",
+    onpick: () => {},
+    onsettings: () => {},
+    onsavefilter: () => {},
+  });
   await fireEvent.click(await screen.findByRole("button", { name: "Inbox" }));
   await screen.findByRole("heading", { name: "Inbox" });
   const box = screen.getByRole("searchbox", { name: "Search the Inbox" });
@@ -6060,6 +6411,30 @@ it("sends the Inbox search to GitHub on Enter", async () => {
   });
 });
 
+it("offers to save the Inbox search as a Filter, named after the text and querying what the core spelled", async () => {
+  core.workbench.mockResolvedValue(workbenchPage([]));
+  core.inbox.mockResolvedValue(inboxPage([], null, "off", false, null, "label:bug is:open"));
+  const onsavefilter = vi.fn();
+  render(RepositoryHome, {
+    name: "python/cpython",
+    onpick: () => {},
+    onsettings: () => {},
+    onsavefilter,
+  });
+  await fireEvent.click(await screen.findByRole("button", { name: "Inbox" }));
+  await screen.findByRole("heading", { name: "Inbox" });
+  expect(screen.queryByRole("button", { name: "Save" })).toBeNull();
+
+  await fireEvent.input(screen.getByRole("searchbox", { name: "Search the Inbox" }), {
+    target: { value: "label:bug" },
+  });
+  // The button arrives with the answer for this text, which spells the query out.
+  const save = await screen.findByRole("button", { name: "Save" });
+  await fireEvent.click(save);
+
+  expect(onsavefilter).toHaveBeenCalledExactlyOnceWith({ name: "label:bug", query: "label:bug is:open" });
+});
+
 it("shows a search result the cache lacks as a placeholder in GitHub's order", async () => {
   core.workbench.mockResolvedValue(workbenchPage([]));
   core.inbox.mockResolvedValue(
@@ -6069,7 +6444,12 @@ it("shows a search result the cache lacks as a placeholder in GitHub's order", a
       { ...issue, attention: null },
     ]),
   );
-  render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onsettings: () => {} });
+  render(RepositoryHome, {
+    name: "python/cpython",
+    onpick: () => {},
+    onsettings: () => {},
+    onsavefilter: () => {},
+  });
   await fireEvent.click(await screen.findByRole("button", { name: "Inbox" }));
   await screen.findByRole("heading", { name: "Inbox" });
 
@@ -6084,7 +6464,12 @@ it("says how many of GitHub's results a search past 1,000 showed", async () => {
   core.inbox.mockResolvedValue(
     inboxPage([{ ...issue, attention: null }], null, "off", false, { shown: 1000, total: 1712 }),
   );
-  render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onsettings: () => {} });
+  render(RepositoryHome, {
+    name: "python/cpython",
+    onpick: () => {},
+    onsettings: () => {},
+    onsavefilter: () => {},
+  });
   await fireEvent.click(await screen.findByRole("button", { name: "Inbox" }));
   await screen.findByRole("heading", { name: "Inbox" });
 
@@ -6103,7 +6488,12 @@ it("switches Show muted atop the Inbox, which greys each row a Muted author wrot
   core.inbox.mockResolvedValue(inboxPage(items, null, "on"));
   const saving = Promise.withResolvers<typeof done>();
   core.switchShowMuted.mockReturnValue(saving.promise);
-  render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onsettings: () => {} });
+  render(RepositoryHome, {
+    name: "python/cpython",
+    onpick: () => {},
+    onsettings: () => {},
+    onsavefilter: () => {},
+  });
   await screen.findByRole("button", { name: "#5 Alone" });
   expect(screen.queryByRole("checkbox", { name: "Show muted" })).toBeNull();
   expect(issueList()?.querySelector(".greyed")).toBeNull();
@@ -6141,7 +6531,12 @@ it("opens the next item once the Issue on show, pinned from its view, leaves the
       { ...standalone, attention: null },
     ]),
   );
-  render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onsettings: () => {} });
+  render(RepositoryHome, {
+    name: "python/cpython",
+    onpick: () => {},
+    onsettings: () => {},
+    onsavefilter: () => {},
+  });
   await fireEvent.click(await screen.findByRole("button", { name: "Inbox" }));
   await fireEvent.click(await screen.findByRole("button", { name: "#112564 GIL drop during collection" }));
 
@@ -6163,7 +6558,12 @@ it("says why the core refused a change to Show muted", async () => {
   core.workbench.mockResolvedValue(workbenchPage([]));
   core.inbox.mockResolvedValue(inboxPage([{ ...issue, attention: null }]));
   core.switchShowMuted.mockResolvedValue(refused("no such Repository"));
-  render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onsettings: () => {} });
+  render(RepositoryHome, {
+    name: "python/cpython",
+    onpick: () => {},
+    onsettings: () => {},
+    onsavefilter: () => {},
+  });
   await fireEvent.click(await screen.findByRole("button", { name: "Inbox" }));
 
   await fireEvent.click(await screen.findByRole("checkbox", { name: "Show muted" }));
@@ -6177,7 +6577,12 @@ it("reads the Inbox's next page once the list is scrolled near its end", async (
   core.inbox
     .mockResolvedValueOnce(pageOf([{ ...issue, attention: null }], 112564))
     .mockResolvedValueOnce(pageOf([{ ...standalone, attention: null }]));
-  render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onsettings: () => {} });
+  render(RepositoryHome, {
+    name: "python/cpython",
+    onpick: () => {},
+    onsettings: () => {},
+    onsavefilter: () => {},
+  });
   await fireEvent.click(await screen.findByRole("button", { name: "Inbox" }));
   await screen.findByRole("button", { name: "#112564 GIL drop during collection" });
   const pane = issueList() as HTMLElement;
@@ -6206,7 +6611,12 @@ it("reads the Inbox's pages one after another while they leave the list short of
   core.inbox
     .mockResolvedValueOnce(pageOf([{ ...issue, attention: null }], 112564))
     .mockResolvedValueOnce(pageOf([{ ...standalone, attention: null }]));
-  render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onsettings: () => {} });
+  render(RepositoryHome, {
+    name: "python/cpython",
+    onpick: () => {},
+    onsettings: () => {},
+    onsavefilter: () => {},
+  });
   await fireEvent.click(await screen.findByRole("button", { name: "Inbox" }));
 
   await screen.findByRole("button", { name: "#5 Alone" });
@@ -6222,6 +6632,7 @@ it("reads no page of the Inbox while the list is hidden, and looks again once it
     name: "python/cpython",
     onpick: () => {},
     onsettings: () => {},
+    onsavefilter: () => {},
   });
   await fireEvent.click(await screen.findByRole("button", { name: "Inbox" }));
   await screen.findByRole("button", { name: "#112564 GIL drop during collection" });
@@ -6245,6 +6656,7 @@ it("offers the palette the Inbox, which keeps its own order", async () => {
     name: "python/cpython",
     onpick: () => {},
     onsettings: () => {},
+    onsavefilter: () => {},
   });
   await screen.findByText(/^Nothing here yet/);
   core.inbox.mockResolvedValue(pageOf([]));
@@ -6265,7 +6677,12 @@ it("says why it couldn't read the Inbox's older items, and keeps the list on sho
   core.inbox
     .mockResolvedValueOnce(pageOf([{ ...issue, attention: null }], 112564))
     .mockResolvedValueOnce({ status: "error", error: { kind: "internal", message: "disk gone" } });
-  render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onsettings: () => {} });
+  render(RepositoryHome, {
+    name: "python/cpython",
+    onpick: () => {},
+    onsettings: () => {},
+    onsavefilter: () => {},
+  });
   await fireEvent.click(await screen.findByRole("button", { name: "Inbox" }));
 
   const alert = await screen.findByRole("alert");

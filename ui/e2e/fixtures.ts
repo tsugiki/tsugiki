@@ -121,3 +121,28 @@ export async function dragEdge(edge: Locator, by: number) {
   await grip.moveBy(by);
   await grip.release();
 }
+
+/** Expects the title heading `heading` shows to wrap beside its state icon (#1082): the icon centres on the
+ * title's first line, the title starts past the icon, and each later line starts under the title's start. */
+export async function expectTitleBesideItsIcon(heading: Locator) {
+  const { icon, lines, titleLeft } = await heading.evaluate((element) => {
+    const box = element.querySelector(".icon")?.getBoundingClientRect();
+    const title = element.querySelector("button");
+    if (box === undefined || title === null) throw new Error("the heading shows no state icon or title");
+    const range = document.createRange();
+    range.selectNodeContents(title);
+    const lines = [...range.getClientRects()].map((line) => ({
+      left: line.left,
+      middle: (line.top + line.bottom) / 2,
+    }));
+    return {
+      icon: { middle: (box.top + box.bottom) / 2, right: box.right },
+      lines,
+      titleLeft: title.getBoundingClientRect().left,
+    };
+  });
+  expect(lines.length).toBeGreaterThan(1);
+  expect(Math.abs(icon.middle - (lines[0]?.middle ?? Number.NaN))).toBeLessThanOrEqual(0.5);
+  for (const line of lines) expect(Math.abs(line.left - titleLeft)).toBeLessThanOrEqual(0.5);
+  expect(titleLeft).toBeGreaterThanOrEqual(icon.right - 0.5);
+}

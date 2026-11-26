@@ -18,7 +18,8 @@
 </span>
 
 <style>
-  /* Inline, so a title that wraps keeps the icon on its first line. */
+  /* Inline, so a line that holds it and text keeps it on that line, as the PR counts' row does. A heading or
+     a list row centres it on the title's line itself (#1082). */
   .octicon {
     display: inline-block;
     line-height: 0;

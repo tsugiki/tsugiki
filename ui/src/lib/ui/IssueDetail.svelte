@@ -165,9 +165,9 @@
     <div class="page">
       <!-- The icon in the heading names the state to a screen reader already. -->
       <p class="crumb" aria-hidden="true">{icon?.label ?? "Issue"}</p>
-      <h2>
+      <h2 class="title-line">
         {#if icon}
-          <StateIcon {icon} />
+          <span class="icon"><StateIcon {icon} /></span>
         {/if}
         <button
           class="link"

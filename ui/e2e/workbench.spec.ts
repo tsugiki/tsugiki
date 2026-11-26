@@ -66,6 +66,27 @@ test("the Workbench lists what waits on the user", async ({ page }) => {
   await expect(rows.nth(3)).toContainText("Own PR · octocat · into 3.14 · Open · Draft · CI failed");
 });
 
+test("a row's state icon and fold chevron centre on its title's line, in either theme", async ({ page }) => {
+  await mockCore(page, { home, workbench: workbenchPage([review, own], { count: 2 }) });
+  await page.setViewportSize({ width: 900, height: 600 });
+  await page.goto("/");
+
+  const item = page.getByRole("listitem").first();
+  const title = item.locator("button.title");
+  const icon = item.getByRole("img", { name: "Open issue" });
+  const chevron = item.getByRole("button", { name: "PRs of #112564" });
+  const middle = async (part: Locator) => {
+    const box = await part.boundingBox();
+    return (box?.y ?? Number.NaN) + (box?.height ?? Number.NaN) / 2;
+  };
+  for (const colorScheme of ["light", "dark"] as const) {
+    await page.emulateMedia({ colorScheme });
+    const line = await middle(title);
+    expect(Math.abs((await middle(icon)) - line)).toBeLessThanOrEqual(0.5);
+    expect(Math.abs((await middle(chevron)) - line)).toBeLessThanOrEqual(0.5);
+  }
+});
+
 test("an item that Needs attention shows an accent bar and title, and a long title ends in an ellipsis", async ({
   page,
 }) => {

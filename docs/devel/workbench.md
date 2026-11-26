@@ -63,7 +63,7 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
     Inbox greys each row a Muted author wrote that it shows. Tsugiki keeps the switch per Repository on
     this machine, so it survives a restart, and an item muted on its own stays out whatever it says. The
     checkbox shows the switch as the Inbox read after its save holds it, and takes no click while it saves.
-- Every row in every Issue list has an Issue or PR icon coloured by state.
+- Every row in every Issue list has an Issue or PR icon coloured by state, centred on the row's title.
 - The Sidebar shows counts the way a mail client shows unread counts. For the Workbench, the Filters switched
   on and the Pinned issues, the count is how many Issues Need attention. For a Filter switched off, it is how
   many items its search found, as its view lists them, less the Archived and Muted ones. For Stale reviews,

@@ -15,7 +15,7 @@ import {
   reviewComment,
   workbenchPage,
 } from "../src/lib/testing/fixtures.ts";
-import { dragEdge, home, issue, issueView, prView } from "./fixtures.ts";
+import { dragEdge, expectTitleBesideItsIcon, home, issue, issueView, own, prView } from "./fixtures.ts";
 import { changeAnswer, mockCore } from "./mock-core.ts";
 import { themes } from "./themes.ts";
 
@@ -148,6 +148,25 @@ test("a PR in an Issue's tree opens in the Detail pane, switches tabs, and Esc g
   await expect(
     page.getByRole("button", { name: "#7 Issue 7" }).and(page.locator("[aria-current=true]")),
   ).toBeFocused();
+});
+
+test("a title that wraps keeps the state icon on its first line", async ({ page }) => {
+  await page.setViewportSize({ width: 900, height: 600 });
+  const title =
+    "A title long enough that it cannot fit on one line beside its icon in a narrow pane, whatever the Theme";
+  await mockCore(page, {
+    home,
+    workbench: workbenchPage([{ ...own, title }]),
+    openPullRequest: done,
+    pullRequest: ok({ ...view, title }),
+  });
+  await page.goto("/");
+
+  await page.getByRole("button", { name: `#157178 ${title}` }).click();
+
+  const pane = page.getByRole("region", { name: "PR view" });
+  await expect(pane).toBeVisible();
+  await expectTitleBesideItsIcon(pane.getByRole("heading", { level: 2 }));
 });
 
 /** Opens a PR whose diff adds two lines to `NEWS` and has a thread at `at` with the comment `words`, and

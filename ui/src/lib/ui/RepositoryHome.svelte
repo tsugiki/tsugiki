@@ -1287,7 +1287,7 @@
   icon: Octicon | undefined,
 )}
   {#if icon}
-    <StateIcon {icon} />
+    <span class="state-icon"><StateIcon {icon} /></span>
   {/if}
   <button
     class="link title"
@@ -1815,15 +1815,15 @@
   }
 
   /* The state icon sits above the title's cover, so its tooltip names the state, and a Stale review does too,
-     so its tooltip lists the files. The icon centres on the title's line rather than sharing its baseline. */
-  .headline > :global(.octicon),
+     so its tooltip lists the files. Its line-tall wrapper centres it on the title's line rather than on the
+     row's tallest item. */
+  .headline > .state-icon,
   .stale {
     position: relative;
     z-index: 1;
   }
 
-  .headline > :global(.octicon) {
-    flex: none;
+  .headline > .state-icon {
     align-self: center;
   }
 

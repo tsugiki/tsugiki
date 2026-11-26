@@ -6,7 +6,7 @@ import type {
 } from "../src/lib/data/bindings.ts";
 import { done, ok, workbenchPage, workbenchRow } from "../src/lib/testing/fixtures.ts";
 import { dragEdge, expectTitleBesideItsIcon, home, palette } from "./fixtures.ts";
-import { changeAnswer, emitFromCore, mockCore } from "./mock-core.ts";
+import { callsOf, changeAnswer, emitFromCore, mockCore } from "./mock-core.ts";
 import { cspViolations, imageHosts, serveUnderTauriCsp, watchCspViolations } from "./tauri-csp.ts";
 import { themes } from "./themes.ts";
 
@@ -125,6 +125,27 @@ test("a title that wraps keeps the state icon on its first line", async ({ page 
 
   const heading = page.getByRole("region", { name: "Issue view" }).getByRole("heading", { level: 2 });
   await expectTitleBesideItsIcon(heading);
+});
+
+test("a title that fits on one line leaves the rest of its heading to no link", async ({ page }) => {
+  await page.setViewportSize({ width: 900, height: 600 });
+  await mockCore(page, answers("<p>It crashes</p>"));
+  await page.goto("/");
+
+  await page.getByRole("button", { name: "#7 Issue 7" }).click();
+
+  const pane = page.getByRole("region", { name: "Issue view" });
+  const heading = pane.getByRole("heading", { level: 2 });
+  const title = pane.getByRole("button", { name: "#7 Issue 7" });
+  const [headingBox, titleBox] = [await heading.boundingBox(), await title.boundingBox()];
+  // The button hugs the title, where the old flex rule grew it across the heading.
+  expect(titleBox?.width ?? Number.NaN).toBeLessThan((headingBox?.width ?? 0) - 50);
+  // A click past the title opens nothing.
+  await page.mouse.click(
+    (headingBox?.x ?? 0) + (headingBox?.width ?? 0) - 10,
+    (headingBox?.y ?? 0) + 2,
+  );
+  expect(await callsOf(page, "openOnGithub")).toBe(0);
 });
 
 test("a row above the tree counts the PRs of each state, and mutes a state at 0", async ({ page }) => {

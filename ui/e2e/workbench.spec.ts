@@ -12,6 +12,7 @@ import {
 } from "../src/lib/testing/fixtures.ts";
 import { grabEdge, home, own, repository } from "./fixtures.ts";
 import { changeAnswer, emitFromCore, mockCore } from "./mock-core.ts";
+import { themes } from "./themes.ts";
 
 const mine = { name: "Mine", query: "is:open author:@me", on_workbench: true, count: 1, problem: null };
 
@@ -67,7 +68,11 @@ test("the Workbench lists what waits on the user", async ({ page }) => {
 });
 
 test("a row's state icon and fold chevron centre on its title's line, in either theme", async ({ page }) => {
-  await mockCore(page, { home, workbench: workbenchPage([review, own], { count: 2 }) });
+  await mockCore(page, {
+    themes: ok(themes),
+    home,
+    workbench: workbenchPage([review, own], { count: 2 }),
+  });
   await page.setViewportSize({ width: 900, height: 600 });
   await page.goto("/");
 

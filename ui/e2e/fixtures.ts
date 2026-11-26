@@ -126,7 +126,7 @@ export async function dragEdge(edge: Locator, by: number) {
  * title's first line, the title starts past the icon, and each later line starts under the title's start. */
 export async function expectTitleBesideItsIcon(heading: Locator) {
   const { icon, lines, titleLeft } = await heading.evaluate((element) => {
-    const box = element.querySelector(".icon")?.getBoundingClientRect();
+    const box = element.querySelector(".state-icon")?.getBoundingClientRect();
     const title = element.querySelector("button");
     if (box === undefined || title === null) throw new Error("the heading shows no state icon or title");
     const range = document.createRange();

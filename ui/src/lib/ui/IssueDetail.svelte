@@ -167,7 +167,7 @@
       <p class="crumb" aria-hidden="true">{icon?.label ?? "Issue"}</p>
       <h2 class="title-line">
         {#if icon}
-          <span class="icon"><StateIcon {icon} /></span>
+          <span class="state-icon"><StateIcon {icon} /></span>
         {/if}
         <button
           class="link"

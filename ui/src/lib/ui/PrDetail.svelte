@@ -182,7 +182,7 @@
     {@const view = pr.view}
     {@const stale = staleReviewLine(view.your_review, view.shares_review_of)}
     <h2 class="title-line">
-      <span class="icon"><StateIcon icon={prIcon(view)} /></span>
+      <span class="state-icon"><StateIcon icon={prIcon(view)} /></span>
       <button
         class="link"
         onclick={() => void links.openOnGitHub(repository, { kind: "pull_request", number: view.number })}

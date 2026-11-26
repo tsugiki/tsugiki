@@ -7,7 +7,7 @@
 
 use std::collections::BTreeSet;
 
-use crate::facts::issues::{IssueFacts, IssueState};
+use crate::facts::issues::IssueFacts;
 use crate::facts::labels::Label;
 use crate::facts::pull_requests::{PrState, PullRequestFacts};
 use crate::login::Login;
@@ -71,7 +71,7 @@ impl SearchRow {
             author: facts.author.clone(),
             labels: facts.labels.clone(),
             // The Inbox lists an open Issue, or a closed one a PR brought back.
-            open: facts.state == Some(IssueState::Open) || brought_back.contains(&facts.number),
+            open: super::lists_issue(facts.state, facts.number, brought_back),
         }
     }
 

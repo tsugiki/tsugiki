@@ -1345,6 +1345,166 @@ fn a_brought_back_closed_issue_is_open_to_a_search_as_it_is_to_the_inbox() {
 }
 
 #[test]
+fn a_search_keeps_the_state_the_inbox_judged_of_the_whole_tree() {
+    let world = ViewWorld::new("inbox-search-archived");
+    let mut archived = issue_at(1, ago(5));
+    archived.title = "Parser crash".to_owned();
+    let mut requested = pr_at(10, Some(1), ago(4));
+    requested.title = "gh-1: Unrelated change".to_owned();
+    requested.review_requests = vec![me()];
+    world.has(vec![requested], vec![archived]);
+    let store = &world.db.store;
+    let archiving = Archiving {
+        key: ItemKey::Issue { number: 1 },
+        numbers: vec![1, 10],
+        up_to: Some(ago(6)),
+        put_away: PutAway::Now,
+        findings: vec![],
+    };
+    store.archive(&cpython(), archiving, now()).unwrap();
+    world.happened(10, &[(ActivityKind::ReviewRequested, ago(3))]);
+
+    let found = searched(&world, "parser");
+    world.finish();
+
+    assert_eq!(outline(&found), [("issue", 1, vec![])]);
+    assert_eq!(
+        found.items[0].hidden, None,
+        "the dropped PR still brings the archived Issue back, as the Inbox judged it"
+    );
+}
+
+#[test]
+fn a_search_keeps_show_muted_off_s_attention_over_the_rows_left() {
+    let world = ViewWorld::new("inbox-search-muted-attention");
+    let muted = IssueFacts {
+        author: Some(Login::new("muted-author")),
+        title: "Parser header".to_owned(),
+        ..issue_at(1, ago(5))
+    };
+    let mut asked = by("some-author", pr_at(10, Some(1), ago(2)));
+    asked.title = "gh-1: Fix parser".to_owned();
+    asked.review_requests = vec![me()];
+    world.has(vec![asked], vec![muted]);
+    world.mute_author_at("muted-author", ago(10));
+
+    let found = searched(&world, "parser");
+    world.finish();
+
+    assert_eq!(outline(&found), [("issue", 1, vec![10])]);
+    assert!(
+        found.items[0].attention.is_some(),
+        "the colleague's PR still Needs attention, as Show muted off judges it"
+    );
+}
+
+#[test]
+fn a_search_orders_a_standalone_pr_by_its_whole_tree_s_newest_row() {
+    let world = ViewWorld::new("inbox-search-whole-tree-place");
+    // PR 20's newest row is a Backport the search drops, and its matching Backport is older.
+    let dropped = PullRequestFacts {
+        title: "[3.14] Unrelated (GH-20)".to_owned(),
+        ..backport_at(21, 20, ago(2))
+    };
+    let matched = PullRequestFacts {
+        title: "[3.14] Fix it (GH-20)".to_owned(),
+        ..backport_at(22, 20, ago(4))
+    };
+    let standalone = PullRequestFacts {
+        title: "Fix it alone".to_owned(),
+        ..pr_at(30, None, ago(3))
+    };
+    world.has(
+        vec![pr_at(20, None, ago(5)), dropped, matched, standalone],
+        vec![],
+    );
+
+    let found = searched(&world, "fix");
+    world.finish();
+
+    assert_eq!(
+        outline(&found),
+        [("standalone", 20, vec![22]), ("standalone", 30, vec![])],
+        "PR 20 keeps the place its newest row gives it, a dropped Backport, above PR 30"
+    );
+}
+
+#[test]
+fn a_search_places_a_brought_back_closed_issue_at_its_prs_latest_update() {
+    let world = ViewWorld::new("inbox-search-brought-back-place");
+    let mut closed = issue_at(1, ago(1));
+    closed.state = Some(IssueState::Closed);
+    closed.title = "Fix the parser".to_owned();
+    let mut unrelated = pr_at(10, Some(1), ago(5));
+    unrelated.title = "gh-1: Unrelated change".to_owned();
+    let standalone = PullRequestFacts {
+        title: "Fix it alone".to_owned(),
+        ..pr_at(20, None, ago(3))
+    };
+    world.has(vec![unrelated, standalone], vec![closed]);
+    let store = &world.db.store;
+    archived_on_closing(store, &[ItemKey::Issue { number: 1 }], ago(2));
+    store
+        .bring_back(
+            &cpython(),
+            Opened {
+                issues: vec![1],
+                openings: BTreeSet::new(),
+            },
+        )
+        .unwrap();
+
+    let found = searched(&world, "fix");
+    world.finish();
+
+    assert_eq!(
+        outline(&found),
+        [("standalone", 20, vec![]), ("issue", 1, vec![])],
+        "the closed Issue stands at its PR's update, not its own newer one, as the Inbox places it"
+    );
+}
+
+#[test]
+fn a_search_with_show_muted_on_lists_a_muted_authors_matching_row() {
+    let world = ViewWorld::new("inbox-search-show-muted-on");
+    let mut other = pr_at(10, Some(1), ago(2));
+    other.title = "gh-1: Other change".to_owned();
+    let mut matched = by("muted-author", pr_at(11, Some(1), ago(1)));
+    matched.title = "gh-1: Fix it".to_owned();
+    world.has(vec![other, matched], vec![issue_at(1, ago(3))]);
+    world.mute_author("muted-author");
+    world.show_muted(ShowMuted::On);
+
+    let found = searched(&world, "fix");
+    world.finish();
+
+    assert_eq!(outline(&found), [("issue", 1, vec![11])]);
+}
+
+#[test]
+fn a_search_drops_an_item_whose_rows_show_muted_hides() {
+    let world = ViewWorld::new("inbox-search-narrowed-away");
+    let muted = IssueFacts {
+        author: Some(Login::new("muted-one")),
+        title: "Fix header".to_owned(),
+        ..issue_at(1, ago(5))
+    };
+    let mut other = by("some-author", pr_at(11, Some(1), ago(3)));
+    other.title = "gh-1: Other change".to_owned();
+    world.has(vec![other], vec![muted]);
+    world.mute_author("muted-one");
+
+    let found = searched(&world, "fix");
+    world.finish();
+
+    assert_eq!(
+        outline(&found),
+        [],
+        "the Issue's row is the only match, and Show muted hides it"
+    );
+}
+
+#[test]
 fn a_qualifier_the_cache_does_not_read_lists_nothing_and_says_github() {
     let world = ViewWorld::new("inbox-search-github");
     world.has(vec![pr_at(10, Some(1), ago(1))], vec![issue_at(1, ago(2))]);

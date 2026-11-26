@@ -204,8 +204,15 @@ impl Inbox {
         let mut items: Vec<(InboxCursor, ListedItem)> = (shown(grouped, show, &causes).into_iter())
             .filter_map(|listed| {
                 let place = places.get(&listed.key).copied()?;
+                // The item keeps the state the Inbox judged of its whole tree: only attention follows the
+                // rows the search leaves.
+                let hidden = listed.hidden;
                 let item = narrowed(listed.item, search, &rows)?;
-                Some((place, ListedItem::of(&causes, item)))
+                let judged = match show {
+                    ShowMuted::On => Some(ListedItem::of(&causes, item)),
+                    ShowMuted::Off => ListedItem::without_muted_authors(&causes, item),
+                }?;
+                Some((place, ListedItem { hidden, ..judged }))
             })
             .collect();
         items.sort_by_key(|(place, _)| Reverse(*place));
@@ -325,13 +332,41 @@ fn narrowed(item: WorkbenchItem, search: &Search, rows: &Index) -> Option<Workbe
     }
 }
 
+/// Whether the Inbox lists an Issue of `state` at `number`: an open one, or one a PR that opened on it
+/// brought back.
+fn lists_issue(state: Option<IssueState>, number: u32, brought_back: &BTreeSet<u32>) -> bool {
+    state == Some(IssueState::Open) || brought_back.contains(&number)
+}
+
+/// Where an Issue of `state` at `number` stands: its own update when it is open, and otherwise its PRs'
+/// latest, where `rows` are theirs.
+fn issue_place(
+    state: Option<IssueState>,
+    number: u32,
+    own: OffsetDateTime,
+    rows: impl Iterator<Item = OffsetDateTime>,
+) -> InboxCursor {
+    // The walk reads the updates of open Issues alone, so a closed one a PR brought back stands at its PRs'
+    // latest update, where the walk meets it.
+    let own = match state {
+        Some(IssueState::Open) => own,
+        _ => OffsetDateTime::UNIX_EPOCH,
+    };
+    InboxCursor {
+        updated_at: rows.fold(own, Ord::max),
+        number,
+    }
+}
+
 /// Where `item` stands in the Inbox's order: the latest update in its tree, and its number.
 fn item_place(item: &WorkbenchItem) -> InboxCursor {
     match item {
-        WorkbenchItem::Issue(issue) => InboxCursor {
-            updated_at: issue.updated_at,
-            number: issue.number,
-        },
+        WorkbenchItem::Issue(issue) => {
+            let rows = (issue.pull_requests.iter())
+                .flat_map(TreeEntry::rows)
+                .map(|row| row.updated_at);
+            issue_place(issue.state, issue.number, issue.issue_updated_at, rows)
+        }
         WorkbenchItem::StandalonePr(tree) => {
             let updated = (tree.rows().into_iter()).map(|row| row.updated_at);
             InboxCursor {
@@ -544,7 +579,7 @@ impl<'s, 't> Walk<'s, 't> {
     /// Whether the Inbox lists the Issue `issue` places: an open one, or one a PR that opened on it brought
     /// back.
     fn lists(&self, issue: &IssuePlace) -> bool {
-        issue.state == Some(IssueState::Open) || self.brought_back.contains(&issue.number)
+        lists_issue(issue.state, issue.number, &self.brought_back)
     }
 
     /// The next `OLDER_BATCH` items after `after`, and where the batch after them starts, if any are left.
@@ -702,17 +737,8 @@ impl<'s, 't> Walk<'s, 't> {
         }
         for (number, issue) in open.iter().filter_map(|n| Some((*n, self.issues.get(n)?))) {
             let rows = under.remove(&number).unwrap_or_default();
-            let updated_at = rows.iter().map(|row| row.updated_at);
-            // The walk reads the updates of open Issues alone, so a closed one a PR brought back stands at
-            // its PRs' latest update, where the walk meets it.
-            let own = match issue.state {
-                Some(IssueState::Open) => issue.updated_at,
-                _ => OffsetDateTime::UNIX_EPOCH,
-            };
-            let place = InboxCursor {
-                updated_at: updated_at.fold(own, Ord::max),
-                number,
-            };
+            let updated = rows.iter().map(|row| row.updated_at);
+            let place = issue_place(issue.state, number, issue.updated_at, updated);
             let prs = rows.iter().map(|row| row.number).collect();
             found.push((place, Member::Issue { number, prs }));
         }

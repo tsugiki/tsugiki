@@ -11,6 +11,7 @@ use crate::facts::inbox_search::RowKind;
 use crate::facts::issues::IssueFacts;
 use crate::facts::labels::Label;
 use crate::facts::pull_requests::{PrState, PullRequestFacts};
+use crate::filters::FilterQuery;
 use crate::login::Login;
 
 /// The text from the Inbox's search box, read for the cache.
@@ -155,6 +156,11 @@ impl Search {
     /// Whether the text holds a form only GitHub reads, so the list has no local rows and says so.
     pub(super) fn needs_github(&self) -> bool {
         self.needs_github
+    }
+
+    /// The Filter query this search saves as: its text with Tsugiki's additions spelled out (#471).
+    pub(super) fn filter_query(&self) -> Option<FilterQuery> {
+        FilterQuery::with_additions(&self.text)
     }
 
     /// Whether `row` meets every form of the search. A text the cache can't read meets none.

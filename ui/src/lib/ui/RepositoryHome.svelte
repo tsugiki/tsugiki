@@ -109,6 +109,7 @@
     name,
     onpick,
     onsettings,
+    onsavefilter,
     keysActive = true,
     diffFiles = "all",
     diffPeek = "inline",
@@ -119,6 +120,8 @@
     onpick: () => void;
     /** Opens the Settings dialog, from ⚙ atop the Sidebar. */
     onsettings: () => void;
+    /** Opens the Save as Filter dialog for the Inbox's search, with its name and query (#471). */
+    onsavefilter: (draft: { name: string; query: string }) => void;
     keysActive?: boolean;
     /** Whether each PR's Files tab opens on all its files or one at a time, as `[diff] files` says. */
     diffFiles?: FilesMode;
@@ -317,6 +320,12 @@
     swap(next);
     void next.load();
     if (next instanceof PrViewState) showFileView(next, fileView);
+  }
+
+  /** Saves the Inbox's search as a Filter named `name` that searches `query`, and answers the core's reason
+   * when it refuses one (#471). The page's dialog calls it, and closes once it answers nothing. */
+  export function saveFilter(name: string, query: string): Promise<string | undefined> {
+    return workbench.saveFilter(name, query);
   }
 
   /** Opens the Issue or PR `number` that quick open found (#557), on its line in the list if the list has
@@ -1768,6 +1777,17 @@
               }
             }}
           />
+          {#if workbench.search.trim() !== ""}
+            <button
+              class="link"
+              title="Save the search as a Filter"
+              onclick={() =>
+                onsavefilter({
+                  name: workbench.search.trim(),
+                  query: workbench.saveQuery,
+                })}>Save</button
+            >
+          {/if}
           <label class="switch" title="Lists the items of the authors you muted, greyed">
             <input
               type="checkbox"

@@ -60,8 +60,15 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
   with "1,000 of 1,712 shown. Narrow the search, or save it as a Filter." Until GitHub answers, a query the
   cache can't read lists nothing and says it needs GitHub. A matching PR stays in its Issue's fold, whose
   header stays even when the Issue doesn't match, and a matching Issue with no matching PR shows alone.
-  Pinned, Archived and Muted items never appear in its results. Save turns a search into a Filter. From it
-  the user reads, comments on and pins Issues and opens PRs. "View: Inbox" in the command palette opens it.
+  Pinned, Archived and Muted items never appear in its results. Save turns a search into a Filter: it opens a
+  dialog with a Name, the query by default, and a Query, editable, with Tsugiki's additions spelled out, such
+  as `is:open` ([#471](https://github.com/tsugiki/tsugiki/issues/471)). Save is off while either field is
+  empty, and a name the Repository's Filters already use is refused. Confirming writes the Filter at the end
+  of the Repository's Filters in `settings.toml`, opens it in place of the Inbox, clears the box, and starts
+  its first whole search at once, ahead of the sync's next step, with `created:` splitting past 1,000. The
+  new Filter starts with "On the Workbench" off, so its view lists its items as they land and the Workbench
+  doesn't change. From the Inbox the user reads, comments on and pins Issues and opens PRs. "View: Inbox" in
+  the command palette opens it.
   - **Show muted** ([#825](https://github.com/tsugiki/tsugiki/issues/825)), a switch atop the list, starts
     off and leaves out each row a **Muted author** wrote. It hides rows, not groups: a row stays while a
     row under it does, so a Muted author's Issue stays as the header of a PR someone else wrote and goes

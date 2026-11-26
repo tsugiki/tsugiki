@@ -43,6 +43,7 @@ vi.mock("$lib/data/bindings", () => ({
     unpin: vi.fn(),
     putFilterOnWorkbench: vi.fn(),
     switchShowMuted: vi.fn(),
+    saveFilter: vi.fn(),
   },
   events: { acted: { listen: vi.fn() }, changed: { listen: vi.fn() } },
 }));
@@ -1817,6 +1818,60 @@ describe("WorkbenchState's Inbox", () => {
     await state.setSearch("review:approved");
     await state.sendSearch();
     expect(commands.searchInbox).toHaveBeenCalledExactlyOnceWith("python/cpython", "review:approved");
+    state.stop();
+  });
+
+  it("saves the Inbox's search as a Filter, opens it, and clears the box", async () => {
+    catchChanged();
+    vi.mocked(commands.workbench).mockResolvedValue(answer());
+    paging({ latest: inboxPage([], null, "off", false, null, "label:bug is:open") });
+    const state = await showingInbox();
+
+    await state.setSearch("label:bug");
+    expect(state.saveQuery).toBe("label:bug is:open");
+
+    vi.mocked(commands.saveFilter).mockResolvedValueOnce(done);
+    const problem = await state.saveFilter("Bugs", "label:bug is:open");
+
+    expect(problem).toBeUndefined();
+    expect(commands.saveFilter).toHaveBeenCalledWith("python/cpython", "Bugs", "label:bug is:open");
+    expect(commands.workbench).toHaveBeenLastCalledWith("python/cpython", {
+      kind: "filter",
+      query: "label:bug is:open",
+    });
+    expect(state.search).toBe("");
+    expect(state.selected).toEqual({ kind: "filter", query: "label:bug is:open" });
+    state.stop();
+  });
+
+  it("keeps the Inbox and its search when the core refuses a Filter's name", async () => {
+    catchChanged();
+    vi.mocked(commands.workbench).mockResolvedValue(answer());
+    paging({ latest: inboxPage([], null, "off", false, null, "label:bug is:open") });
+    const state = await showingInbox();
+    await state.setSearch("label:bug");
+
+    const refusal = "a/b already has a Filter named Bugs. Choose another name.";
+    vi.mocked(commands.saveFilter).mockResolvedValueOnce(refused(refusal));
+    const problem = await state.saveFilter("Bugs", "label:bug is:open");
+
+    expect(problem).toBe(refusal);
+    expect(state.search).toBe("label:bug");
+    expect(state.selected).toEqual(inbox);
+    state.stop();
+  });
+
+  it("opens the Save dialog with the text as its query until the answer for it arrives", async () => {
+    catchChanged();
+    vi.mocked(commands.workbench).mockResolvedValue(answer());
+    paging({ latest: inboxPage([], null, "off", false, null, "label:bug is:open") });
+    const state = await showingInbox();
+
+    // The answer on show is for the empty box, so a text typed since gets no additions yet.
+    paging({ latest: page([3]) });
+    await state.setSearch("label:bug");
+
+    expect(state.saveQuery).toBe("label:bug");
     state.stop();
   });
 

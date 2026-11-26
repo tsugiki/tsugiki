@@ -1389,6 +1389,20 @@ impl SettingsFiles {
         Ok(())
     }
 
+    /// Adds `filter` at the end of `name`'s Filters in `settings.toml`, the form the file uses and the
+    /// comments it holds, and reads the files again (#471). It refuses a name the Repository's Filters
+    /// already use, and a Repository the file doesn't hold. Like `write`, it works from what the file says
+    /// now and refuses while either can't be used.
+    pub fn append_filter(&mut self, name: &RepositoryName, filter: &Filter) -> Result<(), Error> {
+        let machine = self.machine_to_edit()?;
+        let path = settings_file(&self.folders, &machine);
+        let mut edit = TomlEdit::<Settings>::open(&path)?;
+        edit.append_filter(name, filter)?;
+        edit.save()?;
+        self.reload();
+        Ok(())
+    }
+
     /// Saves where `name`'s mirror gets its objects in `machine.toml`, keeping everything else in it, and
     /// reads the files again.
     pub fn save_mirror_source(
@@ -1477,6 +1491,11 @@ enum Change {
         on: OnWorkbench,
         reply: Sender<Result<SettingsView, Error>>,
     },
+    AppendFilter {
+        name: RepositoryName,
+        filter: Filter,
+        reply: Sender<Result<SettingsView, Error>>,
+    },
     MirrorSource {
         name: RepositoryName,
         source: MirrorSource,
@@ -1562,7 +1581,7 @@ impl SettingsOwner {
                 // Filters an Apply saves (#535) reach the Sidebar as a hand edit's do, as Settings doesn't
                 // ask the Workbench again.
                 let by = match change {
-                    Change::OnWorkbench { .. } => SavedBy::Window,
+                    Change::OnWorkbench { .. } | Change::AppendFilter { .. } => SavedBy::Window,
                     Change::Add { .. }
                     | Change::MirrorSource { .. }
                     | Change::Panes { .. }
@@ -1598,6 +1617,17 @@ impl SettingsOwner {
                     }
                     (
                         Ok(files),
+                        Change::AppendFilter {
+                            name,
+                            filter,
+                            reply,
+                        },
+                    ) => {
+                        let saved = files.append_filter(&name, &filter);
+                        (saved.map(|()| files.view()), reply)
+                    }
+                    (
+                        Ok(files),
                         Change::MirrorSource {
                             name,
                             source,
@@ -1628,6 +1658,7 @@ impl SettingsOwner {
                         Err(problem),
                         Change::Add { reply, .. }
                         | Change::OnWorkbench { reply, .. }
+                        | Change::AppendFilter { reply, .. }
                         | Change::MirrorSource { reply, .. }
                         | Change::Panes { reply, .. }
                         | Change::Theme { reply, .. }
@@ -1737,6 +1768,24 @@ impl SettingsOwner {
                 name,
                 query,
                 on,
+                reply,
+            },
+            &answer,
+        )
+    }
+
+    /// Adds `filter` at the end of `name`'s Filters in `settings.toml` (`SettingsFiles::append_filter`), and
+    /// answers with what the settings say now (#471).
+    pub fn append_filter(
+        &self,
+        name: RepositoryName,
+        filter: Filter,
+    ) -> Result<SettingsView, Error> {
+        let (reply, answer) = mpsc::channel();
+        self.ask(
+            Change::AppendFilter {
+                name,
+                filter,
                 reply,
             },
             &answer,
@@ -2043,6 +2092,24 @@ impl TomlEdit<'_, Settings> {
         Ok(())
     }
 
+    /// Adds `filter` at the end of the Filters of the Repository `name` names, in the form the file uses and
+    /// with the comments it holds (#471). It refuses a name the Repository's Filters already use, and a
+    /// Repository the file doesn't hold. A Repository without `filters` gets the Filters it reads as written
+    /// out first, as `put_filters` says.
+    fn append_filter(&mut self, name: &RepositoryName, filter: &Filter) -> Result<(), Error> {
+        let repository = self.repository_with_filters(name)?;
+        let held = names_and_searches(repository.get_mut(FILTERS));
+        if held.iter().any(|(held, _)| held == filter.name.as_str()) {
+            let message = format!(
+                "{name} already has a Filter named {}. Choose another name.",
+                filter.name.as_str()
+            );
+            return Err(Error::new(ErrorKind::Conflict, &message));
+        }
+        add_filter(repository, filter);
+        Ok(())
+    }
+
     /// Writes the choice of Read-only `choice` gives its Repository as its `read_only`, in the first table
     /// that names it, the one the settings read: `read_only = true`, or no key for one that can write, as
     /// `append` writes them. A `read_only` that says so already stays as the user wrote it, and one the user
@@ -2230,6 +2297,34 @@ fn put_comments(decor: &mut Decor, before: &str, comments: &[String]) {
             .iter()
             .fold(before.to_owned(), |text, line| text + line + "\n");
         decor.set_prefix(lines);
+    }
+}
+
+/// Adds `filter` at the end of `repository`'s Filters, in the form the file uses: a block of its own, or an
+/// inline table in the list the user wrote. `filters = []` becomes blocks, as `put_filters` writes them.
+fn add_filter(repository: &mut dyn TableLike, filter: &Filter) {
+    let edit = EditedFilter {
+        name: filter.name.clone(),
+        query: filter.query.clone(),
+        was: None,
+    };
+    match repository.get_mut(FILTERS) {
+        Some(Item::Value(Value::Array(list))) if !list.is_empty() => {
+            let mut added = InlineTable::new();
+            put_name_and_search(&mut added, &edit);
+            added.fmt();
+            list.push_formatted(Value::InlineTable(added));
+        }
+        Some(blocks) if blocks.is_array_of_tables() => {
+            let mut added = Table::new();
+            put_name_and_search(&mut added, &edit);
+            if let Some(tables) = blocks.as_array_of_tables_mut() {
+                tables.push(added);
+            }
+        }
+        // `filters = []`, or a form this can't push into: `put_filters` turns it into blocks, keeping the
+        // comments around the list.
+        _ => put_filters(repository, std::slice::from_ref(&edit)),
     }
 }
 

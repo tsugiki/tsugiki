@@ -431,6 +431,7 @@ const LAYERS: &[Layer] = &[
             "error",
             "facts",
             "fetching",
+            "filters",
             "folders",
             "highlight",
             "latest",
@@ -457,7 +458,8 @@ const LAYERS: &[Layer] = &[
               mirror. The diff on show opens its files on the language servers through `definitions`, and \
               its rows and their `highlight` come from `diff`. Each of the user's actions goes through \
               `fetching`: a Mark Seen names what `work` marks, Mute author the `login` it mutes, and a \
-              clone the `mirror_source` it takes its objects from.",
+              clone the `mirror_source` it takes its objects from. Saving a search as a Filter writes \
+              the `filters` it names for the Repository into `settings`.",
     },
 ];
 

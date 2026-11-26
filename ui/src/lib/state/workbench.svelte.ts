@@ -186,6 +186,9 @@ export class WorkbenchState {
   needsGitHub = $state(false);
   /** How many results the search's answer listed of how many it reaches, past GitHub's 1,000 (#465). */
   truncated = $state<Truncated | null>(null);
+  /** The Filter the Inbox's search would save as, with the trimmed box text it was read for, as the last
+   * answer about the Inbox says (#471). */
+  #filterQuery = $state<{ search: string; query: string }>();
   /** The timer that sends a paused search to GitHub (#465). */
   #searchTimer: ReturnType<typeof setTimeout> | undefined;
   /** The trimmed search Tsugiki last sent to GitHub, so entering the Inbox can send one it dropped (#465). */
@@ -289,6 +292,7 @@ export class WorkbenchState {
     } else {
       this.needsGitHub = false;
       this.truncated = null;
+      this.#filterQuery = undefined;
     }
     await this.#ask();
   }
@@ -324,6 +328,29 @@ export class WorkbenchState {
   #clearSearchTimer() {
     if (this.#searchTimer !== undefined) clearTimeout(this.#searchTimer);
     this.#searchTimer = undefined;
+  }
+
+  /** The Filter query the Save as Filter dialog opens with: the box's text with Tsugiki's additions spelled
+   * out once the answer for the text on show has arrived, and the text itself until then (#471). */
+  get saveQuery(): string {
+    const text = this.search.trim();
+    return this.#filterQuery?.search === text ? this.#filterQuery.query : text;
+  }
+
+  /** Saves the Inbox's search as a Filter named `name` that searches `query`, opens it in place of the Inbox,
+   * and clears the box (#471). Answers the core's reason when it refuses one, as a name the Repository's
+   * Filters already use. The Filter's first search runs at once, and its view lists the items as they
+   * land. */
+  async saveFilter(name: string, query: string): Promise<string | undefined> {
+    const problem = await problemIn(commands.saveFilter(this.#repository, name, query));
+    if (problem !== undefined) return problem;
+    this.search = "";
+    this.#searchAsked = "";
+    this.#clearSearchTimer();
+    this.needsGitHub = false;
+    this.truncated = null;
+    await this.select({ kind: "filter", query });
+    return undefined;
   }
 
   /** The view whose items the list shows: `selected` once its answer has arrived. */
@@ -881,6 +908,7 @@ export class WorkbenchState {
   async #answer(question: number, view: SidebarView, order: ListOrder) {
     if (!this.#current(question)) return;
     const inbox = view.kind === "inbox";
+    const search = this.search.trim();
     const [answer, list] = await Promise.all([
       ask(hud.timed(() => commands.workbench(this.#repository, inbox ? { kind: "whole" } : view))),
       inbox ? this.#inboxPage(this.#againPage()) : undefined,
@@ -897,9 +925,12 @@ export class WorkbenchState {
       this.showMuted = list.data.show_muted;
       this.needsGitHub = list.data.needs_github;
       this.truncated = list.data.truncated ?? null;
+      this.#filterQuery =
+        list.data.filter_query == null ? undefined : { search, query: list.data.filter_query };
     } else if (list?.status === "error") {
       this.needsGitHub = false;
       this.truncated = null;
+      this.#filterQuery = undefined;
     }
     const listed = list ?? answer;
     if (listed.status === "ok") {

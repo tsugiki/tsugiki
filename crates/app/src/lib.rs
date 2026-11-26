@@ -1163,6 +1163,7 @@ pub fn specta_builder<R: tauri::Runtime>() -> Builder<R> {
             pin,
             unpin,
             slow_commands::switch_show_muted,
+            slow_commands::save_filter,
             settings,
             slow_commands::themes,
             slow_commands::preview_themes,

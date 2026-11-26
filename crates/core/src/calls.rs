@@ -23,6 +23,7 @@ use crate::facts::activity::{ItemKey, ShowMuted};
 use crate::facts::pull_requests::HeadInMirror;
 use crate::fetching::{Fetched, Fetching, Item, NoHead, ScreenMove};
 pub use crate::fetching::{ItemFetch, ItemUnfetched, Queued};
+use crate::filters::{Filter, FilterName, FilterQuery, OnWorkbench};
 use crate::folders::Folders;
 use crate::highlight::Span;
 use crate::latest::LatestReader;
@@ -179,6 +180,31 @@ impl Calls {
         if !text.is_empty() {
             self.fetching.search(repository, text.to_owned());
         }
+    }
+
+    /// Saves a Filter named `name` that searches `query` at the end of `repository`'s Filters, off the
+    /// Workbench, and starts its first whole search at once, ahead of the sync's next step (#471). A name the
+    /// Repository's Filters already use is refused. The dialog opens `query` with Tsugiki's additions spelled
+    /// out, and what the user confirms there is what's saved.
+    pub fn save_filter(
+        &self,
+        repository: RepositoryName,
+        name: FilterName,
+        query: FilterQuery,
+    ) -> Result<(), Error> {
+        let filter = Filter {
+            name,
+            query,
+            on_workbench: OnWorkbench::Off,
+        };
+        self.settings
+            .append_filter(repository.clone(), filter)
+            .map(drop)?;
+        // The new Filter has no stored results, so the refresh reads its search whole, with ADR 0015's
+        // `created:` splitting past 1,000. A Refresh is the user's demand, which goes ahead of the sync's
+        // next step.
+        self.fetching.refresh();
+        Ok(())
     }
 
     /// The Issue view of Issue `number`, or nothing if Tsugiki doesn't hold it.

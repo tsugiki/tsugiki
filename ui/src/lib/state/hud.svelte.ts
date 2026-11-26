@@ -25,6 +25,10 @@ export const BUDGETS = {
   jump: 100,
 } as const;
 
+/** How far the HUD's panel sits above the window's bottom edge, which the action panel above it shares
+ * (#1072). */
+export const HUD_BOTTOM = 32;
+
 /** The time an Issue's text from GitHub can take before the log mentions it. No budget says this. */
 const SLOW_FROM_GITHUB = 2000;
 
@@ -158,6 +162,8 @@ export const browserClock: HudClock = {
 
 export class HudState implements JumpTimer {
   visible = $state(false);
+  /** The height the HUD's panel draws at, so floating UI above it keeps clear of it (#1072). */
+  height = $state(0);
   /** The last 10 s of frames, or nothing before the HUD has shown them. */
   frames = $state<FrameStats>();
   /** The display's frame, from the median of the last 10 s. */

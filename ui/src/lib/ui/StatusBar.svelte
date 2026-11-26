@@ -81,6 +81,7 @@
     onrefresh = () => {},
     oncheckagain = () => {},
     onquestion = () => {},
+    onheight = () => {},
   }: {
     status: Status | undefined;
     error?: string | undefined;
@@ -110,7 +111,16 @@
     oncheckagain?: () => void;
     /** Asks where `repository`'s mirror gets its objects. */
     onquestion?: (repository: string) => void;
+    /** The height the bar draws at, which the action panel sits above (#1072). It is not the setting: a
+     * hidden bar still draws a line when it says why GitHub is quiet, or offers to fetch git. */
+    onheight?: (height: number) => void;
   } = $props();
+
+  /** The bar's drawn height, which `onheight` hands up. */
+  let drawn = $state(0);
+  $effect(() => {
+    onheight(drawn);
+  });
 
   /** Opens git's downloads, and keeps what kept the browser from it until the next try. */
   const gitPage = new LinkOpener();
@@ -203,7 +213,7 @@
 </script>
 
 <!-- One row, so the sync words take the room they need and the status gets the rest. -->
-<div class="bar">
+<div class="bar" bind:clientHeight={drawn}>
   <!-- Always in the page, because screen readers only announce changes in a live region that already
        exists. -->
   <footer role="status" class:offline class:empty={!showStatus && !listed && mirrorQuestion === null}>

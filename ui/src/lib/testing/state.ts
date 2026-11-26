@@ -3,8 +3,14 @@
 import { vi } from "vitest";
 import { events, type Acted_Serialize, type Hit } from "../data/bindings";
 import { HitCode } from "../state/hit-code.svelte";
+import { browserClock, HudState, type HudCore } from "../state/hud.svelte";
 import type { Peek } from "../state/peek";
 import type { DarkQuery } from "../state/theme.svelte";
+
+/** A HUD on a fixed clock that asks for no real frame, while cancelling a frame and reporting a paint stay
+ * the browser's. */
+export const testHud = (core: HudCore) =>
+  new HudState({ ...browserClock, now: () => 0, requestFrame: () => 1 }, core);
 
 /** The system on its light side, which says nothing when it changes, for a `ThemeState`. */
 export const LIGHT_SIDE = { matches: false, addEventListener: () => {} } as unknown as DarkQuery;

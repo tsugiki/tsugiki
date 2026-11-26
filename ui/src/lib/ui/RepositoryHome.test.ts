@@ -23,7 +23,7 @@ import {
 } from "$lib/testing/fixtures";
 import { hitIn } from "$lib/testing/state";
 import { stampOf } from "./time";
-import { keydown, nextTask, pressed } from "$lib/testing/helpers";
+import { keydown, measureHeight, nextTask, pressed } from "$lib/testing/helpers";
 import RepositoryHome from "./RepositoryHome.svelte";
 
 /** What the page asks the screen for the palette's rows, from the screen's own exports. */
@@ -6271,4 +6271,198 @@ it("says why it couldn't read the Inbox's older items, and keeps the list on sho
   const alert = await screen.findByRole("alert");
   expect(alert.textContent).toBe("Tsugiki can't read the Inbox's older items: disk gone");
   expect(screen.getByRole("button", { name: "#112564 GIL drop during collection" })).toBeTruthy();
+});
+
+/** The action panel's live region, which stays in the page empty (#1072). */
+const actionPanel = () => screen.getByRole("log", { name: "What the action did" });
+
+it("keeps the action panel in the page empty as a polite live region before any action", async () => {
+  await listing();
+
+  expect(actionPanel().getAttribute("aria-live")).toBe("polite");
+  expect(actionPanel().textContent).toBe("");
+});
+
+it("leaves the action panel's room out of a list that fills the window, until a Detail pane shows", async () => {
+  measureHeight(28);
+  const { component, treeRow } = await listing();
+  const list = () => screen.getByRole("region", { name: "Issue list" });
+
+  expect(list().style.marginBottom).toBe("");
+  treeRow.focus();
+  await fireEvent.keyDown(treeRow, { key: "ArrowDown" });
+  await fireEvent.keyDown(treeRow, { key: "ArrowUp" });
+  component.runChord("pin", chordEnd());
+  await vi.waitFor(() => expect(actionPanel().textContent).toBe("Issue #112564 pinned"));
+  expect(list().style.marginBottom).toBe("28px");
+
+  await fireEvent.click(treeRow);
+  await vi.waitFor(() => expect(list().style.marginBottom).toBe(""));
+
+  // An item being fetched also takes the Detail pane, so the list keeps its room beside the panel.
+  expect(actionPanel().textContent).toBe("Issue #112564 pinned");
+  core.fetchItem.mockReturnValue(new Promise(() => {}));
+  component.fetchUnstored(99);
+  await screen.findByText(/Fetching python\/cpython #99/);
+  expect(list().style.marginBottom).toBe("");
+});
+
+it("says an Issue was archived after E on its row", async () => {
+  const { treeRow } = await listing();
+  treeRow.focus();
+  await fireEvent.keyDown(treeRow, { key: "ArrowDown" });
+  await fireEvent.keyDown(treeRow, { key: "ArrowUp" });
+
+  await fireEvent.keyDown(treeRow, { key: "e" });
+
+  await vi.waitFor(() => expect(actionPanel().textContent).toBe("Issue #112564 archived"));
+});
+
+it("says a PR was muted after its Mute button, which names a PR and not an Issue", async () => {
+  const { prRow } = await listing();
+  await fireEvent.click(prRow);
+  await fireEvent.click(await screen.findByRole("button", { name: "Mute" }));
+
+  await vi.waitFor(() => expect(actionPanel().textContent).toBe("PR #5 muted"));
+});
+
+it("says what Mark Seen and Mark Unseen did, on the Issue under the cursor", async () => {
+  const { issueRow } = await listing();
+  const put = async () => {
+    issueRow.focus();
+    await fireEvent.keyDown(issueRow, { key: "ArrowDown" });
+    await fireEvent.keyDown(issueRow, { key: "ArrowUp" });
+  };
+
+  await put();
+  await fireEvent.keyDown(issueRow, { key: "q" });
+  await vi.waitFor(() => expect(actionPanel().textContent).toBe("Issue #112564 marked seen"));
+
+  await put();
+  await fireEvent.keyDown(issueRow, { key: "Q", shiftKey: true });
+  await vi.waitFor(() => expect(actionPanel().textContent).toBe("Issue #112564 marked unseen"));
+});
+
+it("says an Issue was pinned and unpinned", async () => {
+  const pinned = { ...issue, attention: null, pinned: true };
+  core.workbench.mockResolvedValue(workbenchPage([pinned]));
+  const first = render(RepositoryHome, {
+    name: "python/cpython",
+    onpick: () => {},
+    onsettings: () => {},
+  });
+  const row = await screen.findByRole("button", { name: "#112564 GIL drop during collection" });
+  row.focus();
+  await fireEvent.keyDown(row, { key: "ArrowDown" });
+  await fireEvent.keyDown(row, { key: "ArrowUp" });
+
+  first.component.runChord("pin", chordEnd());
+  await vi.waitFor(() => expect(actionPanel().textContent).toBe("Issue #112564 unpinned"));
+
+  cleanup();
+  core.workbench.mockResolvedValue(workbenchPage([{ ...issue, attention: null }]));
+  const second = render(RepositoryHome, {
+    name: "python/cpython",
+    onpick: () => {},
+    onsettings: () => {},
+  });
+  const again = await screen.findByRole("button", { name: "#112564 GIL drop during collection" });
+  again.focus();
+  await fireEvent.keyDown(again, { key: "ArrowDown" });
+  await fireEvent.keyDown(again, { key: "ArrowUp" });
+
+  second.component.runChord("pin", chordEnd());
+  await vi.waitFor(() => expect(actionPanel().textContent).toBe("Issue #112564 pinned"));
+});
+
+it("says an Issue was muted and a Muted item unmuted from its key", async () => {
+  const { issueRow } = await listing();
+  issueRow.focus();
+  await fireEvent.keyDown(issueRow, { key: "ArrowDown" });
+  await fireEvent.keyDown(issueRow, { key: "ArrowUp" });
+  await fireEvent.keyDown(issueRow, { key: "m" });
+  await vi.waitFor(() => expect(actionPanel().textContent).toBe("Issue #112564 muted"));
+
+  cleanup();
+  const muted = { ...standalone, attention: null, hidden: "muted" };
+  core.workbench.mockResolvedValue(workbenchPage([muted]));
+  render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onsettings: () => {} });
+  const row = await screen.findByRole("button", { name: "#5 Alone" });
+  row.focus();
+  await fireEvent.keyDown(row, { key: "ArrowDown" });
+  await fireEvent.keyDown(row, { key: "ArrowUp" });
+  await fireEvent.keyDown(row, { key: "m" });
+
+  await vi.waitFor(() => expect(actionPanel().textContent).toBe("PR #5 unmuted"));
+});
+
+it("says an Issue was unarchived after E in the Archived view", async () => {
+  const { issueRow } = await archivedView();
+
+  await fireEvent.keyDown(issueRow, { key: "e" });
+
+  await vi.waitFor(() => expect(actionPanel().textContent).toBe("Issue #112564 unarchived"));
+});
+
+it("says an author was muted and a Muted author unmuted", async () => {
+  const { component, issueRow } = await listing();
+  issueRow.focus();
+  await fireEvent.keyDown(issueRow, { key: "ArrowDown" });
+  paletteRow(component, "mute_author", issueRow)?.run();
+  await vi.waitFor(() => expect(actionPanel().textContent).toBe("Muted issue-author"));
+
+  cleanup();
+  const theirs = {
+    ...standalone,
+    attention: null,
+    hidden: "muted_author",
+    mute_author: { kind: "unmute", login: "some-author" },
+  };
+  core.workbench.mockResolvedValue(workbenchPage([theirs]));
+  const again = render(RepositoryHome, {
+    name: "python/cpython",
+    onpick: () => {},
+    onsettings: () => {},
+  });
+  const row = await screen.findByRole("button", { name: "#5 Alone" });
+  row.focus();
+  await fireEvent.keyDown(row, { key: "ArrowDown" });
+  paletteRow(again.component, "mute_author", row)?.run();
+  await vi.waitFor(() => expect(actionPanel().textContent).toBe("Unmuted some-author"));
+});
+
+it("says the alert, and clears what the last action said, when the core refuses the action", async () => {
+  const { component, treeRow } = await listing();
+  treeRow.focus();
+  await fireEvent.keyDown(treeRow, { key: "ArrowDown" });
+  await fireEvent.keyDown(treeRow, { key: "ArrowUp" });
+
+  component.runChord("pin", chordEnd());
+  await vi.waitFor(() => expect(actionPanel().textContent).toBe("Issue #112564 pinned"));
+
+  core.archive.mockResolvedValue(refused("no database"));
+  await fireEvent.keyDown(treeRow, { key: "e" });
+
+  await screen.findByText("Tsugiki couldn't mark this item: no database");
+  expect(actionPanel().textContent).toBe("");
+});
+
+it("leaves the focus in the list after an action by key, so the next ↓ moves the cursor", async () => {
+  const { component, treeRow } = await listing();
+  treeRow.focus();
+  await fireEvent.keyDown(treeRow, { key: "ArrowDown" });
+  await fireEvent.keyDown(treeRow, { key: "ArrowUp" });
+
+  component.runChord("pin", chordEnd());
+  await vi.waitFor(() => expect(actionPanel().textContent).toBe("Issue #112564 pinned"));
+  expect((document.activeElement as HTMLElement | null)?.closest(".list")).not.toBeNull();
+  expect(document.activeElement).not.toBe(actionPanel());
+  expect(actionPanel().querySelectorAll("a, button, input, select, textarea, [tabindex]")).toHaveLength(0);
+
+  await fireEvent.keyDown(treeRow, { key: "ArrowDown" });
+  expect(
+    screen
+      .getByRole("button", { name: "#160662 gh-112564: Fix UAF for gc debug print" })
+      .getAttribute("aria-current"),
+  ).toBe("true");
 });

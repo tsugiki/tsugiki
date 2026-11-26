@@ -1,16 +1,15 @@
 import { fireEvent, render, screen, within } from "@testing-library/svelte";
 import { expect, it, vi } from "vitest";
-import { HudState } from "$lib/state/hud.svelte";
+import { testHud } from "$lib/testing/state";
 import PerformanceHud from "./PerformanceHud.svelte";
 
 function shownHud() {
-  const clock = { now: () => 0, requestFrame: () => 1, cancelFrame: () => {}, afterPaint: () => {} };
   const core = {
     timeRunning: () => Promise.resolve(null),
     recordMeasurement: vi.fn(() => Promise.resolve("Performance of Tsugiki 0.1.0 over 1.0 s")),
     recordMiss: () => Promise.resolve("a miss"),
   };
-  const hud = new HudState(clock, core);
+  const hud = testHud(core);
   hud.toggle();
   return { hud, core };
 }

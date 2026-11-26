@@ -2,6 +2,7 @@ import { fireEvent, render, screen } from "@testing-library/svelte";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { openLink } from "$lib/state/browser";
 import { HOUR_POINTS, OCTOCAT_ONLINE, statusOf } from "$lib/testing/fixtures";
+import { measureHeight } from "$lib/testing/helpers";
 import { stampOf } from "./time";
 import StatusBar from "./StatusBar.svelte";
 
@@ -818,5 +819,15 @@ describe("StatusBar's request in flight", () => {
     await vi.advanceTimersToNextTimerAsync();
     expect(Date.now() - Date.parse(went)).toBe(3000);
     expect(waiting()?.textContent).toBe("Waiting for GitHub: refresh of some-maintainer/gcmon, 3 s");
+  });
+});
+
+describe("its drawn height", () => {
+  it("tells the window the height it draws at, so the action panel sits above it (#1072)", () => {
+    measureHeight(24, { dimension: "client" });
+    const onheight = vi.fn();
+    render(StatusBar, { status: OCTOCAT_ONLINE, onheight });
+
+    expect(onheight).toHaveBeenLastCalledWith(24);
   });
 });

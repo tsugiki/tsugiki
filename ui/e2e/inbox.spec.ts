@@ -3,14 +3,17 @@ import type {
   InboxCursor_Serialize as InboxCursor,
   ListedItem_Serialize as ListedItem,
 } from "../src/lib/data/bindings.ts";
-import { inboxPage, workbenchPage, workbenchRow } from "../src/lib/testing/fixtures.ts";
+import { inboxPage, placeholderItem, workbenchPage, workbenchRow } from "../src/lib/testing/fixtures.ts";
 import { home, palette, repository } from "./fixtures.ts";
 import { changeAnswer, callsOf, emitFromCore, mockCore } from "./mock-core.ts";
 
 const workbench = workbenchPage([] as ListedItem[]);
 
+/** A listed item the cache holds, as against a placeholder a search found (#465). */
+type CachedItem = Exclude<ListedItem, { kind: "placeholder" }>;
+
 /** Item `number` of the Inbox, an Issue with one open PR under it, updated `number` minutes past 10. */
-const issue = (number: number): ListedItem => {
+const issue = (number: number): CachedItem => {
   const updated_at = new Date(Date.UTC(2026, 10, 4, 10, number)).toISOString();
   const pr = 100_000 + number;
   return {
@@ -115,6 +118,38 @@ test("typing in the search box narrows the Inbox on the cache, and an empty box 
   await expect(page.getByRole("button", { name: "#1 Issue 1" })).toBeVisible();
 });
 
+test("Enter sends the whole search to GitHub, and its rows show with a placeholder and the 1,000 line", async ({
+  page,
+}) => {
+  await mockCore(page, { home, workbench, inbox: pageOf(issues(2, 1), false) });
+  await page.goto("/");
+  await openInbox(page);
+  const search = page.getByRole("searchbox", { name: "Search the Inbox" });
+
+  const placeholder = placeholderItem(4242, "pull_request");
+  const answered = inboxPage([placeholder, issue(1)], null, "off", false, {
+    shown: 1000,
+    total: 1712,
+  });
+  await changeAnswer(page, "inbox", answered);
+  await search.fill("review:approved");
+  // Enter sends the box's whole text to GitHub at once, without waiting for the pause in typing, and drops
+  // the pause's timer so only this one search goes.
+  await search.press("Enter");
+  await expect.poll(() => callsOf(page, "searchInbox")).toBe(1);
+  // The pause the fill scheduled would have fired by now, had Enter not cleared it, and a second search
+  // would show. Waiting past it proves the timer is gone.
+  await page.waitForTimeout(1200);
+  await expect.poll(() => callsOf(page, "searchInbox")).toBe(1);
+
+  // A result the cache lacks holds its place, and a search past 1,000 says how many it showed.
+  await expect(page.getByText("PR not in the cache yet")).toBeVisible();
+  await expect(page.getByText("#4242")).toBeVisible();
+  await expect(page.locator(".list").getByRole("status")).toHaveText(
+    "1,000 of 1,712 shown. Narrow the search, or save it as a Filter.",
+  );
+});
+
 test("scrolling to the end of the Inbox reads the next page and draws it", async ({ page }) => {
   await page.setViewportSize({ width: 1200, height: 600 });
   await mockCore(page, { home, workbench, inbox: pageOf(issues(400, 341), true) });
@@ -207,7 +242,7 @@ test("the Detail pane's item comes on screen from far down the Inbox, past items
 test("Show muted greys a Muted author's rows, and turning it off lists the Inbox without them", async ({
   page,
 }) => {
-  const muted: ListedItem = { ...issue(2), mute_author: { kind: "unmute", login: "issue-author" } };
+  const muted: CachedItem = { ...issue(2), mute_author: { kind: "unmute", login: "issue-author" } };
   await mockCore(page, {
     home,
     workbench,

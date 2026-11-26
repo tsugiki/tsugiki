@@ -5,14 +5,23 @@ import {
   type InboxPage_Deserialize as InboxPage,
   type ListOrder,
 } from "$lib/data/bindings";
-import { done, inboxPage, listedIssue, refused, workbenchPage, workbenchRow } from "$lib/testing/fixtures";
+import {
+  done,
+  inboxPage,
+  listedIssue,
+  placeholderItem,
+  refused,
+  workbenchPage,
+  workbenchRow,
+} from "$lib/testing/fixtures";
 import { nextTask } from "$lib/testing/helpers";
 import { catchChanged } from "$lib/testing/state";
 import {
+  SEARCH_PAUSE_MS,
   WorkbenchState,
+  type CachedItem,
   type FilterLine,
   type InboxCursor,
-  type ListedItem,
   type Seen,
   type Stop,
   type WorkbenchRow,
@@ -22,6 +31,7 @@ vi.mock("$lib/data/bindings", () => ({
   commands: {
     workbench: vi.fn(),
     inbox: vi.fn(),
+    searchInbox: vi.fn(),
     markSeen: vi.fn(),
     markUnseen: vi.fn(),
     archive: vi.fn(),
@@ -43,7 +53,7 @@ const seen = (...numbers: number[]): Seen => ({
   state: "seen",
 });
 
-const item = (number: number): ListedItem => ({
+const item = (number: number): CachedItem => ({
   attention: null,
   key: { kind: "pull_request", number },
   hidden: null,
@@ -67,7 +77,7 @@ const answer = (...numbers: number[]) =>
 const numbers = (state: WorkbenchState) => state.items?.map((i) => i.number);
 
 /** Issue `number` with one PR, `pr`, in its tree. */
-const issueWith = (number: number, pr: number): ListedItem => ({
+const issueWith = (number: number, pr: number): CachedItem => ({
   attention: null,
   key: { kind: "issue", number },
   hidden: null,
@@ -193,7 +203,7 @@ describe("WorkbenchState", () => {
 
   it("stops on each PR and Backport in an Issue's tree, and knows the Issue", async () => {
     catchChanged();
-    const tree: ListedItem = {
+    const tree: CachedItem = {
       attention: null,
       key: { kind: "issue", number: 10 },
       hidden: null,
@@ -214,7 +224,7 @@ describe("WorkbenchState", () => {
       ],
     };
     const standalone = { ...item(20), backports: [{ ...row, number: 21, backport: "bot" as const }] };
-    const lone: ListedItem = {
+    const lone: CachedItem = {
       ...row,
       kind: "standalone_backport",
       number: 30,
@@ -253,7 +263,7 @@ describe("WorkbenchState", () => {
 
   it("passes a PR that fixes two Issues once under each", async () => {
     catchChanged();
-    const tree = (number: number): ListedItem => ({
+    const tree = (number: number): CachedItem => ({
       attention: null,
       key: { kind: "issue", number },
       hidden: null,
@@ -376,7 +386,7 @@ describe("WorkbenchState", () => {
 
   it("folds a Filter's Muted items at the list's end, where the cursor goes only while they show", async () => {
     catchChanged();
-    const muted: ListedItem = { ...item(5), hidden: "muted" };
+    const muted: CachedItem = { ...item(5), hidden: "muted" };
     vi.mocked(commands.workbench).mockResolvedValue(
       workbenchPage([item(3)], { muted: [muted], filters: [mine] }),
     );
@@ -402,7 +412,7 @@ describe("WorkbenchState", () => {
 
   it("shows the folded Muted items to put the cursor on one, and each view keeps its own fold", async () => {
     catchChanged();
-    const muted: ListedItem = { ...item(5), hidden: "muted" };
+    const muted: CachedItem = { ...item(5), hidden: "muted" };
     vi.mocked(commands.workbench).mockResolvedValue(
       workbenchPage([item(3)], { muted: [muted], filters: [mine] }),
     );
@@ -427,7 +437,7 @@ describe("WorkbenchState", () => {
     const state = new WorkbenchState("python/cpython");
     await state.load();
     state.moveCursor(1);
-    const tree: ListedItem = {
+    const tree: CachedItem = {
       attention: null,
       key: { kind: "issue", number: 10 },
       hidden: null,
@@ -478,7 +488,7 @@ describe("WorkbenchState", () => {
   it("moves the cursor on from a muted item with the Muted items shown, and closes them once they empty", async () => {
     const { send, answer: acted } = catchChanged();
     vi.mocked(commands.mute).mockResolvedValue(done);
-    const muted = (number: number): ListedItem => ({ ...item(number), hidden: "muted" });
+    const muted = (number: number): CachedItem => ({ ...item(number), hidden: "muted" });
     vi.mocked(commands.workbench).mockResolvedValueOnce(
       workbenchPage([5, 6].map(item), { muted: [muted(9)] }),
     );
@@ -984,7 +994,7 @@ describe("WorkbenchState", () => {
     catchChanged();
     vi.mocked(commands.mute).mockResolvedValue(done);
     vi.mocked(commands.unmute).mockResolvedValue(refused("no database"));
-    const muted: ListedItem = { ...issueWith(1, 2), hidden: "muted" };
+    const muted: CachedItem = { ...issueWith(1, 2), hidden: "muted" };
     vi.mocked(commands.workbench).mockResolvedValue(workbenchPage([muted, item(3)]));
     const state = new WorkbenchState("python/cpython");
     await state.load();
@@ -1024,7 +1034,7 @@ describe("WorkbenchState", () => {
   });
 
   /** Item `number`, with a Review request waiting on the user. */
-  const waiting = (number: number): ListedItem => ({
+  const waiting = (number: number): CachedItem => ({
     ...item(number),
     attention: { since: "2026-11-04T10:00:00Z", why: [{ kind: "review_requested" }] },
   });
@@ -1400,7 +1410,7 @@ describe("WorkbenchState", () => {
 
     it("follows the item a change moves, into a Filter's open Muted items too", async () => {
       const { send } = catchChanged();
-      const muted = (number: number): ListedItem => ({ ...item(number), hidden: "muted" });
+      const muted = (number: number): CachedItem => ({ ...item(number), hidden: "muted" });
       vi.mocked(commands.workbench).mockResolvedValue(workbenchPage([5, 6].map(item), { muted: [muted(9)] }));
       const landed = vi.fn();
       const state = new WorkbenchState("python/cpython", { landed });
@@ -1503,7 +1513,7 @@ describe("WorkbenchState", () => {
       seen: seen(number),
       backports: [],
     });
-    const issue = (attention: ListedItem["attention"]): ListedItem => ({
+    const issue = (attention: CachedItem["attention"]): CachedItem => ({
       attention,
       key: { kind: "issue", number: 5 },
       hidden: null,
@@ -1520,7 +1530,7 @@ describe("WorkbenchState", () => {
       pull_requests: [pr(10), pr(11)],
       seen: seen(5, 10, 11),
     });
-    const listing = (attention: ListedItem["attention"]) =>
+    const listing = (attention: CachedItem["attention"]) =>
       workbenchPage([issue(attention), waiting(3)], { count: 0 });
     vi.mocked(commands.workbench).mockResolvedValue(listing(waiting(5).attention));
     const landed = vi.fn();
@@ -1770,6 +1780,131 @@ describe("WorkbenchState's Inbox", () => {
     state.stop();
   });
 
+  it("sends the whole query to GitHub once a pause in typing passes, and not an empty box", async () => {
+    vi.useFakeTimers();
+    try {
+      catchChanged();
+      vi.mocked(commands.workbench).mockResolvedValue(answer());
+      paging({ latest: page([3]) });
+      const state = await showingInbox();
+
+      await state.setSearch("rev");
+      await state.setSearch("review:approved");
+      expect(commands.searchInbox).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(SEARCH_PAUSE_MS - 1);
+      expect(commands.searchInbox).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(1);
+      expect(commands.searchInbox).toHaveBeenCalledExactlyOnceWith("python/cpython", "review:approved");
+
+      // The timer an empty box would have sent is dropped, and it sends nothing, even asked to.
+      await state.setSearch("");
+      await vi.advanceTimersByTimeAsync(SEARCH_PAUSE_MS);
+      expect(commands.searchInbox).toHaveBeenCalledOnce();
+      await state.sendSearch();
+      expect(commands.searchInbox).toHaveBeenCalledOnce();
+      state.stop();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("sends the query at once when the box asks it to, without waiting for the pause", async () => {
+    catchChanged();
+    vi.mocked(commands.workbench).mockResolvedValue(answer());
+    paging({ latest: page([3]) });
+    const state = await showingInbox();
+
+    await state.setSearch("review:approved");
+    await state.sendSearch();
+    expect(commands.searchInbox).toHaveBeenCalledExactlyOnceWith("python/cpython", "review:approved");
+    state.stop();
+  });
+
+  it("drops a paused search when the user leaves the Inbox before it sends", async () => {
+    vi.useFakeTimers();
+    try {
+      catchChanged();
+      vi.mocked(commands.workbench).mockResolvedValue(answer(9));
+      paging({ latest: page([3]) });
+      const state = await showingInbox();
+
+      await state.setSearch("review:approved");
+      await state.select(whole);
+      await vi.advanceTimersByTimeAsync(SEARCH_PAUSE_MS);
+      expect(commands.searchInbox).not.toHaveBeenCalled();
+      state.stop();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("sends the search it dropped when the user returns to the Inbox", async () => {
+    vi.useFakeTimers();
+    try {
+      catchChanged();
+      vi.mocked(commands.workbench).mockResolvedValue(answer(9));
+      paging({ latest: page([3]) });
+      const state = await showingInbox();
+
+      await state.setSearch("review:approved");
+      await state.select(whole);
+      await vi.advanceTimersByTimeAsync(SEARCH_PAUSE_MS);
+      expect(commands.searchInbox).not.toHaveBeenCalled();
+
+      // The box still holds the query, so returning sends it, and keeps the box's text and list together.
+      await state.select(inbox);
+      expect(commands.searchInbox).toHaveBeenCalledExactlyOnceWith("python/cpython", "review:approved");
+
+      // A search already sent isn't sent again by another look at the Inbox.
+      await state.select(whole);
+      await state.select(inbox);
+      expect(commands.searchInbox).toHaveBeenCalledOnce();
+      state.stop();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("keeps a placeholder out of the lines and actions, as the cache holds nothing of it", async () => {
+    catchChanged();
+    vi.mocked(commands.workbench).mockResolvedValue(answer());
+    const placeholder = placeholderItem(4242, "pull_request");
+    vi.mocked(commands.inbox).mockResolvedValue(inboxPage([placeholder, item(3)]));
+    const state = await showingInbox();
+
+    // The cursor starts on the item the cache holds, not on the placeholder above it.
+    state.moveCursor(1);
+    expect(state.cursor?.number).toBe(3);
+
+    // No line holds a placeholder, so nothing of it can be marked or hidden.
+    const stop: Stop = { number: 4242, kind: "pull_request", issue: undefined };
+    expect(state.seenOf(stop)).toBeUndefined();
+    expect(state.muteAuthorOf(stop)).toBeUndefined();
+    expect(state.hidingBy(stop)).toBeUndefined();
+    state.stop();
+  });
+
+  it("draws a standalone backport's own mark, as no row sits under it", async () => {
+    catchChanged();
+    vi.mocked(commands.workbench).mockResolvedValue(answer());
+    const backport: CachedItem = {
+      attention: null,
+      key: { kind: "pull_request", number: 4 },
+      hidden: null,
+      unpin: "stays",
+      kind: "standalone_backport",
+      backport: "manual",
+      ...workbenchRow(4, { title: "PR 4", author: "octocat", reasons: ["own_pr"] }),
+    };
+    vi.mocked(commands.inbox).mockResolvedValue(inboxPage([backport]));
+    const state = await showingInbox();
+
+    const stop: Stop = { number: 4, kind: "pull_request", issue: undefined };
+    expect(state.seenOf(stop)).toBeDefined();
+    expect(state.muteAuthorOf(stop)).toBeDefined();
+    state.stop();
+  });
+
   it("reads the older pages onto the end, each item once, until the cache holds nothing older", async () => {
     catchChanged();
     vi.mocked(commands.workbench).mockResolvedValue(answer());
@@ -1900,7 +2035,7 @@ describe("WorkbenchState's Inbox", () => {
   const issueAt = (number: number) => ({ number, kind: "issue" as const, issue: undefined });
 
   /** Issue `number`, which the user pinned, with what an unpin does to it on the Workbench. */
-  const pinned = (number: number, unpin: ListedItem["unpin"] = "stays") =>
+  const pinned = (number: number, unpin: CachedItem["unpin"] = "stays") =>
     listedIssue(number, { pinned: true, unpin });
 
   it("moves the cursor on at a pin in the Inbox or Archived, which it takes the Issue out of, and stays on the Workbench (#1052)", async () => {
@@ -2007,7 +2142,7 @@ describe("WorkbenchState's Inbox", () => {
     await state.load();
     await state.select({ kind: "pinned" });
     state.moveTo(issueAt(5));
-    const reload = async (...listed: ListedItem[]) => {
+    const reload = async (...listed: CachedItem[]) => {
       vi.mocked(commands.workbench).mockResolvedValue(workbenchPage(listed));
       send("python/cpython");
       await vi.waitFor(() => {

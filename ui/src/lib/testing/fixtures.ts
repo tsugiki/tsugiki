@@ -22,6 +22,7 @@ import type {
   Themes,
   ThemeView,
   TreeRow,
+  Truncated,
   WorkbenchRow_Serialize as WorkbenchRow,
 } from "../data/bindings";
 
@@ -47,14 +48,31 @@ export const refused = (message: string) => ({
 });
 
 /** A page of the Inbox holding `items`, whose next older page starts at `older`, with "Show muted" as
- * `show_muted` says, and `needs_github` for a search the cache doesn't read. The items keep the caller's
- * types, as in `workbenchPage`. */
+ * `show_muted` says, `needs_github` for a search the cache doesn't read, and `truncated` when a search past
+ * GitHub's 1,000 results stopped there (#465). The items keep the caller's types, as in `workbenchPage`. */
 export const inboxPage = <Item>(
   items: Item[],
   older: InboxCursor | null = null,
   show_muted: ShowMuted = "off",
   needs_github = false,
-) => ok({ items, older, show_muted, needs_github });
+  truncated: Truncated | null = null,
+) => ok({ items, older, show_muted, needs_github, truncated });
+
+/** A result a search found that the cache lacks, as the Inbox draws it in GitHub's order (#465). */
+export const placeholderItem = (
+  number: number,
+  item_kind: "issue" | "pull_request",
+  updated_at = "2026-11-04T10:00:00Z",
+): ListedItem => ({
+  attention: null,
+  key: { kind: item_kind, number },
+  hidden: null,
+  unpin: "stays",
+  kind: "placeholder",
+  number,
+  item_kind,
+  updated_at,
+});
 
 /** The Workbench's answer, listing `items`, counting those that Need attention, with no folded Muted item,
  * no Review request, no Stale review, no Pinned issue that Needs attention and no Filter, unless `more` says

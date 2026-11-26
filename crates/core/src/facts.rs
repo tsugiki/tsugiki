@@ -5,6 +5,7 @@
 
 pub mod activity;
 pub mod filters;
+pub mod inbox_search;
 pub mod issue_content;
 pub mod issues;
 pub mod labels;

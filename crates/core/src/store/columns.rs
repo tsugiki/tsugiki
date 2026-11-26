@@ -6,6 +6,7 @@ use rusqlite::types::{FromSql, FromSqlError, FromSqlResult, ToSqlOutput, ValueRe
 use time::OffsetDateTime;
 
 use crate::facts::CommitSha;
+use crate::facts::inbox_search::RowKind;
 use crate::facts::issue_content::{CommentId, HiddenReason};
 use crate::facts::issues::IssueState;
 use crate::facts::labels::Label;
@@ -288,6 +289,11 @@ text_column!(IssueState {
     Closed => "CLOSED",
     NotPlanned => "NOT_PLANNED",
     Duplicate => "DUPLICATE",
+});
+
+text_column!(RowKind {
+    Issue => "issue",
+    PullRequest => "pull_request",
 });
 
 text_column!(CiState {

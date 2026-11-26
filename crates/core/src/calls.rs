@@ -171,6 +171,16 @@ impl Calls {
         )
     }
 
+    /// Sends the Inbox's search box text `text` to GitHub, which answers which results it finds and how many,
+    /// ahead of the sync's next step (#465). The `changed` event follows the answer, and the Inbox then reads
+    /// the rows it listed. A blank text sends nothing.
+    pub fn search_inbox(&self, repository: RepositoryName, text: &str) {
+        let text = text.trim();
+        if !text.is_empty() {
+            self.fetching.search(repository, text.to_owned());
+        }
+    }
+
     /// The Issue view of Issue `number`, or nothing if Tsugiki doesn't hold it.
     pub fn issue(
         &self,

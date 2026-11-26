@@ -268,6 +268,11 @@ export const commands = {
 	 */
 	inbox: (repository: string, page: InboxPage_Deserialize, search: string) => typedError<Inbox_Serialize, Error_Serialize>(__TAURI_INVOKE("inbox", { repository, page, search })),
 	/**
+	 *  Sends the Inbox's search box text `search` to GitHub, which answers which rows it finds and how many,
+	 *  ahead of the sync's next step (#465), and returns at once. A blank text sends nothing.
+	 */
+	searchInbox: (repository: string, search: string) => typedError<null, Error_Serialize>(__TAURI_INVOKE("search_inbox", { repository, search })),
+	/**
 	 *  The Issue view of Issue `number`, or nothing if Tsugiki doesn't hold it. This waits on the database and
 	 *  never on GitHub (ADR 0018).
 	 */
@@ -677,6 +682,8 @@ export type Asking =
 { kind: "read"; repository: RepositoryName; number: number } | 
 /**  An Issue or a PR the database lacks, which quick open fetches by its number. */
 { kind: "fetch"; repository: RepositoryName; number: number } | 
+/**  A search typed in the Inbox, which GitHub answers (#465). */
+{ kind: "search"; repository: RepositoryName } | 
 /**  Add repository's check of a Repository. */
 { kind: "check"; repository: RepositoryName } | 
 /**  The size of a Repository, which the Mirror worker asks before a clone. */
@@ -1732,6 +1739,11 @@ export type Inbox_Deserialize = {
 	 *  rows and says it needs GitHub (#464).
 	 */
 	needs_github: boolean,
+	/**
+	 *  How many results a search's answer listed of how many it reaches, when it stopped at GitHub's 1,000
+	 *  (#465).
+	 */
+	truncated?: Truncated | null,
 };
 
 /**  A page of the Inbox. It is empty only when the Inbox is, as before anyone signs in. */
@@ -1753,6 +1765,11 @@ export type Inbox_Serialize = {
 	 *  rows and says it needs GitHub (#464).
 	 */
 	needs_github: boolean,
+	/**
+	 *  How many results a search's answer listed of how many it reaches, when it stopped at GitHub's 1,000
+	 *  (#465).
+	 */
+	truncated: Truncated | null,
 };
 
 /**
@@ -2825,6 +2842,36 @@ export type Place =
  */
 { kind: "outside"; path: string };
 
+/**
+ *  A result a search on GitHub found that the cache lacks (#465). The Inbox shows its number and whether it
+ *  is an Issue or a PR; a later ticket fetches what it says as the user scrolls to it.
+ */
+export type Placeholder = Placeholder_Serialize | Placeholder_Deserialize;
+
+/**
+ *  A result a search on GitHub found that the cache lacks (#465). The Inbox shows its number and whether it
+ *  is an Issue or a PR; a later ticket fetches what it says as the user scrolls to it.
+ */
+export type Placeholder_Deserialize = {
+	number: number,
+	/**  Whether GitHub found an Issue or a PR. */
+	item_kind: RowKind,
+	/**  GitHub's update time, which the row's age shows. */
+	updated_at: string,
+};
+
+/**
+ *  A result a search on GitHub found that the cache lacks (#465). The Inbox shows its number and whether it
+ *  is an Issue or a PR; a later ticket fetches what it says as the user scrolls to it.
+ */
+export type Placeholder_Serialize = {
+	number: number,
+	/**  Whether GitHub found an Issue or a PR. */
+	item_kind: RowKind,
+	/**  GitHub's update time, which the row's age shows. */
+	updated_at: string,
+};
+
 /**  Where Files shows a thread. A file is named by its place among the diff's files. */
 export type Placement = Placement_Serialize | Placement_Deserialize;
 
@@ -3451,6 +3498,9 @@ export type Review_Serialize = {
 	/**  A line for each thread it started, in the order GitHub gives them. */
 	threads: ThreadLine_Serialize[],
 };
+
+/**  Whether a result GitHub found is an Issue or a PR. GitHub numbers both from one sequence. */
+export type RowKind = "issue" | "pull_request";
 
 /**  A script that ran in a long frame, as the browser names it. */
 export type Script = Script_Serialize | Script_Deserialize;
@@ -4291,6 +4341,14 @@ threads: number;
 /**  The drafts of the user's Pending review on it, which only they see. */
 drafts: number };
 
+/**  The line a search ends with when GitHub listed more than Tsugiki read (#465). */
+export type Truncated = {
+	/**  How many results Tsugiki read. */
+	shown: number,
+	/**  How many the search reaches. */
+	total: number,
+};
+
 /**
  *  The reason PR heads aren't in a mirror once the worker stopped fetching them, for a Files tab waiting for
  *  one (#233, #213).
@@ -4397,7 +4455,14 @@ export type WorkbenchItem_Deserialize = {
 /**  A Backport with no Issue and no Origin PR to sit under. */
 {
 	kind: "standalone_backport",
-} & BackportRow_Deserialize;
+} & BackportRow_Deserialize | 
+/**
+ *  A result a search on GitHub found that the cache lacks, in its place in the list until a later ticket
+ *  fills it (#465).
+ */
+{
+	kind: "placeholder",
+} & Placeholder_Deserialize;
 
 /**  A top-level entry of the list. */
 export type WorkbenchItem_Serialize = {
@@ -4410,7 +4475,14 @@ export type WorkbenchItem_Serialize = {
 /**  A Backport with no Issue and no Origin PR to sit under. */
 {
 	kind: "standalone_backport",
-} & BackportRow_Serialize;
+} & BackportRow_Serialize | 
+/**
+ *  A result a search on GitHub found that the cache lacks, in its place in the list until a later ticket
+ *  fills it (#465).
+ */
+{
+	kind: "placeholder",
+} & Placeholder_Serialize;
 
 /**  A PR's line of the list. */
 export type WorkbenchRow = WorkbenchRow_Serialize | WorkbenchRow_Deserialize;

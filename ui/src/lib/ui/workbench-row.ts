@@ -105,6 +105,7 @@ export const updatedTip = (row: { updated_at: string }) => `Updated ${stampOf(ro
  * or Backport's is its own update. An Issue's tooltip lists its own update and each PR's in its tree, each
  * with its date and time, so the user sees which update put it in the list, and when. */
 export function ageTip(item: ListedItem): string {
+  if (item.kind === "placeholder") return "";
   if (item.kind !== "issue") {
     const what = item.kind === "standalone_backport" ? "Backport" : "PR";
     return `${what} updated ${stampOf(item.updated_at)}`;
@@ -126,6 +127,7 @@ const prCount = (count: number) => counted(count, "PR", "PRs");
 
 /** An item's first line: the people an Issue involves, a dash once they have all gone, or a PR's author. */
 export function peopleOf(item: ListedItem): string {
+  if (item.kind === "placeholder") return "";
   if (item.kind !== "issue") return item.author ?? "deleted user";
   return item.people.length > 0 ? item.people.join(", ") : "—";
 }
@@ -136,6 +138,7 @@ export const treeCount = (issue: IssueItem) => prCount(treeRows(issue.pull_reque
 /** An item's third line while nothing in it waits on the user: how many of an Issue's PRs are open, or a
  * PR's facts. */
 export function summary(item: ListedItem): string {
+  if (item.kind === "placeholder") return "";
   if (item.kind !== "issue") return details(item);
   return item.pull_requests.length > 0 ? openOfAll(item.pull_requests) : "No PR yet";
 }

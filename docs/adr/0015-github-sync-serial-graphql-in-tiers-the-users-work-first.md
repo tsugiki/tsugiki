@@ -145,8 +145,16 @@ and reads the trees it still owed.
   it reads the PR's conversation, Reviews and threads into the database, so opening it shows them at once. Any
   other PR's head is fetched, and its conversation read, when the user opens it, ahead of what waits.
 - **Older items on demand.** Opening one, by a link, a `tsg` URL or "also fixes #N", fetches it and its tree,
-  and it stays cached. A search typed in All issues also runs on GitHub, and results the cache lacks are
-  added. All issues ends with "Load 30 more days", which walks further back once without changing the window.
+  and it stays cached. A search typed in the **Inbox** also runs on GitHub, ahead of the sync's next step,
+  when the user presses Enter or pauses in typing. Leaving the Inbox before the pause sends nothing, and
+  entering it again sends the query the box still holds. Tsugiki asks `repo:<repository> (<query>)`, adds
+  `is:open` unless the query names a state, excluded or not, and `sort:updated-desc` unless the query sorts
+  itself, and reads at most ten pages of a hundred, GitHub's 1,000 results: unlike a Filter, a typed search
+  does not split into `created:` ranges. The cached rows the answer returns show at once in GitHub's order,
+  the cached rows it leaves out drop, and results the cache lacks show as placeholders that a later ticket
+  fills ([#465](https://github.com/tsugiki/tsugiki/issues/465),
+  [#466](https://github.com/tsugiki/tsugiki/issues/466)). A newer query drops the answer to the older one. All
+  issues ends with "Load 30 more days", which walks further back once without changing the window.
 - **Window changes.** Widening it walks only the added days. Narrowing it deletes nothing. Items that leave
   the window stay cached and come back through the refresh when updated; nothing is pruned.
 

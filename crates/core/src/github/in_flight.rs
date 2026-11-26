@@ -34,6 +34,8 @@ pub enum Asking {
         repository: RepositoryName,
         number: u32,
     },
+    /// A search typed in the Inbox, which GitHub answers (#465).
+    Search { repository: RepositoryName },
     /// Add repository's check of a Repository.
     Check { repository: RepositoryName },
     /// The size of a Repository, which the Mirror worker asks before a clone.

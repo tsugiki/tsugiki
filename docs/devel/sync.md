@@ -70,8 +70,10 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
   nothing and leaves the status as it is. A refresh's list check keeps its tag for after the reset, so it
   can still cost nothing then. The first request after the reset goes as before, and its answer says the new
   hour's points. A clone whose size check the gate holds waits for the reset.
-- Older items come on demand: opening one fetches it and keeps it, a search in the **Inbox** also runs on
-  GitHub, and the Inbox ends with "Load 30 more days" once it has listed all the cache holds.
+- Older items come on demand: opening one fetches it and keeps it. A search typed in the **Inbox** also runs
+  on GitHub, ahead of the sync's next step: Tsugiki reads at most ten light pages of a hundred results, its
+  1,000 cap, and keeps the answer in the cache. The Inbox ends with "Load 30 more days" once it has listed all
+  the cache holds.
 - The local database is one file for all Repositories, holding both the cached GitHub data and the user's own
   state ([ADR 0010](../adr/0010-one-sqlite-database-and-per-repository-mirrors.md)). **Export database**
   (Settings › Advanced, and the command palette) writes a consistent copy of it anywhere, such as a synced

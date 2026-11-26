@@ -8,6 +8,7 @@ mod columns;
 mod failed_checks;
 mod file;
 mod filters;
+mod inbox_search;
 mod issue_content;
 mod issues;
 mod migrate;
@@ -46,6 +47,7 @@ use crate::conventions::Conventions;
 use crate::error::{Error, ErrorKind};
 use crate::facts::activity::{ActivityFacts, ItemActivity, ItemKey, ShowMuted};
 use crate::facts::filters::FilterResults;
+use crate::facts::inbox_search::InboxSearch;
 use crate::facts::issue_content::IssueContent;
 use crate::facts::issues::{IssueFacts, IssuePlace, IssueState};
 use crate::facts::patch_ids::{CommitPatches, Findings, LastCheck, ReviewFacts, UncheckedCommit};
@@ -269,6 +271,21 @@ impl Store {
         };
         let merged = self.call(merge)?;
         merged.map_err(saying(CANT_WRITE))
+    }
+
+    /// Keeps `search` as `repository`'s answer to the Inbox search `query`, dropping the answer to every
+    /// other query, in one transaction (#465).
+    pub fn save_inbox_search(
+        &self,
+        repository: &RepositoryName,
+        query: &str,
+        search: InboxSearch,
+    ) -> Result<(), Error> {
+        let repository = repository.clone();
+        let query = query.to_owned();
+        let saved = self
+            .call(move |connection| inbox_search::save(connection, &repository, &query, &search))?;
+        saved.map_err(saying(CANT_WRITE))
     }
 
     /// Each search of `repository` that has run, with its results, for a refresh to see how to ask again.
@@ -1069,6 +1086,11 @@ impl Snapshot<'_> {
     /// The Issues a PR that opened on them brought back to the Inbox (#823), closed or not.
     pub fn brought_back(&self) -> Result<BTreeSet<u32>, Error> {
         activity::brought_back(&self.transaction, &self.repository).map_err(saying(CANT_READ))
+    }
+
+    /// The Repository's answer to the Inbox search `query`, if GitHub has answered it (#465).
+    pub fn inbox_search(&self, query: &str) -> Result<Option<InboxSearch>, Error> {
+        inbox_search::read(&self.transaction, &self.repository, query).map_err(saying(CANT_READ))
     }
 
     /// The Repository's "Show muted" (#825).

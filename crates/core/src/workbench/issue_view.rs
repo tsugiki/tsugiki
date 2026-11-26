@@ -90,7 +90,8 @@ impl IssueView {
                 WorkbenchItem::Issue(issue) if issue.number == number => Some(issue),
                 WorkbenchItem::Issue(_)
                 | WorkbenchItem::StandalonePr(_)
-                | WorkbenchItem::StandaloneBackport(_) => None,
+                | WorkbenchItem::StandaloneBackport(_)
+                | WorkbenchItem::Placeholder(_) => None,
             });
         Ok(found.map(|mut issue| {
             let key = ItemKey::Issue { number };

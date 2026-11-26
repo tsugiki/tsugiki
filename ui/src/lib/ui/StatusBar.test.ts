@@ -748,6 +748,7 @@ describe("StatusBar's request in flight", () => {
       [{ kind: "sync", repository }, "sync of python/cpython"],
       [{ kind: "read", repository, number: 7 }, "read of python/cpython#7"],
       [{ kind: "fetch", repository, number: 8 }, "fetch of python/cpython#8"],
+      [{ kind: "search", repository }, "search of python/cpython"],
       [{ kind: "check", repository }, "check of python/cpython"],
       [{ kind: "size", repository }, "size of python/cpython"],
       [{ kind: "visibility", repository }, "visibility of python/cpython"],

@@ -91,6 +91,11 @@ fn each_state_keeps_the_text_earlier_versions_stored() {
 }
 
 #[test]
+fn a_search_result_keeps_its_kind_as_text() {
+    assert_eq!(stored_texts(RowKind::ALL), ["issue", "pull_request"]);
+}
+
+#[test]
 fn a_commit_sha_column_refuses_text_that_isnt_one() {
     let refused = Connection::open_in_memory().unwrap().query_row(
         "SELECT 'not a commit' AS value",

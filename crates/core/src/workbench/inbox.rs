@@ -37,13 +37,14 @@ use super::backports::plant;
 use super::links::placed;
 use super::trees::Trees;
 use super::{
-    Hidden, ListedItem, PrTree, TreeEntry, Unpin, WorkbenchItem, WorkbenchRow, candidates,
-    candidates_of,
+    Hidden, ListedItem, Placeholder, PrTree, TreeEntry, Unpin, WorkbenchItem, WorkbenchRow,
+    candidates, candidates_of,
 };
 use crate::conventions::Conventions;
 use crate::error::Error;
 use crate::facts::WorkFacts;
 use crate::facts::activity::{ItemKey, ShowMuted};
+use crate::facts::inbox_search::{InboxSearch, RowKind};
 use crate::facts::issues::{IssuePlace, IssueState};
 use crate::facts::pull_requests::{PrLinks, PrState};
 use crate::login::Login;
@@ -116,6 +117,18 @@ pub struct Inbox {
     /// Whether the search in the box asks for something the cache doesn't read, so the list holds no local
     /// rows and says it needs GitHub (#464).
     pub needs_github: bool,
+    /// How many results a search's answer listed of how many it reaches, when it stopped at GitHub's 1,000
+    /// (#465).
+    pub truncated: Option<Truncated>,
+}
+
+/// The line a search ends with when GitHub listed more than Tsugiki read (#465).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Type)]
+pub struct Truncated {
+    /// How many results Tsugiki read.
+    pub shown: u32,
+    /// How many the search reaches.
+    pub total: u32,
 }
 
 /// A page of the Inbox the window asks for, with the forms its search box holds (#464).
@@ -155,7 +168,7 @@ impl Inbox {
         let job = move |snapshot: &Snapshot<'_>| {
             let show_muted = snapshot.show_muted()?;
             if !search.is_empty() {
-                return Self::matching(snapshot, &settings, &search, show_muted);
+                return Self::searched(snapshot, &settings, &search, show_muted);
             }
             let mut page = page;
             loop {
@@ -165,6 +178,7 @@ impl Inbox {
                         older: None,
                         show_muted,
                         needs_github: false,
+                        truncated: None,
                     });
                 };
                 let inbox = Self::listed(read, &settings, show_muted);
@@ -177,6 +191,30 @@ impl Inbox {
         reader.read_snapshot(&repository.name, job)
     }
 
+    /// The Inbox the box narrows: GitHub's answer to its text when one is kept (#465), or the forms the
+    /// cache reads (#464). A text the cache can't read and GitHub hasn't answered lists nothing and says it
+    /// needs GitHub.
+    fn searched(
+        snapshot: &Snapshot<'_>,
+        repository: &RepositorySettings,
+        search: &Search,
+        show: ShowMuted,
+    ) -> Result<Self, Error> {
+        if let Some(answer) = snapshot.inbox_search(search.text())? {
+            return Self::answered(snapshot, repository, &answer, show);
+        }
+        if search.needs_github() {
+            return Ok(Self {
+                items: Vec::new(),
+                older: None,
+                show_muted: show,
+                needs_github: true,
+                truncated: None,
+            });
+        }
+        Self::matching(snapshot, repository, search, show)
+    }
+
     /// The Inbox `search` narrows the whole cache to, in its order: every row it finds with its header, and
     /// nothing else. It lists every match in one page, so a change reads them again as one.
     fn matching(
@@ -185,14 +223,6 @@ impl Inbox {
         search: &Search,
         show: ShowMuted,
     ) -> Result<Self, Error> {
-        if search.needs_github() {
-            return Ok(Self {
-                items: Vec::new(),
-                older: None,
-                show_muted: show,
-                needs_github: true,
-            });
-        }
         let facts = snapshot.work_facts()?;
         let causes = Causes::of(&facts, repository.conventions);
         let rows = Index::of(&facts, &snapshot.brought_back()?);
@@ -208,10 +238,7 @@ impl Inbox {
                 // rows the search leaves.
                 let hidden = listed.hidden;
                 let item = narrowed(listed.item, search, &rows)?;
-                let judged = match show {
-                    ShowMuted::On => Some(ListedItem::of(&causes, item)),
-                    ShowMuted::Off => ListedItem::without_muted_authors(&causes, item),
-                }?;
+                let judged = judge(&causes, show, item)?;
                 Some((place, ListedItem { hidden, ..judged }))
             })
             .collect();
@@ -222,6 +249,81 @@ impl Inbox {
             older: None,
             show_muted: show,
             needs_github: false,
+            truncated: None,
+        })
+    }
+
+    /// The Inbox GitHub's `answer` to the box narrows the cache to (#465): the rows it returned, each in its
+    /// place in GitHub's order, the rows it left out dropped, and a placeholder where the cache lacks a
+    /// result. A search lists every match in one page, so a change reads them again as one.
+    fn answered(
+        snapshot: &Snapshot<'_>,
+        repository: &RepositorySettings,
+        answer: &InboxSearch,
+        show: ShowMuted,
+    ) -> Result<Self, Error> {
+        let facts = snapshot.work_facts()?;
+        let causes = Causes::of(&facts, repository.conventions);
+        let rows = Index::of(&facts, &snapshot.brought_back()?);
+        let grouped = candidates_of(facts, repository, &BTreeSet::new(), &causes);
+        // An item keeps the place its whole tree gives it, before Show muted and the answer drop rows.
+        let places: BTreeMap<ItemKey, InboxCursor> = (grouped.iter())
+            .map(|item| (item.key(), item_place(item)))
+            .collect();
+        let positions: BTreeMap<u32, usize> = (answer.hits.iter().enumerate())
+            .map(|(position, hit)| (hit.number, position))
+            .collect();
+        let mut items: Vec<(usize, InboxCursor, ListedItem)> = (shown(grouped, show, &causes)
+            .into_iter())
+        .filter_map(|listed| {
+            let place = places.get(&listed.key).copied()?;
+            let hidden = listed.hidden;
+            let item = narrowed_by(listed.item, &|_, number| positions.contains_key(&number))?;
+            // The item stands where GitHub put the first result it holds.
+            let rank = rank_of(&item, &positions)?;
+            let judged = judge(&causes, show, item)?;
+            Some((rank, place, ListedItem { hidden, ..judged }))
+        })
+        .collect();
+        for (position, hit) in answer.hits.iter().enumerate() {
+            let held = rows.issues.contains_key(&hit.number)
+                || rows.pull_requests.contains_key(&hit.number);
+            if held {
+                continue;
+            }
+            let place = InboxCursor {
+                updated_at: hit.updated_at,
+                number: hit.number,
+            };
+            let item = WorkbenchItem::Placeholder(Placeholder {
+                number: hit.number,
+                item_kind: hit.kind,
+                updated_at: hit.updated_at,
+            });
+            items.push((
+                position,
+                place,
+                ListedItem {
+                    key: item.key(),
+                    item,
+                    attention: None,
+                    hidden: None,
+                    unpin: Unpin::Stays,
+                },
+            ));
+        }
+        items.sort_by_key(|(rank, place, _)| (*rank, Reverse(*place)));
+        let items = (items.into_iter()).map(|(_, _, listed)| listed).collect();
+        let truncated = answer.cut_off.then_some(Truncated {
+            shown: u32::try_from(answer.hits.len()).unwrap_or(u32::MAX),
+            total: answer.total,
+        });
+        Ok(Self {
+            items,
+            older: None,
+            show_muted: show,
+            needs_github: false,
+            truncated,
         })
     }
 
@@ -244,7 +346,16 @@ impl Inbox {
             older: read.older,
             show_muted: show,
             needs_github: false,
+            truncated: None,
         }
+    }
+}
+
+/// `item` with what `show` and `causes` judge of the rows a search leaves, or nothing once no row is left.
+fn judge(causes: &Causes, show: ShowMuted, item: WorkbenchItem) -> Option<ListedItem> {
+    match show {
+        ShowMuted::On => Some(ListedItem::of(causes, item)),
+        ShowMuted::Off => ListedItem::without_muted_authors(causes, item),
     }
 }
 
@@ -293,42 +404,58 @@ impl Index {
     }
 }
 
-/// `item` with only the rows `search` finds, or nothing when it finds none. An Issue's header, and a PR's
+/// `item` with only the rows `search` finds in the cache, or nothing when it finds none.
+fn narrowed(item: WorkbenchItem, search: &Search, rows: &Index) -> Option<WorkbenchItem> {
+    narrowed_by(item, &|kind, number| match kind {
+        RowKind::Issue => (rows.issues.get(&number)).is_some_and(|row| search.finds(row)),
+        RowKind::PullRequest => rows
+            .pull_request(number)
+            .is_some_and(|row| search.finds(row)),
+    })
+}
+
+/// Where GitHub put the first result `item` holds, or nothing when it holds none that GitHub returned.
+fn rank_of(item: &WorkbenchItem, positions: &BTreeMap<u32, usize>) -> Option<usize> {
+    (item.keys().into_iter())
+        .filter_map(|key| positions.get(&key.number()).copied())
+        .min()
+}
+
+/// `item` with only the rows `finds` keeps, or nothing when it keeps none. An Issue's header, and a PR's
 /// over the Backports beneath it, stays over the rows that match beneath it, even when it doesn't match
 /// itself, so a matching PR stays in its Issue's fold (#464).
-fn narrowed(item: WorkbenchItem, search: &Search, rows: &Index) -> Option<WorkbenchItem> {
-    let finds = |number: u32| {
-        rows.pull_request(number)
-            .is_some_and(|row| search.finds(row))
-    };
+fn narrowed_by(item: WorkbenchItem, finds: &dyn Fn(RowKind, u32) -> bool) -> Option<WorkbenchItem> {
     match item {
         WorkbenchItem::Issue(mut issue) => {
-            let header = rows
-                .issues
-                .get(&issue.number)
-                .is_some_and(|row| search.finds(row));
+            let header = finds(RowKind::Issue, issue.number);
             issue.pull_requests = (issue.pull_requests.into_iter())
                 .filter_map(|entry| match entry {
                     TreeEntry::Pr(mut tree) => {
-                        let top = finds(tree.row.number);
-                        tree.backports.retain(|backport| finds(backport.row.number));
+                        let top = finds(RowKind::PullRequest, tree.row.number);
+                        tree.backports
+                            .retain(|backport| finds(RowKind::PullRequest, backport.row.number));
                         (top || !tree.backports.is_empty()).then_some(TreeEntry::Pr(tree))
                     }
                     TreeEntry::Backport(backport) => {
-                        finds(backport.row.number).then_some(TreeEntry::Backport(backport))
+                        finds(RowKind::PullRequest, backport.row.number)
+                            .then_some(TreeEntry::Backport(backport))
                     }
                 })
                 .collect();
             (header || !issue.pull_requests.is_empty()).then_some(WorkbenchItem::Issue(issue))
         }
         WorkbenchItem::StandalonePr(mut tree) => {
-            let top = finds(tree.row.number);
-            tree.backports.retain(|backport| finds(backport.row.number));
+            let top = finds(RowKind::PullRequest, tree.row.number);
+            tree.backports
+                .retain(|backport| finds(RowKind::PullRequest, backport.row.number));
             (top || !tree.backports.is_empty()).then_some(WorkbenchItem::StandalonePr(tree))
         }
         WorkbenchItem::StandaloneBackport(backport) => {
-            finds(backport.row.number).then_some(WorkbenchItem::StandaloneBackport(backport))
+            finds(RowKind::PullRequest, backport.row.number)
+                .then_some(WorkbenchItem::StandaloneBackport(backport))
         }
+        // A placeholder is already a result, with no rows to narrow (#465).
+        WorkbenchItem::Placeholder(_) => Some(item),
     }
 }
 
@@ -378,6 +505,10 @@ fn item_place(item: &WorkbenchItem) -> InboxCursor {
             updated_at: backport.row.updated_at,
             number: backport.row.number,
         },
+        WorkbenchItem::Placeholder(placeholder) => InboxCursor {
+            updated_at: placeholder.updated_at,
+            number: placeholder.number,
+        },
     }
 }
 
@@ -423,13 +554,13 @@ impl WorkbenchItem {
             Self::Issue(issue) => Some(ItemKey::Issue {
                 number: issue.number,
             }),
-            Self::StandalonePr(_) | Self::StandaloneBackport(_) => None,
+            Self::StandalonePr(_) | Self::StandaloneBackport(_) | Self::Placeholder(_) => None,
         };
         let prs = (self.rows().into_iter()).map(|row| ItemKey::PullRequest { number: row.number });
         issue.into_iter().chain(prs).collect()
     }
 
-    fn without(self, hides: &impl Fn(ItemKey) -> bool) -> Option<Self> {
+    fn without(self, hides: &dyn Fn(ItemKey) -> bool) -> Option<Self> {
         match self {
             Self::Issue(mut issue) => {
                 let entries = std::mem::take(&mut issue.pull_requests).into_iter();
@@ -443,12 +574,14 @@ impl WorkbenchItem {
             Self::StandaloneBackport(backport) => {
                 (!backport.row.hidden_by(hides)).then_some(Self::StandaloneBackport(backport))
             }
+            // A placeholder has no author, so no Muted author hid it (#465).
+            Self::Placeholder(_) => Some(self),
         }
     }
 }
 
 impl TreeEntry {
-    fn without(self, hides: &impl Fn(ItemKey) -> bool) -> Option<Self> {
+    fn without(self, hides: &dyn Fn(ItemKey) -> bool) -> Option<Self> {
         match self {
             Self::Pr(tree) => tree.without(hides).map(Self::Pr),
             Self::Backport(backport) => {
@@ -459,7 +592,7 @@ impl TreeEntry {
 }
 
 impl PrTree {
-    fn without(mut self, hides: &impl Fn(ItemKey) -> bool) -> Option<Self> {
+    fn without(mut self, hides: &dyn Fn(ItemKey) -> bool) -> Option<Self> {
         self.backports
             .retain(|backport| !backport.row.hidden_by(hides));
         (!self.backports.is_empty() || !self.row.hidden_by(hides)).then_some(self)
@@ -468,7 +601,7 @@ impl PrTree {
 
 impl WorkbenchRow {
     /// Whether `hides` takes out this PR's row.
-    fn hidden_by(&self, hides: &impl Fn(ItemKey) -> bool) -> bool {
+    fn hidden_by(&self, hides: &dyn Fn(ItemKey) -> bool) -> bool {
         hides(ItemKey::PullRequest {
             number: self.number,
         })

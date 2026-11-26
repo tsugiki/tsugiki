@@ -57,6 +57,28 @@ fn a_filter_writes_its_switch_as_a_bool() {
 }
 
 #[test]
+fn a_token_names_a_state_or_a_sort_as_tsugiki_reads_it() {
+    for token in [
+        "is:open",
+        "IS:Closed",
+        "is:merged",
+        "is:unmerged",
+        "state:closed",
+        "-is:open",
+        "-state:merged",
+    ] {
+        assert!(names_a_state(token), "{token}");
+    }
+    for token in ["is:issue", "is:pr", "is:draft", "-is:issue", "-fix", "fix"] {
+        assert!(!names_a_state(token), "{token}");
+    }
+    assert!(names_a_sort("sort:updated-desc"));
+    assert!(names_a_sort("SORT:created-asc"));
+    assert!(!names_a_sort("is:open"));
+    assert!(!names_a_sort("-sort:updated"));
+}
+
+#[test]
 fn a_blank_name_or_query_is_refused_and_says_which() {
     let no_name = from_toml("name = '  '\nquery = 'label:bug'").unwrap_err();
     assert!(

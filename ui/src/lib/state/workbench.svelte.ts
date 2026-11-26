@@ -26,6 +26,7 @@ import {
   type Seen_Serialize,
   type ShowMuted,
   type TreeEntry_Serialize,
+  type Truncated,
   type WorkbenchRow_Serialize,
   type WorkbenchView,
   type WorkReason,
@@ -43,6 +44,8 @@ export type FilterLine = FilterLine_Serialize;
 export type InboxCursor = InboxCursor_Serialize;
 export type IssueItem = IssueItem_Serialize;
 export type ListedItem = ListedItem_Serialize;
+/** A listed item the cache holds, as against a placeholder a search found (#465). */
+export type CachedItem = Exclude<ListedItem, { kind: "placeholder" }>;
 /** An item's part in Mark Seen and Mark Unseen, as the core drew it. */
 export type Seen = Seen_Serialize;
 export type SeenMark = SeenMark_Serialize;
@@ -72,6 +75,9 @@ export const byMutedAuthor = (row: { mute_author: MuteAuthor }) => row.mute_auth
 
 /** A line of the Sidebar whose items the list shows: a view of the Workbench, or the Inbox (#822). */
 export type SidebarView = WorkbenchView | { kind: "inbox" };
+
+/** How long a pause in typing the Inbox's search box sends it to GitHub (#465). */
+export const SEARCH_PAUSE_MS = 1000;
 
 /** `items` with each item of `more` that `items` doesn't list already. A sync can save between two pages
  * before its change reaches the window, which puts an item on both, and the list keys its items by number. */
@@ -117,6 +123,8 @@ type Pending = { key: ItemKey; settles: boolean; was: Stop; after: Stop[] };
 /** The lines of `item` the cursor stops on, in the order the list shows them. An Issue's tree shows only
  * while `unfolded` says it does. */
 function linesOf(item: ListedItem, unfolded: (issue: number) => boolean): Line[] {
+  // A placeholder is a result GitHub found that the cache lacks, and has no line to act on yet (#465).
+  if (item.kind === "placeholder") return [];
   if (item.kind === "issue") {
     const rows = unfolded(item.number) ? treeRows(item.pull_requests) : [];
     return [
@@ -176,6 +184,12 @@ export class WorkbenchState {
   search = $state("");
   /** Whether the search the last answer read needs GitHub, so the Inbox lists no local rows (#464). */
   needsGitHub = $state(false);
+  /** How many results the search's answer listed of how many it reaches, past GitHub's 1,000 (#465). */
+  truncated = $state<Truncated | null>(null);
+  /** The timer that sends a paused search to GitHub (#465). */
+  #searchTimer: ReturnType<typeof setTimeout> | undefined;
+  /** The trimmed search Tsugiki last sent to GitHub, so entering the Inbox can send one it dropped (#465). */
+  #searchAsked = "";
   /** A change to "Show muted" is saving. */
   savingShowMuted = $state(false);
   /** The reason the core refused the last change to "Show muted", if it did. */
@@ -266,6 +280,16 @@ export class WorkbenchState {
     // A change of view is neither a user action nor a core change (#1052): an answer to an action made in
     // the view left behind moves nothing.
     this.#pending.clear();
+    // A paused search the user abandoned by leaving the Inbox sends nothing then. Entering the Inbox with
+    // a text Tsugiki never sent sends it now, so the box's text and the list agree again (#465).
+    this.#clearSearchTimer();
+    if (view.kind === "inbox") {
+      const text = this.search.trim();
+      if (text !== "" && text !== this.#searchAsked) void this.sendSearch();
+    } else {
+      this.needsGitHub = false;
+      this.truncated = null;
+    }
     await this.#ask();
   }
 
@@ -278,7 +302,28 @@ export class WorkbenchState {
     this.search = text;
     this.#reach = undefined;
     this.#pending.clear();
+    // A pause of about a second sends the whole query to GitHub (#465). A new text drops the timer of the
+    // text before it, as its answer would change nothing once the box holds this one.
+    this.#clearSearchTimer();
+    if (text.trim() !== "") {
+      this.#searchTimer = setTimeout(() => void this.sendSearch(), SEARCH_PAUSE_MS);
+    }
     await this.#ask();
+  }
+
+  /** Sends the Inbox's search box text to GitHub, which answers which rows it finds and how many (#465). The
+   * `changed` event reads the Inbox again once the answer lands, and a newer text drops that answer. */
+  async sendSearch() {
+    this.#clearSearchTimer();
+    const text = this.search.trim();
+    if (text === "") return;
+    this.#searchAsked = text;
+    await commands.searchInbox(this.#repository, text);
+  }
+
+  #clearSearchTimer() {
+    if (this.#searchTimer !== undefined) clearTimeout(this.#searchTimer);
+    this.#searchTimer = undefined;
   }
 
   /** The view whose items the list shows: `selected` once its answer has arrived. */
@@ -516,13 +561,11 @@ export class WorkbenchState {
   /** What line `stop` draws: its item's own line, or a PR or Backport in the item's tree. */
   #lineOf(stop: Stop): Pick<WorkbenchRow, "seen" | "mute_author"> | undefined {
     const item = this.#itemOf(stop, this.#everything);
-    if (item?.number === stop.number) return item;
-    const rows =
-      item?.kind === "issue"
-        ? treeRows(item.pull_requests)
-        : item?.kind === "standalone_pr"
-          ? item.backports
-          : [];
+    if (item === undefined) return undefined;
+    if (item.kind === "issue") {
+      return [item, ...treeRows(item.pull_requests)].find((row) => row.number === stop.number);
+    }
+    const rows = [item, ...(item.kind === "standalone_pr" ? item.backports : [])];
     return rows.find((row) => row.number === stop.number);
   }
 
@@ -534,7 +577,9 @@ export class WorkbenchState {
    * anything did. */
   async markSeen(stop: Stop | undefined, mark: SeenMark, archived?: ItemKey) {
     const owner = stop && ownerOf(stop, this.#everything);
-    const settles = Boolean(owner && (owner.attention !== null || owner.seen.state !== "seen"));
+    const settles = Boolean(
+      owner && owner.kind !== "placeholder" && (owner.attention !== null || owner.seen.state !== "seen"),
+    );
     const asked = this.#asked(owner?.key, settles);
     const marking = archived
       ? commands.keepArchived(this.#repository, { key: archived, mark }, asked)
@@ -576,7 +621,8 @@ export class WorkbenchState {
    * Seen. */
   hidingBy(stop: Stop): Hiding | undefined {
     const item = this.#itemOf(stop, this.#everything);
-    return item && { key: item.key, mark: item.seen.mark };
+    if (item === undefined) return undefined;
+    return { key: item.key, mark: item.seen.mark };
   }
 
   /** Archive on `archived`, as the window drew it (#490), which finishes the item, and the core's answer
@@ -606,7 +652,7 @@ export class WorkbenchState {
    * (#1089). Says what went wrong, if anything did. */
   async muteAuthor(login: string, stop: Stop | undefined) {
     const item = stop && this.#itemOf(stop, this.#everything);
-    const theirs = item?.mute_author.kind === "mute" && item.mute_author.login === login;
+    const theirs = item !== undefined && item.mute_author.kind === "mute" && item.mute_author.login === login;
     const asked = this.#asked(item?.key, theirs);
     return problemIn(commands.muteAuthor(this.#repository, login, asked));
   }
@@ -718,6 +764,7 @@ export class WorkbenchState {
   stop() {
     this.#stopped = true;
     this.#pending.clear();
+    this.#clearSearchTimer();
     this.#stopListening?.();
   }
 
@@ -743,9 +790,13 @@ export class WorkbenchState {
     else if (same) this.#put(undefined);
   }
 
-  /** The item of `items` that holds line `stop`, under a folded Issue or not. */
-  #itemOf(stop: Stop, items: ListedItem[]): ListedItem | undefined {
-    return items.find((item) => linesOf(item, () => true).some((line) => sameStop(line.stop, stop)));
+  /** The item of `items` that holds line `stop`, under a folded Issue or not. A placeholder holds no line,
+   * as the cache knows nothing of it (#465). */
+  #itemOf(stop: Stop, items: ListedItem[]): CachedItem | undefined {
+    return items.find(
+      (item): item is CachedItem =>
+        item.kind !== "placeholder" && linesOf(item, () => true).some((line) => sameStop(line.stop, stop)),
+    );
   }
 
   /** The key of the view whose items the list shows, which keeps its own unfolded Issues. Until the answer
@@ -845,8 +896,10 @@ export class WorkbenchState {
     if (list?.status === "ok") {
       this.showMuted = list.data.show_muted;
       this.needsGitHub = list.data.needs_github;
+      this.truncated = list.data.truncated ?? null;
     } else if (list?.status === "error") {
       this.needsGitHub = false;
+      this.truncated = null;
     }
     const listed = list ?? answer;
     if (listed.status === "ok") {

@@ -79,7 +79,9 @@ impl PrView {
                     number: issue.number,
                     pinned: issue.pinned,
                 }),
-                WorkbenchItem::StandalonePr(_) | WorkbenchItem::StandaloneBackport(_) => None,
+                WorkbenchItem::StandalonePr(_)
+                | WorkbenchItem::StandaloneBackport(_)
+                | WorkbenchItem::Placeholder(_) => None,
             })
             .collect();
         let found = items.iter().find_map(|item| {
@@ -87,7 +89,7 @@ impl PrView {
             let hidden = Hidden::of(&causes, item.key(), &item.numbers());
             let holding = Hiding {
                 key: item.key(),
-                mark: item.seen().mark.clone(),
+                mark: item.seen()?.mark.clone(),
             };
             Some((row.clone(), hidden, holding))
         });

@@ -34,6 +34,7 @@ use time::OffsetDateTime;
 use crate::error::Error;
 use crate::facts::WorkFacts;
 use crate::facts::activity::ItemKey;
+use crate::facts::inbox_search::RowKind;
 use crate::facts::issues::{IssueFacts, IssueState};
 use crate::facts::pull_requests::{PrLinks, PrState};
 use crate::filters::FilterQuery;
@@ -121,6 +122,22 @@ pub enum WorkbenchItem {
     StandalonePr(PrTree),
     /// A Backport with no Issue and no Origin PR to sit under.
     StandaloneBackport(BackportRow),
+    /// A result a search on GitHub found that the cache lacks, in its place in the list until a later ticket
+    /// fills it (#465).
+    Placeholder(Placeholder),
+}
+
+/// A result a search on GitHub found that the cache lacks (#465). The Inbox shows its number and whether it
+/// is an Issue or a PR; a later ticket fetches what it says as the user scrolls to it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
+pub struct Placeholder {
+    pub number: u32,
+    /// Whether GitHub found an Issue or a PR.
+    pub item_kind: RowKind,
+    /// GitHub's update time, which the row's age shows.
+    #[serde(with = "time::serde::rfc3339")]
+    #[specta(type = String)]
+    pub updated_at: OffsetDateTime,
 }
 
 impl WorkbenchItem {
@@ -129,6 +146,7 @@ impl WorkbenchItem {
             Self::Issue(issue) => (issue.updated_at, issue.number),
             Self::StandalonePr(tree) => (tree.row.updated_at, tree.row.number),
             Self::StandaloneBackport(backport) => (backport.row.updated_at, backport.row.number),
+            Self::Placeholder(placeholder) => (placeholder.updated_at, placeholder.number),
         }
     }
 
@@ -137,6 +155,7 @@ impl WorkbenchItem {
             Self::Issue(issue) => issue.rows(),
             Self::StandalonePr(tree) => tree.rows(),
             Self::StandaloneBackport(backport) => vec![&backport.row],
+            Self::Placeholder(_) => Vec::new(),
         }
     }
 
@@ -150,6 +169,14 @@ impl WorkbenchItem {
             | Self::StandaloneBackport(BackportRow { row, .. }) => {
                 ItemKey::PullRequest { number: row.number }
             }
+            Self::Placeholder(placeholder) => match placeholder.item_kind {
+                RowKind::Issue => ItemKey::Issue {
+                    number: placeholder.number,
+                },
+                RowKind::PullRequest => ItemKey::PullRequest {
+                    number: placeholder.number,
+                },
+            },
         }
     }
 
@@ -163,16 +190,19 @@ impl WorkbenchItem {
             }
             Self::StandalonePr(tree) => tree.rows_mut(),
             Self::StandaloneBackport(backport) => vec![&mut backport.row],
+            Self::Placeholder(_) => Vec::new(),
         };
         rows.into_iter().map(|row| &mut row.seen.mark).collect()
     }
 
-    /// The item's part in Mark Seen, which covers its tree.
-    fn seen(&self) -> &Seen {
+    /// The item's part in Mark Seen, which covers its tree. A placeholder has none, as the cache holds
+    /// nothing of it (#465).
+    fn seen(&self) -> Option<&Seen> {
         match self {
-            Self::Issue(issue) => &issue.seen,
+            Self::Issue(issue) => Some(&issue.seen),
             Self::StandalonePr(PrTree { row, .. })
-            | Self::StandaloneBackport(BackportRow { row, .. }) => &row.seen,
+            | Self::StandaloneBackport(BackportRow { row, .. }) => Some(&row.seen),
+            Self::Placeholder(_) => None,
         }
     }
 
@@ -182,12 +212,13 @@ impl WorkbenchItem {
     }
 
     /// Whether the Issue or PR that heads the item is open. An Issue stored before Tsugiki kept states
-    /// counts as open.
+    /// counts as open. A placeholder's state is unknown, and it isn't the user's to mute (#465).
     fn is_open(&self) -> bool {
         match self {
             Self::Issue(issue) => matches!(issue.state, Some(IssueState::Open) | None),
             Self::StandalonePr(PrTree { row, .. })
             | Self::StandaloneBackport(BackportRow { row, .. }) => row.state == PrState::Open,
+            Self::Placeholder(_) => false,
         }
     }
 }

@@ -2944,3 +2944,22 @@ fn stopping_hands_the_session_a_settings_change_that_ends_during_the_stop() {
     let changed = json!({ "repository": CPYTHON, "items": [] });
     assert_eq!(heard, [changed.clone(), changed]);
 }
+
+#[test]
+fn a_search_the_window_types_is_sent_and_a_blank_one_sends_nothing() {
+    let (folders, _root) = temp_folders("wired-inbox-search");
+    let wired = Wired::start(Ok(folders), no_network());
+    let search = |text: &str| json!({ "repository": CPYTHON, "search": text });
+
+    let sent = wired.ask("search_inbox", search("review:approved"));
+    let blank = wired.ask("search_inbox", search("  "));
+    let unknown = wired.ask(
+        "search_inbox",
+        json!({ "repository": "cpython", "search": "fix" }),
+    );
+    drop(wired.stop());
+
+    assert_eq!(sent, Ok(Value::Null));
+    assert_eq!(blank, Ok(Value::Null));
+    assert!(unknown.is_err(), "{unknown:?}");
+}

@@ -90,6 +90,8 @@ impl WorkbenchItem {
             Self::StandalonePr(_) | Self::StandaloneBackport(_) => {
                 self.rows().iter().map(|row| row.number).collect()
             }
+            // The cache holds nothing of a placeholder, so nothing needs attention there (#465).
+            Self::Placeholder(_) => Vec::new(),
         }
     }
 }

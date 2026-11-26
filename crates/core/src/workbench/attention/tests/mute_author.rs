@@ -64,12 +64,13 @@ fn commented_on(world: &World, number: u32) {
     world.happened(number, vec![comment(&colleague(), hours_ago(2))]);
 }
 
-/// What Mute author offers on the line of `item` that heads it.
-fn mute_author_of(item: &WorkbenchItem) -> MuteAuthor {
+/// What Mute author offers on the line of `item` that heads it, which a placeholder has none of.
+fn mute_author_of(item: &WorkbenchItem) -> Option<MuteAuthor> {
     match item {
-        WorkbenchItem::Issue(issue) => issue.mute_author.clone(),
-        WorkbenchItem::StandalonePr(tree) => tree.row.mute_author.clone(),
-        WorkbenchItem::StandaloneBackport(backport) => backport.row.mute_author.clone(),
+        WorkbenchItem::Issue(issue) => Some(issue.mute_author.clone()),
+        WorkbenchItem::StandalonePr(tree) => Some(tree.row.mute_author.clone()),
+        WorkbenchItem::StandaloneBackport(backport) => Some(backport.row.mute_author.clone()),
+        WorkbenchItem::Placeholder(_) => None,
     }
 }
 
@@ -283,7 +284,8 @@ fn each_line_offers_mute_author_for_its_author_but_the_users_own_and_a_gone_acco
     world.has(vec![fixing_too(reviewed_by_me(6), 5)]);
     world.happened(6, vec![comment(&colleague(), hours_ago(2))]);
     let mute = |login: Login| MuteAuthor::Mute { login };
-    let offered = |number| mute_author_of(&world.listed_in(&WorkbenchView::Whole, number).item);
+    let offered =
+        |number| mute_author_of(&world.listed_in(&WorkbenchView::Whole, number).item).unwrap();
     assert_eq!(offered(1), mute(colleague()));
     assert_eq!(offered(2), MuteAuthor::Off);
     assert_eq!(offered(3), MuteAuthor::Off);

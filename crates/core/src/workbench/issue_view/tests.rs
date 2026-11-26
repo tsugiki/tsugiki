@@ -452,7 +452,9 @@ fn an_issue_shows_the_tree_the_grouping_of_every_pr_gives_it_under_each_conventi
     let trees = |items: Vec<WorkbenchItem>| -> Vec<(u32, Vec<Vec<u32>>)> {
         let issues = items.into_iter().filter_map(|item| match item {
             WorkbenchItem::Issue(issue) => Some((issue.number, issue.pull_requests)),
-            WorkbenchItem::StandalonePr(_) | WorkbenchItem::StandaloneBackport(_) => None,
+            WorkbenchItem::StandalonePr(_)
+            | WorkbenchItem::StandaloneBackport(_)
+            | WorkbenchItem::Placeholder(_) => None,
         });
         issues
             .map(|(number, entries)| (number, numbers(&by_first(entries))))

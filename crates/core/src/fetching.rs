@@ -269,6 +269,11 @@ pub(crate) enum SessionMessage {
         item: Item,
         reply: Sender<ItemFetch>,
     },
+    /// The user typed `text` in the Inbox's search box, which GitHub answers (#465).
+    Search {
+        repository: RepositoryName,
+        text: String,
+    },
     /// "Show muted" on the Inbox of `repository` turned to `show` (#825), which answers once the store has
     /// kept it, or why it couldn't. The window then asks for the Inbox again.
     ShowMuted {
@@ -584,6 +589,12 @@ impl Fetching {
             show,
             reply,
         })
+    }
+
+    /// The user typed the Inbox search `text` in `repository`: the session asks GitHub for its results ahead
+    /// of the sync's next step, and the `changed` event follows their answer (#465).
+    pub fn search(&self, repository: RepositoryName, text: String) {
+        self.to_session(SessionMessage::Search { repository, text });
     }
 
     /// Fetches Issue or PR `number` of `repository`, which the database lacks, and waits for the answer.

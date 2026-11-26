@@ -87,6 +87,8 @@ const TABLES: &[(&str, Diagram)] = &[
     ("filter_matches", Diagram::Filters),
     ("filter_problems", Diagram::Filters),
     ("filter_searches", Diagram::Filters),
+    ("inbox_search_hits", Diagram::Filters),
+    ("inbox_searches", Diagram::Filters),
     ("last_seen", Diagram::UserAndSync),
     ("marked_unseen", Diagram::UserAndSync),
     ("archived", Diagram::UserAndSync),

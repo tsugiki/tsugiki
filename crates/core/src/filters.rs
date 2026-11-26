@@ -91,6 +91,35 @@ impl From<OnWorkbench> for bool {
     }
 }
 
+/// Whether the search `token` names a state: `is:open`, `is:closed`, `is:merged`, `is:unmerged` or
+/// `state:` (#464, #465), excluded with a leading `-` or not. A query that names none gets `is:open`. The
+/// cache leaves an excluded token to GitHub whole; the typed GitHub query counts it, so `-is:open` never
+/// gets an `is:open` that would contradict it.
+pub(crate) fn names_a_state(token: &str) -> bool {
+    let token = token.strip_prefix('-').unwrap_or(token);
+    let Some((qualifier, value)) = token.split_once(':') else {
+        return false;
+    };
+    match qualifier.to_ascii_lowercase().as_str() {
+        "state" => true,
+        "is" => matches!(
+            value.to_ascii_lowercase().as_str(),
+            "open" | "closed" | "merged" | "unmerged"
+        ),
+        _ => false,
+    }
+}
+
+/// Whether `token` is the `sort:` qualifier, so Tsugiki adds no `sort:updated-desc` of its own (#465).
+pub(crate) fn names_a_sort(token: &str) -> bool {
+    if token.starts_with('-') {
+        return false;
+    }
+    token
+        .split_once(':')
+        .is_some_and(|(qualifier, _)| qualifier.eq_ignore_ascii_case("sort"))
+}
+
 impl Filter {
     fn starter(name: &str, query: &str, on_workbench: OnWorkbench) -> Self {
         Self {

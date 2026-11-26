@@ -99,6 +99,9 @@ it("says the time since with a clock a day on", async () => {
     now: new Date("2026-11-05T11:00:00Z"),
     onback: vi.fn(),
     onmark: vi.fn(),
+    onarchive: vi.fn(),
+    onmute: vi.fn(),
+    onmuteauthor: vi.fn(),
   });
 
   expect(screen.getByText(/into main · updated/).textContent).toBe("into main · updated 1d ago");
@@ -114,12 +117,29 @@ const shown = async (
   onback = vi.fn(),
   onmark = vi.fn(),
   panes = new PanesState(),
+  buttons: {
+    onarchive?: (view: PrView) => void;
+    onmute?: (view: PrView) => void;
+    onmuteauthor?: (view: PrView) => void;
+    marks?: boolean;
+  } = {},
 ) => {
   core.pullRequest.mockResolvedValue(ok(answer));
   const state = new PrViewState("python/cpython", 11, issue, panes);
   onShow = state;
   await state.load();
-  render(PrDetail, { repository: "python/cpython", pr: state, panes, now: NOW, onback, onmark });
+  render(PrDetail, {
+    repository: "python/cpython",
+    pr: state,
+    panes,
+    now: NOW,
+    onback,
+    onmark,
+    onarchive: buttons.onarchive ?? vi.fn(),
+    onmute: buttons.onmute ?? vi.fn(),
+    onmuteauthor: buttons.onmuteauthor ?? vi.fn(),
+    marks: buttons.marks ?? true,
+  });
   return state;
 };
 
@@ -400,6 +420,9 @@ it("says why it can't show the PR", async () => {
     now: NOW,
     onback: vi.fn(),
     onmark: vi.fn(),
+    onarchive: vi.fn(),
+    onmute: vi.fn(),
+    onmuteauthor: vi.fn(),
   });
   state.stop();
 
@@ -418,6 +441,9 @@ it("says atop the view that the token can't write to a Read-only Repository, and
     now: NOW,
     onback: vi.fn(),
     onmark: vi.fn(),
+    onarchive: vi.fn(),
+    onmute: vi.fn(),
+    onmuteauthor: vi.fn(),
   };
   const words = "Read-only: your token can't write to python/cpython";
   const { rerender } = render(PrDetail, {
@@ -442,6 +468,70 @@ it("offers Mark Seen in its header while the PR has New activity, and Mark Unsee
   onShow?.stop();
   await shown({ ...view, seen: { ...view.seen, state: "seen" } }, 10);
   expect(screen.getByRole("button", { name: "Mark Unseen" })).toBeTruthy();
+});
+
+/** The header's buttons, by their words: the view's own and Mark Seen. */
+const headerButtons = () =>
+  screen.getAllByRole("button", { name: /^(un)?(archive|mute|mark)/i }).map((button) => button.textContent);
+
+it("offers Archive, Mute and Mute author beside Mark Seen on a Standalone PR, and each acts on the PR", async () => {
+  const onarchive = vi.fn();
+  const onmute = vi.fn();
+  const onmuteauthor = vi.fn();
+  await shown(view, undefined, vi.fn(), vi.fn(), new PanesState(), {
+    onarchive,
+    onmute,
+    onmuteauthor,
+  });
+
+  expect(headerButtons()).toEqual(["Archive", "Mute", "Mute pr-author", "Mark Seen"]);
+  await fireEvent.click(screen.getByRole("button", { name: "Archive" }));
+  await fireEvent.click(screen.getByRole("button", { name: "Mute" }));
+  await fireEvent.click(screen.getByRole("button", { name: "Mute pr-author" }));
+
+  expect(onarchive).toHaveBeenCalledExactlyOnceWith(view);
+  expect(onmute).toHaveBeenCalledExactlyOnceWith(view);
+  expect(onmuteauthor).toHaveBeenCalledExactlyOnceWith(view);
+});
+
+it("reads Unarchive on an Archived Standalone PR", async () => {
+  await shown({ ...view, hidden: "archived" }, undefined);
+
+  expect(headerButtons()).toEqual(["Unarchive", "Mute", "Mute pr-author", "Mark Seen"]);
+});
+
+it("shows only Unmute and Mute author on a Muted Standalone PR, and only Unmute author on a Muted author's", async () => {
+  const onmute = vi.fn();
+  const muted = { ...view, hidden: "muted" as const };
+  await shown(muted, undefined, vi.fn(), vi.fn(), new PanesState(), { onmute, marks: false });
+
+  expect(headerButtons()).toEqual(["Unmute", "Mute pr-author"]);
+  await fireEvent.click(screen.getByRole("button", { name: "Unmute" }));
+  expect(onmute).toHaveBeenCalledExactlyOnceWith(muted);
+
+  cleanup();
+  onShow?.stop();
+  const byMuted = {
+    ...view,
+    hidden: "muted_author" as const,
+    mute_author: { kind: "unmute" as const, login: "pr-author" },
+  };
+  await shown(byMuted, undefined, vi.fn(), vi.fn(), new PanesState(), { marks: false });
+
+  expect(headerButtons()).toEqual(["Unmute pr-author"]);
+});
+
+it("leaves Mute author off on the user's own Standalone PR", async () => {
+  await shown({ ...view, author: "me", mute_author: { kind: "off" } }, undefined);
+
+  const off = screen.getByRole("button", { name: "Mute author" });
+  expect((off as HTMLButtonElement).disabled).toBe(true);
+});
+
+it("shows only Mark Seen on a PR in an Issue's tree, whose actions act on its Issue", async () => {
+  await shown(view, 10);
+
+  expect(headerButtons()).toEqual(["Mark Seen"]);
 });
 
 const rail = () => screen.queryByRole("complementary", { name: "Rail" });
@@ -741,6 +831,9 @@ it("hands the focus the pane takes on to the Conversation beside the rail, which
     now: NOW,
     onback: vi.fn(),
     onmark: vi.fn(),
+    onarchive: vi.fn(),
+    onmute: vi.fn(),
+    onmuteauthor: vi.fn(),
     focusable: true,
   });
   const section = screen.getByRole("region", { name: "PR view" });

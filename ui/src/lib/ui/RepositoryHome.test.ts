@@ -3570,6 +3570,70 @@ it("folds the Muted items at the list's end behind a line that shows and hides t
   expect(screen.queryByRole("button", { name: "#5 Alone" })).toBeNull();
 });
 
+it("archives the Standalone PR on show from its button, and the list follows", async () => {
+  const changed = catchEveryListener();
+  const acted = catchActed();
+  const { prRow } = await listing();
+  await fireEvent.click(prRow);
+  await screen.findByRole("region", { name: "PR view" });
+
+  await fireEvent.click(await screen.findByRole("button", { name: "Archive" }));
+
+  expect(core.archive).toHaveBeenCalledExactlyOnceWith(
+    "python/cpython",
+    { key: standalone.key, mark: row.seen.mark },
+    expect.anything(),
+  );
+  const after = workbenchPage([{ ...issue, attention: null }]);
+  core.workbench.mockResolvedValue(after);
+  changed("python/cpython", row.seen.mark.numbers);
+  acted({
+    id: lastAsked(core.archive) ?? 0,
+    repository: "python/cpython",
+    page: { kind: "workbench", workbench: after.data },
+  });
+
+  // The cursor lands on the last row left, the Issue's unfolded PR, which opens.
+  await screen.findByRole("heading", { name: /#160662/ });
+  expect(core.pullRequest).toHaveBeenLastCalledWith("python/cpython", 160662);
+});
+
+it("mutes the Standalone PR on show from its button, and offers Unmute once it is Muted", async () => {
+  const { prRow } = await listing();
+  await fireEvent.click(prRow);
+  await screen.findByRole("region", { name: "PR view" });
+
+  await fireEvent.click(await screen.findByRole("button", { name: "Mute" }));
+
+  expect(core.mute).toHaveBeenCalledExactlyOnceWith(
+    "python/cpython",
+    { key: standalone.key, mark: row.seen.mark },
+    expect.anything(),
+  );
+  cleanup();
+  core.pullRequest.mockResolvedValue({
+    status: "ok",
+    data: { ...row, number: 5, content: null, hidden: "muted" },
+  });
+  const next = await listing();
+  await fireEvent.click(next.prRow);
+  await screen.findByRole("region", { name: "PR view" });
+
+  await fireEvent.click(await screen.findByRole("button", { name: "Unmute" }));
+
+  expect(core.unmute).toHaveBeenCalledExactlyOnceWith("python/cpython", standalone.key);
+});
+
+it("mutes the author of the Standalone PR on show from its button", async () => {
+  const { prRow } = await listing();
+  await fireEvent.click(prRow);
+  await screen.findByRole("region", { name: "PR view" });
+
+  await fireEvent.click(await screen.findByRole("button", { name: "Mute some-author" }));
+
+  expect(core.muteAuthor).toHaveBeenCalledExactlyOnceWith("python/cpython", "some-author", expect.anything());
+});
+
 it("offers no Mark Seen in the view of a PR whose item is Muted, as the view says, listed or not", async () => {
   core.pullRequest.mockResolvedValue({ status: "ok", data: { ...row, content: null, hidden: "muted" } });
   const { treeRow } = await listing();

@@ -19,7 +19,7 @@
   } from "$lib/state/panes.svelte";
   import type { PeekLayout } from "$lib/state/peek";
   import { DiffViewChoice, type FilesMode, type PrFilesState } from "$lib/state/pr-files.svelte";
-  import { PrViewState } from "$lib/state/pr-view.svelte";
+  import { type PrView, PrViewState } from "$lib/state/pr-view.svelte";
   import type { ChangedFiles } from "$lib/state/quick-open.svelte";
   import type { RepositoryState } from "$lib/state/repository-state.svelte";
   import type { TextSearchState } from "$lib/state/text-search.svelte";
@@ -736,24 +736,60 @@
     await sayMarkProblem((opened) => opened.unarchive(key));
   }
 
-  /** The Issue view's Archive button: Archive on the Issue `view` shows, or Unarchive on an Archived one. */
-  function archiveByButton(view: IssueView) {
-    const key = { kind: "issue" as const, number: view.number };
+  /** What the Detail pane's buttons act on: the Issue or PR `view` shows, and the kind of item it is. */
+  type Hideable = Pick<PrView, "number" | "hidden" | "seen" | "mute_author">;
+
+  /** The key of the item the Detail pane's `view` shows, which its buttons name. */
+  const keyOf = (view: Hideable, kind: ItemKey["kind"]): ItemKey =>
+    kind === "issue" ? { kind: "issue", number: view.number } : { kind: "pull_request", number: view.number };
+
+  /** Archive on `view`, or Unarchive on an Archived item (#490). */
+  function archiveView(view: Hideable, kind: ItemKey["kind"]) {
+    const key = keyOf(view, kind);
     if (view.hidden === "archived") void unarchive(key);
     else void archive({ key, mark: view.seen.mark });
   }
 
-  /** The Issue view's Mute button: Mute on the Issue `view` shows, or Unmute on a Muted one (#492). */
-  function muteByButton(view: IssueView) {
-    const key = { kind: "issue" as const, number: view.number };
+  /** Mute on `view`, or Unmute on a Muted item (#492). */
+  function muteView(view: Hideable, kind: ItemKey["kind"]) {
+    const key = keyOf(view, kind);
     if (view.hidden === "muted") void unmute(key);
     else void mute({ key, mark: view.seen.mark });
   }
 
-  /** The Issue view's Mute author button: Mute author on the author of the Issue `view` shows, or Unmute
-   * author on a Muted author (#494). */
+  /** Mute author on the author of `view`, or Unmute author on a Muted author (#494). */
+  function muteAuthorView(view: Hideable, kind: ItemKey["kind"]) {
+    muteAuthorRun(view.mute_author, { number: view.number, kind, issue: undefined })?.();
+  }
+
+  /** The Issue view's Archive button (#490). */
+  function archiveByButton(view: IssueView) {
+    archiveView(view, "issue");
+  }
+
+  /** The Issue view's Mute button (#492). */
+  function muteByButton(view: IssueView) {
+    muteView(view, "issue");
+  }
+
+  /** The Issue view's Mute author button (#494). */
   function muteAuthorByButton(view: IssueView) {
-    muteAuthorRun(view.mute_author, { number: view.number, kind: "issue", issue: undefined })?.();
+    muteAuthorView(view, "issue");
+  }
+
+  /** The PR view's Archive button, on the Standalone PR on show (#1077). */
+  function archivePrByButton(view: PrView) {
+    archiveView(view, "pull_request");
+  }
+
+  /** The PR view's Mute button, on the Standalone PR on show (#1077). */
+  function mutePrByButton(view: PrView) {
+    muteView(view, "pull_request");
+  }
+
+  /** The PR view's Mute author button, on the Standalone PR on show (#1077). */
+  function muteAuthorPrByButton(view: PrView) {
+    muteAuthorView(view, "pull_request");
   }
 
   /** The line of the list the Detail pane shows, if it shows one. */
@@ -1758,6 +1794,9 @@
         now={clock.now}
         onback={back}
         onmark={markByButton}
+        onarchive={archivePrByButton}
+        onmute={mutePrByButton}
+        onmuteauthor={muteAuthorPrByButton}
         marks={!detailMuted()}
         focusable={panes.hidden("list") || focusedView === pr}
       >

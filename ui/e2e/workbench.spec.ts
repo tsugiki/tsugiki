@@ -84,8 +84,11 @@ test("a row's state icon and fold chevron centre on its title's line, in either 
     const box = await part.boundingBox();
     return (box?.y ?? Number.NaN) + (box?.height ?? Number.NaN) / 2;
   };
+  // The icon's colour says which side's theme is in force: Light Modern's open green, then Dark Modern's.
+  const colours = { light: "rgb(26, 127, 55)", dark: "rgb(63, 185, 80)" } as const;
   for (const colorScheme of ["light", "dark"] as const) {
     await page.emulateMedia({ colorScheme });
+    await expect(icon).toHaveCSS("color", colours[colorScheme]);
     const line = await middle(title);
     expect(Math.abs((await middle(icon)) - line)).toBeLessThanOrEqual(0.5);
     expect(Math.abs((await middle(chevron)) - line)).toBeLessThanOrEqual(0.5);

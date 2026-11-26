@@ -1815,8 +1815,8 @@
   }
 
   /* The state icon sits above the title's cover, so its tooltip names the state, and a Stale review does too,
-     so its tooltip lists the files. Its line-tall wrapper centres it on the title's line rather than on the
-     row's tallest item. */
+     so its tooltip lists the files. Inside its wrapper, one line tall, the icon centres on the title's
+     line. */
   .headline > .state-icon,
   .stale {
     position: relative;

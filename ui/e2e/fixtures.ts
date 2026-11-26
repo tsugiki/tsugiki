@@ -1,4 +1,5 @@
 import { expect, type Locator, type Page } from "@playwright/test";
+import { callsOf } from "./mock-core.ts";
 import type {
   Filter_Serialize as Filter,
   IssueView_Serialize as IssueView,
@@ -120,6 +121,22 @@ export async function dragEdge(edge: Locator, by: number) {
   const grip = await grabEdge(edge);
   await grip.moveBy(by);
   await grip.release();
+}
+
+/** Expects the title link `link` in `heading` to hug its own text, and a click in the heading past it to
+ * open nothing (#1082): the button grew across the heading before, so that space opened the item. */
+export async function expectShortTitleHugsItsText(page: Page, heading: Locator, link: Locator) {
+  const text = await link.evaluate((element) => {
+    const range = document.createRange();
+    range.selectNodeContents(element);
+    return Math.max(0, ...[...range.getClientRects()].map((line) => line.width));
+  });
+  const [headingBox, linkBox] = [await heading.boundingBox(), await link.boundingBox()];
+  expect(Math.abs((linkBox?.width ?? Number.NaN) - text)).toBeLessThanOrEqual(2);
+
+  const calls = await callsOf(page, "openOnGithub");
+  await page.mouse.click((headingBox?.x ?? 0) + (headingBox?.width ?? 0) - 10, (headingBox?.y ?? 0) + 2);
+  expect(await callsOf(page, "openOnGithub")).toBe(calls);
 }
 
 /** Expects the title heading `heading` shows to wrap beside its state icon (#1082): the icon centres on the

@@ -2035,21 +2035,23 @@ impl TomlEdit<'_, Settings> {
 
     /// The table of `name` in the file, and the name and search of each of its Filters, once it has refused
     /// a file the settings show only partly: one that names `name` twice, and one whose Filters two of them
-    /// search alike, as the settings read only the first. `subject` is what shows the first, `Settings` or
-    /// `Tsugiki`, and `then` what the user does next.
+    /// search alike, as the settings read only the first. `showing` says what shows the first, and
+    /// `afterwards` what the user does next.
     fn repository_with_all_filters(
         &mut self,
         name: &RepositoryName,
-        subject: &str,
-        then: &str,
+        showing: Showing,
+        afterwards: Afterwards,
     ) -> Result<(&mut dyn TableLike, NamedSearches), Error> {
         // The settings take a name in any case as one Repository, and the file the first that names it.
         let mut named = (self.values.repositories.iter()).filter(|one| one.name.is_same(name));
         if let (Some(first), Some(_)) = (named.next(), named.next()) {
             let message = format!(
-                "settings.toml names {name} twice, first as {}, and {subject} saves only the Filters of the \
-                 first. Take one out of the file, then {then}.",
-                first.name
+                "settings.toml names {name} twice, first as {}, and {} saves only the Filters of the first. \
+                 Take one out of the file, then {}.",
+                first.name,
+                showing.says(),
+                afterwards.says(),
             );
             return Err(Error::new(ErrorKind::Conflict, &message));
         }
@@ -2058,8 +2060,10 @@ impl TomlEdit<'_, Settings> {
         // The settings show only the first, so writing its Filters would take out one it never showed.
         if let Some(query) = repeated_search(&held) {
             let message = format!(
-                "settings.toml holds two Filters of {name} that search {query}, and {subject} shows only the \
-                 first. Take one out of the file, then {then}."
+                "settings.toml holds two Filters of {name} that search {query}, and {} shows only the \
+                 first. Take one out of the file, then {}.",
+                showing.says(),
+                afterwards.says(),
             );
             return Err(Error::new(ErrorKind::Conflict, &message));
         }
@@ -2087,7 +2091,7 @@ impl TomlEdit<'_, Settings> {
             return Err(Error::new(ErrorKind::Conflict, &message));
         }
         let (repository, in_file) =
-            self.repository_with_all_filters(name, "Settings", "open Settings again")?;
+            self.repository_with_all_filters(name, Showing::Settings, Afterwards::OpenSettings)?;
         if in_file == left {
             return Ok(());
         }
@@ -2113,7 +2117,7 @@ impl TomlEdit<'_, Settings> {
     /// says.
     fn append_filter(&mut self, name: &RepositoryName, filter: &Filter) -> Result<(), Error> {
         let (repository, held) =
-            self.repository_with_all_filters(name, "Tsugiki", "save the Filter again")?;
+            self.repository_with_all_filters(name, Showing::Tsugiki, Afterwards::SaveFilterAgain)?;
         if held.iter().any(|(held, _)| held == filter.name.as_str()) {
             let message = format!(
                 "{name} already has a Filter named {}. Choose another name.",
@@ -2361,6 +2365,40 @@ fn repeated_search(filters: &[(String, String)]) -> Option<&str> {
 
 /// The name and the search of each Filter of a Repository, in their order, as the file writes them.
 type NamedSearches = Vec<(String, String)>;
+
+/// What shows only the first Filter of a Repository that a file writes twice, as a refusal's message says.
+#[derive(Clone, Copy)]
+enum Showing {
+    /// The Settings page.
+    Settings,
+    /// The rest of Tsugiki, which the Save as Filter dialog speaks for.
+    Tsugiki,
+}
+
+impl Showing {
+    fn says(self) -> &'static str {
+        match self {
+            Self::Settings => "Settings",
+            Self::Tsugiki => "Tsugiki",
+        }
+    }
+}
+
+/// What the user does after taking a repeated entry out of the file, as a refusal's message says.
+#[derive(Clone, Copy)]
+enum Afterwards {
+    OpenSettings,
+    SaveFilterAgain,
+}
+
+impl Afterwards {
+    fn says(self) -> &'static str {
+        match self {
+            Self::OpenSettings => "open Settings again",
+            Self::SaveFilterAgain => "save the Filter again",
+        }
+    }
+}
 
 /// The name and the search of each Filter of `filters`, in their order, as the file writes them.
 fn names_and_searches(filters: Option<&mut Item>) -> NamedSearches {

@@ -166,15 +166,28 @@ fn a_saved_filter_s_search_marks_read_the_pin_trees_it_read() {
 }
 
 #[test]
-fn opening_another_repository_drops_the_previous_one_s_saved_filter_search() {
-    let harness = Harness::new("filter-switch", Vec::new());
+fn a_saved_filter_s_search_waits_for_its_repository_to_open_again() {
+    let harness = Harness::new("filter-switch", vec![filter_page(0, &[], None, RATE_LIMIT)]);
     let mut syncs = Syncs::default();
     syncs.add_listed(plain(cpython()));
-    syncs.search_filter(&cpython(), "label:bug".to_owned().try_into().unwrap());
+    let query: FilterQuery = "label:bug".to_owned().try_into().unwrap();
+    syncs.search_filter(&cpython(), query.clone());
 
+    // Another Repository opens: its sync takes the steps, and the search waits, set aside.
     syncs.add_listed(plain(peps()));
-
     assert_eq!(syncs.activity().unwrap().open.unwrap().repository, peps());
+
+    // CPython opens again, and the search it was saved in runs ahead of the queue.
+    syncs.add(cpython());
+    while !syncs.searches.is_empty() {
+        drop(syncs.step(&harness.github, &harness.db.store).unwrap());
+    }
+
+    assert_eq!(harness.operations(), ["SearchFilter"]);
+    assert!(
+        (harness.db.store.filter_results(&cpython()).unwrap()).contains_key(&query),
+        "the search saved its results once its Repository opened again"
+    );
     harness.finish();
 }
 

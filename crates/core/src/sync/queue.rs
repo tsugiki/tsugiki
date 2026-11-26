@@ -146,6 +146,9 @@ pub struct Syncs {
     /// The whole searches of the Filters the user just saved, which go ahead of `queue` for their few
     /// requests, as `trees` do (#471).
     searches: VecDeque<FilterSearch>,
+    /// The searches of a Repository that isn't open any more, waiting for it to open again (#471). The status
+    /// bar can't show them meanwhile, and the open Repository's sync mustn't wait behind them.
+    parked: VecDeque<FilterSearch>,
     /// The trees of Issues the user opened with no first sync's queue to put them in. Each goes ahead of
     /// `queue` for its few requests, and leaves no trace of a sync behind it.
     trees: VecDeque<OpenedTree>,
@@ -176,6 +179,7 @@ impl Syncs {
         Self {
             queue: VecDeque::new(),
             searches: VecDeque::new(),
+            parked: VecDeque::new(),
             trees: VecDeque::new(),
             settings,
             repositories_opened: Vec::new(),
@@ -194,9 +198,22 @@ impl Syncs {
         if !self.is_open(&repository) {
             self.opened.clear();
             self.trees.clear();
-            // A saved Filter's search belongs to the Repository that was open, which the status bar can't
-            // show once another is, so the next sync of that one searches it instead.
-            self.searches.clear();
+            // A saved Filter's search belongs to the Repository it was saved in, so it waits, set aside,
+            // while another Repository is open. It comes back ahead of the queue when its own opens again
+            // (#471).
+            self.parked.extend(
+                (self.searches.drain(..))
+                    .filter(|search| !search.sync.repository.is_same(&repository)),
+            );
+            let mut parked = VecDeque::new();
+            while let Some(search) = self.parked.pop_front() {
+                if search.sync.repository.is_same(&repository) {
+                    self.searches.push_back(search);
+                } else {
+                    parked.push_back(search);
+                }
+            }
+            self.parked = parked;
         }
         if !self.was_opened(&repository) {
             self.repositories_opened.push(repository.clone());

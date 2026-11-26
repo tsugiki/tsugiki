@@ -413,7 +413,7 @@ it("keeps the Save dialog open and says why the core refused the Filter's name",
   expect(within(dialog).queryByRole("alert")).toBeNull();
 });
 
-it("keeps the Save dialog's fields still while the save is in flight", async () => {
+it("takes no edits to the Save dialog's fields while the save is in flight", async () => {
   core.home.mockResolvedValue(gcmonHome);
   core.inbox.mockResolvedValue(inboxPage([]));
   core.saveFilter.mockReturnValue(new Promise(() => {}));
@@ -432,11 +432,14 @@ it("keeps the Save dialog's fields still while the save is in flight", async () 
 
   await fireEvent.click(within(dialog).getByRole("button", { name: "Save" }));
 
-  // The fields stay as the save left them, so an answer lands on the values it speaks of.
+  // The fields take no edits while the save is in flight, so an answer lands on the values it speaks of,
+  // and they stay focusable, which a disabled field would not.
   const name = within(dialog).getByRole("textbox", { name: "Name" }) as HTMLInputElement;
   const query = within(dialog).getByRole("textbox", { name: "Query" }) as HTMLInputElement;
-  expect(name.disabled).toBe(true);
-  expect(query.disabled).toBe(true);
+  expect(name.readOnly).toBe(true);
+  expect(query.readOnly).toBe(true);
+  name.focus();
+  expect(document.activeElement).toBe(name);
 });
 
 it("says a Read-only Repository is so in the status bar and atop its Issue view, until the core says otherwise", async () => {

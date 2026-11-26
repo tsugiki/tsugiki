@@ -1532,6 +1532,24 @@ fn a_saved_filter_refuses_a_file_that_names_the_repository_twice() {
 }
 
 #[test]
+fn a_saved_filter_refuses_a_file_that_names_one_repository_twice_in_one_case() {
+    let before = "[[repositories]]\nname = \"A/B\"\n\n[[repositories]]\nname = \"A/B\"\n";
+    let (mut files, folders, _root) = settings_saying("append-filter-twice-one-case", before);
+
+    let twice = files
+        .append_filter(&repository("A/B"), &filter("Bugs", "label:bug"))
+        .unwrap_err();
+
+    assert_eq!(twice.kind, ErrorKind::Conflict);
+    assert_eq!(
+        twice.message,
+        "settings.toml names A/B twice, first as A/B, and Tsugiki saves only the Filters of the first. \
+         Take one out of the file, then save the Filter again."
+    );
+    assert_eq!(fs::read_to_string(folders.settings_file()).unwrap(), before);
+}
+
+#[test]
 fn a_saved_filter_refuses_a_file_that_already_holds_two_filters_with_one_search() {
     let before = "[[repositories]]\nname = \"a/b\"\n\n[[repositories.filters]]\nname = \"Bugs\"\nquery = \"label:bug\"\n\n[[repositories.filters]]\nname = \"Also bugs\"\nquery = \"label:bug\"\n";
     let (mut files, folders, _root) = settings_saying("append-filter-repeated", before);

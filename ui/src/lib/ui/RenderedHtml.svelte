@@ -11,6 +11,9 @@
   /** The HTML `show` drew last. */
   let drawn: string | undefined;
 
+  /** What a click follows: a link, or an image map's area. A tooltip says where either one goes. */
+  const LINK_SELECTOR = "a, area";
+
   /**
    * Shows `html` in `node` without a refresh or a base address, either of which could move the window if
    * GitHub's sanitizer let it through. A template's contents are inert, so parsing them there acts on
@@ -33,22 +36,28 @@
    * node a fresh address, so this runs after it, and a link within the text, or one with nowhere to go, has
    * no tooltip to say where it goes. */
   function titleLinks(node: ParentNode) {
-    for (const link of node.querySelectorAll("a[href]")) {
-      const address = link.getAttribute("href") ?? "";
-      if (address === "" || address.startsWith("#")) link.removeAttribute("title");
-      else link.setAttribute("title", linkTooltip(address));
+    for (const link of node.querySelectorAll(LINK_SELECTOR)) {
+      const address = link.getAttribute("href");
+      if (follows(address)) link.setAttribute("title", linkTooltip(address));
+      else link.removeAttribute("title");
     }
+  }
+
+  /** Whether a click follows the link at `address`: a link within the text (`#…`) moves to a heading in a
+   * page Tsugiki doesn't show whole, and one with nowhere to go has no address. */
+  function follows(address: string | null): address is string {
+    if (!address) return false;
+    return !address.startsWith("#");
   }
 
   /** Follows a link in the system browser. Enter on a link arrives as a click, so keys need nothing more. */
   function followLink(e: MouseEvent) {
     // Only an element takes a click.
-    const link = (e.target as Element).closest("a, area");
+    const link = (e.target as Element).closest(LINK_SELECTOR);
     if (!link) return;
     e.preventDefault();
     const address = link.getAttribute("href");
-    // A link within the text moves to a heading in a page Tsugiki doesn't show whole.
-    if (address && !address.startsWith("#")) onlink(address);
+    if (follows(address)) onlink(address);
   }
 </script>
 

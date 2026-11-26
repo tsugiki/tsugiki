@@ -4,11 +4,12 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
 
 - Links in descriptions and comments are sorted by where they point. Tsugiki never navigates its own window to
   a web page.
-  - Each link in a description, a comment or a NEWS entry says in its tooltip where a click takes it, with the
-    full address. Until the routing below lands, it says `Open in the browser: <address>`. The address comes
-    from the link's `href`, not its words, so a link whose text names another place shows where it really
-    goes. It shows whole: the native tooltip wraps, and no middle ellipsis can hide the owner or repository of
-    a long `github.com` path. Holding `Ctrl` leaves the tooltip as it is.
+  - Each link in a description, a comment or a NEWS entry that a click follows says in its tooltip where that
+    click takes it, with the full address. Until the routing below lands, it says `Open in the browser:
+    <address>`. A link within the text (`#…`), or one with nowhere to go, is not followed and has no
+    tooltip. The address comes from the link's `href`, not its words, so a link whose text names another
+    place shows where it really goes. It shows whole: the native tooltip wraps, and no middle ellipsis can
+    hide the owner or repository of a long `github.com` path. Holding `Ctrl` leaves the tooltip as it is.
   - An Issue or PR in the current Repository opens in the Detail pane. `Alt+←` / `Alt+→` go back and forward
     through what was opened, and move the cursor and the focus to its row. A slim bar over the Detail pane
     shows ‹ and › (greyed out when there's nothing that way, the target in the tooltip) and the title of the

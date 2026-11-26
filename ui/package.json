@@ -19,7 +19,7 @@
     "bench": "vitest bench --run --config vite.bench.config.ts --reporter=verbose"
   },
   "dependencies": {
-    "@tauri-apps/api": "2.12.4"
+    "@tauri-apps/api": "2.12.5"
   },
   "devDependencies": {
     "@codspeed/vitest-plugin": "^6.1.1",

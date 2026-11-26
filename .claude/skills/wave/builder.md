@@ -26,6 +26,8 @@ label it carries. Follow `AGENTS.md`, with these changes for a wave:
 - Before you report the build, run the tests of the files and crates you changed and the e2e specs that drive
   them. Leave the full Vitest, the coverage gates and Clippy across the workspace to `just preflight`: it runs
   them after the review, so a run before it is spent twice.
+- Run `just quick` before you report the build and after each round of fixes: it takes seconds, and it
+  catches the formatting a review would otherwise spend a finding on.
 - Run tests in the foreground with a `timeout`, not in the background: a background run that ends can leave
   you waiting on it with nothing running.
 - Allow 0.5px when you compare where an element sits on the screen: macOS's WebKit puts it a fraction of a

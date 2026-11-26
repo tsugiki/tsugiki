@@ -703,7 +703,7 @@ function listOnePr() {
   core.openPullRequest.mockResolvedValue(done);
   core.pullRequest.mockResolvedValue({
     status: "ok",
-    data: { ...pr, content: null, shares_review_of: null, hidden: null },
+    data: { ...pr, content: null, shares_review_of: null, hidden: null, issues: [] },
   });
   core.mirrorsHeld.mockResolvedValue(false);
   core.pullRequestFiles.mockResolvedValue(diff);

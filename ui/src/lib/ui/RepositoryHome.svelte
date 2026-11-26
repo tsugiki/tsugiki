@@ -19,7 +19,7 @@
   } from "$lib/state/panes.svelte";
   import { type PeekLayout, ROW } from "$lib/state/peek";
   import { DiffViewChoice, type FilesMode, type PrFilesState } from "$lib/state/pr-files.svelte";
-  import { PrViewState } from "$lib/state/pr-view.svelte";
+  import { type PrView, PrViewState } from "$lib/state/pr-view.svelte";
   import type { ChangedFiles } from "$lib/state/quick-open.svelte";
   import type { RepositoryState } from "$lib/state/repository-state.svelte";
   import type { TextSearchState } from "$lib/state/text-search.svelte";
@@ -699,9 +699,8 @@
       : () => void sayMarkProblem((opened) => opened.unmuteAuthor(login));
   }
 
-  /** The Issue the Detail pane shows, or the Issue that holds the PR on show: of those its view names, the
-   * one the PR opened from, or else the first. Before the view arrives, the Issue that holds its line in the
-   * list (#488). Nothing on a Standalone PR. */
+  /** The Issue the Detail pane shows, or the Issue `PrViewState.holdingIssue` names for the PR on show.
+   * Before the view arrives, the Issue that holds its line in the list (#488). Nothing on a Standalone PR. */
   function detailPin(): Pin | undefined {
     const line = detailLine();
     const listed = line && workbench.pinOf(line);
@@ -709,9 +708,8 @@
       const view = detail.view;
       return view ? { number: view.number, pinned: view.pinned } : listed;
     }
-    const issues = detail?.view?.issues ?? [];
-    const from = detail?.issue;
-    return issues.find((issue) => issue.number === from) ?? issues[0] ?? listed;
+    const holding = detail instanceof PrViewState ? detail.holdingIssue : undefined;
+    return holding ?? listed;
   }
 
   /** What `Ctrl+K P` does for a press `at` (#488): it pins the Issue that holds the line under the cursor,
@@ -768,6 +766,35 @@
    * author on a Muted author (#494). */
   function muteAuthorByButton(view: IssueView) {
     muteAuthorRun(view.mute_author, { number: view.number, kind: "issue", issue: undefined })?.();
+  }
+
+  /** The line a PR view's holding item has in a list, which an action that finishes it moves the cursor
+   * from (#1077). The view shows the buttons only where no Issue's tree holds the PR, so the item is a PR. */
+  const stopOf = (key: ItemKey): Stop => ({
+    number: key.number,
+    kind: "pull_request",
+    issue: undefined,
+  });
+
+  /** The PR view's Archive button: Archive on the item that holds the PR on show, as its keys act, or
+   * Unarchive on an Archived one (#1077). The view names the item, so the click works while the list shows
+   * another view. */
+  function archivePrByButton(view: PrView) {
+    if (view.hidden === "archived") void unarchive(view.holding.key);
+    else void archive(view.holding);
+  }
+
+  /** The PR view's Mute button: Mute on the item that holds the PR on show, as its keys act, or Unmute on a
+   * Muted one (#1077). */
+  function mutePrByButton(view: PrView) {
+    if (view.hidden === "muted") void unmute(view.holding.key);
+    else void mute(view.holding);
+  }
+
+  /** The PR view's Mute author button: Mute author on the author of the PR on show, or Unmute author on a
+   * Muted author (#1077). */
+  function muteAuthorPrByButton(view: PrView) {
+    muteAuthorRun(view.mute_author, stopOf(view.holding.key))?.();
   }
 
   /** The line of the list the Detail pane shows, if it shows one. */
@@ -1404,10 +1431,10 @@
       // The file view goes back to the diff under it, and the next Escape goes on to the Issue (#456).
       e.preventDefault();
       tab.closeFileView();
-    } else if (key === "escape" && detail instanceof PrViewState && detail.issue !== undefined) {
+    } else if (key === "escape" && detail instanceof PrViewState && detail.returnIssue !== undefined) {
       // A PR opened from a row of its own has nothing under it, so it stays on show.
       e.preventDefault();
-      back(detail.issue);
+      back(detail.returnIssue);
     } else if (key === "escape" && at.pane === "detail" && !panes.hidden("list")) {
       // Nothing on top: the focus goes back to the list, on the row of the item on show.
       e.preventDefault();
@@ -1823,6 +1850,9 @@
         now={clock.now}
         onback={back}
         onmark={markByButton}
+        onarchive={archivePrByButton}
+        onmute={mutePrByButton}
+        onmuteauthor={muteAuthorPrByButton}
         marks={!detailMuted()}
         focusable={panes.hidden("list") || focusedView === pr}
       >

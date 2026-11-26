@@ -8,12 +8,13 @@
     RAIL_MOST,
     RAIL_WIDTH,
   } from "$lib/state/panes.svelte";
-  import type { PrTab, PrViewState } from "$lib/state/pr-view.svelte";
+  import type { PrTab, PrView, PrViewState } from "$lib/state/pr-view.svelte";
   import { RAIL_TABS, type RailTab, railTabLabel, type RailTabId } from "$lib/state/rail.svelte";
   import type { RepositoryState } from "$lib/state/repository-state.svelte";
   import Conversation from "./Conversation.svelte";
   import FilesTab from "./FilesTab.svelte";
   import { focusBesideRail } from "./focus";
+  import HideButtons from "./HideButtons.svelte";
   import { currentOs, withKey } from "./keys";
   import MarkButton from "./MarkButton.svelte";
   import { prIcon } from "./octicons";
@@ -34,6 +35,9 @@
     now,
     onback,
     onmark,
+    onarchive,
+    onmute,
+    onmuteauthor,
     marks = true,
     focusable = false,
     header,
@@ -47,6 +51,14 @@
     onback: (issue: number) => void;
     /** Mark Seen or Mark Unseen, whichever the header's button offers. */
     onmark: () => void;
+    /** Archive, or Unarchive on an Archived item, as the header's button offers for the PR on show
+     * (#490). */
+    onarchive: (view: PrView) => void;
+    /** Mute, or Unmute on a Muted item, as the header's button offers for the PR on show (#492). */
+    onmute: (view: PrView) => void;
+    /** Mute author on the PR's author, or Unmute author on a Muted author, as the header's button offers
+     * for the PR on show (#494). */
+    onmuteauthor: (view: PrView) => void;
     /** Whether the header offers Mark Seen or Mark Unseen, which it doesn't on a PR of a Muted item
      * (#492). */
     marks?: boolean;
@@ -77,6 +89,9 @@
   });
   /** Whether the rail shows: it opens beside the tabs, which come with the PR's view. */
   const railed = $derived(panes.railState.open && Boolean(pr.view));
+  /** The Issue the crumb goes back to: the one the user opened the PR from, or else the first whose tree its
+   * view names (#1077). */
+  const backIssue = $derived(pr.returnIssue);
   /** Whether the Conversation scrolls by itself, as it does beside the rail. Without the rail the whole pane
    * scrolls it, under the header. */
   const conversationScrolls = $derived(railed && pr.tab === "conversation");
@@ -157,11 +172,11 @@
   {#if links.problem}
     <p role="alert">{links.problem}</p>
   {/if}
-  <!-- The line over the title: the Issue the PR was opened under, where it goes and when it changed. -->
-  {#if pr.issue !== undefined || pr.view}
+  <!-- The line over the title: the Issue the PR goes back to, where it goes and when it changed. -->
+  {#if backIssue !== undefined || pr.view}
     <p class="crumb">
-      {#if pr.issue !== undefined}
-        {@const issue = pr.issue}
+      {#if backIssue !== undefined}
+        {@const issue = backIssue}
         <button
           class="link back"
           onclick={() => {
@@ -192,7 +207,14 @@
       </button>
     </h2>
     <p class="byline"><b>{view.author ?? "deleted user"}</b> <StateWords row={view} /></p>
-    <MarkButton seen={view.seen} {onmark} {marks} />
+    <!-- A PR no Issue's tree holds offers the actions of the item it shows: its own, or the Standalone PR's
+         over its Backport (#1077). A PR in an Issue's tree shows only Mark Seen, as its `gh-N` crumb opens
+         the Issue view, where the Issue's buttons are. -->
+    <MarkButton seen={view.seen} {onmark} {marks}>
+      {#if view.issues.length === 0}
+        <HideButtons {view} {onarchive} {onmute} {onmuteauthor} />
+      {/if}
+    </MarkButton>
 
     <!-- The tabs, and at the right a button for each of the rail's tabs, which opens the rail beside them on
          that tab, or closes it there. -->

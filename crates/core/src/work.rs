@@ -14,7 +14,7 @@ mod review_state;
 
 use std::collections::BTreeSet;
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use specta::Type;
 
 use crate::facts::activity::ItemKey;
@@ -34,7 +34,7 @@ pub use review_state::{YourReview, checks_to_keep, findings_to_keep};
 
 /// The item Archive, Keep Archived or Mute acts on, and its tree's part in Mark Seen, as the window drew it
 /// (#490, #491, #492).
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Type)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
 pub struct Hiding {
     pub key: ItemKey,
     pub mark: SeenMark,

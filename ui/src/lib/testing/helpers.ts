@@ -29,6 +29,11 @@ export const clickAt = async (element: Element, offset: number, init: MouseEvent
   await fireEvent.click(element, init);
 };
 
+/** The Issue view's or the PR view's header buttons, by their words: Archive and its undo, Mute, Mute
+ * author, then Mark Seen. */
+export const headerButtons = () =>
+  screen.getAllByRole("button", { name: /^(un)?(archive|mute|mark)/i }).map((button) => button.textContent);
+
 /** Each segment's `aria-pressed` in the Files tab's switch, All files then One file. */
 export const pressed = () => {
   const group = within(screen.getByRole("group", { name: "Files" }));

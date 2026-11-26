@@ -204,14 +204,16 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
   - **Mute author** ([#494](https://github.com/tsugiki/tsugiki/issues/494)) mutes the author of the row
     under the cursor, or of the Detail pane's item while it holds the focus, in the current Repository
     only: a PR's author on a PR's row, an Issue's on an Issue's. The command palette offers it, as
-    "Unmute Author" on a Muted author's row, and so does the Issue view's button; it has no key, and it is
-    off on the user's own items. A Muted author's Issues, Standalone PRs and Standalone Backports count as
-    Muted, those they open later too: they leave the Workbench, the Archived view and the counts, each
-    Filter lists them in its fold of Muted items, and their trees leave Reach as a Muted item's do. Muting
-    marks their open items seen in the background, the trees they head included. It finds those items in
-    the facts as it runs, not on a page the window drew, so unlike Mute on one item it acknowledges no
-    Stale review: Unmute author brings back each one that stood at the mute, while the Review requests it
-    cleared stay cleared. A Review request or an assignment to the user brings one back as it brings back a
+    "Unmute Author" on a Muted author's row, and so do the Issue view's button and the PR view's button on a
+    PR no Issue's tree holds: a Standalone PR, a Standalone Backport or a Backport in a Standalone PR's tree.
+    It has no key, and it is off on the user's own items. A Muted
+    author's Issues, Standalone PRs and Standalone Backports count as Muted, those they open later too: they
+    leave the Workbench, the Archived view and the counts, each Filter lists them in its fold of Muted items,
+    and their trees leave Reach as a Muted item's do. Muting marks their open items seen in the background,
+    the trees they head included. It finds those items in the facts as it runs, not on a page the window
+    drew, so unlike Mute on one item it acknowledges no Stale review: Unmute author brings back each one that
+    stood at the mute, while the Review requests it cleared stay cleared. A Review request or an assignment
+    to the user brings one back as it brings back a
     Muted item. `Q`, `Shift+Q`, `E` and `M` do nothing on their items; Unmute author is the way back, and
     leaves an item the user muted on its own Muted. Their PRs inside another author's Issue stay as they
     are, apart from the Inbox, whose Show muted hides each row they wrote.

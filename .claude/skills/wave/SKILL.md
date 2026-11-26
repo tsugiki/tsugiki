@@ -178,13 +178,15 @@ Follow-ups: <tickets filed from the reviews, and their milestone.>
 
 After the last merge:
 
-1. Fill in the follow-ups, and cut the parts of the form the wave had nothing for.
-2. Fill in the row's End, then its other cells from the entry, as the list under "Implement wave N" says.
-3. Update the row's Tickets if a slot changed hands, and move a ticket the wave couldn't start to a later
+1. Check main's push CI on the last merge commit: when the user merges the wave's last PRs back to back,
+   the later PR's CI ran before the other landed, so that run is the first over the combined tree.
+2. Fill in the follow-ups, and cut the parts of the form the wave had nothing for.
+3. Fill in the row's End, then its other cells from the entry, as the list under "Implement wave N" says.
+4. Update the row's Tickets if a slot changed hands, and move a ticket the wave couldn't start to a later
    wave's row.
-4. If the wave taught something that holds for the next one, add it to this skill in a PR, as a rule with
+5. If the wave taught something that holds for the next one, add it to this skill in a PR, as a rule with
    its reason in one clause. The story of how the wave learned it stays in the wave log.
-5. Remove each worktree with `just worktree-remove <n>`, which deletes its builds and, once its PR has
+6. Remove each worktree with `just worktree-remove <n>`, which deletes its builds and, once its PR has
    merged, its local branch.
 
 Done when the entry has every part of the form filled or cut, the row has every cell filled, and no

@@ -1281,12 +1281,73 @@ fn a_label_and_an_author_narrow_the_rows_together() {
 }
 
 #[test]
+fn a_search_keeps_an_orphan_backport_under_its_issue_and_a_standalone_backport_on_its_own() {
+    let world = ViewWorld::new("inbox-search-backports");
+    let orphan = PullRequestFacts {
+        title: "[3.14] gh-1: Fix it (GH-999)".to_owned(),
+        ..backport_at(10, 999, ago(2))
+    };
+    let beneath = PullRequestFacts {
+        title: "[3.14] Fix it (GH-20)".to_owned(),
+        ..backport_at(21, 20, ago(2))
+    };
+    let standalone = PullRequestFacts {
+        title: "[3.13] Fix it (GH-998)".to_owned(),
+        ..backport_at(30, 998, ago(1))
+    };
+    world.has(
+        vec![pr_at(20, None, ago(4)), orphan, beneath, standalone],
+        vec![issue_at(1, ago(3))],
+    );
+
+    let found = searched(&world, "fix");
+    world.finish();
+
+    assert_eq!(
+        outline(&found),
+        [
+            ("standalone backport", 30, vec![]),
+            ("standalone", 20, vec![21]),
+            ("issue", 1, vec![10])
+        ],
+        "a Backport whose Origin the cache lacks stays under its Issue, a matching Backport keeps \
+         its Standalone PR's header, and an unmatched Origin leaves a Standalone Backport"
+    );
+}
+
+#[test]
+fn a_brought_back_closed_issue_is_open_to_a_search_as_it_is_to_the_inbox() {
+    let world = ViewWorld::new("inbox-search-brought-back");
+    let mut closed = issue_at(1, ago(60));
+    closed.state = Some(IssueState::Closed);
+    closed.title = "Fix the parser".to_owned();
+    world.has(vec![pr_at(10, Some(1), ago(50))], vec![closed]);
+    let store = &world.db.store;
+    archived_on_closing(store, &[ItemKey::Issue { number: 1 }], ago(60));
+    store
+        .bring_back(
+            &cpython(),
+            Opened {
+                issues: vec![1],
+                openings: BTreeSet::new(),
+            },
+        )
+        .unwrap();
+
+    let found = searched(&world, "is:issue fix");
+    world.finish();
+
+    assert_eq!(
+        outline(&found),
+        [("issue", 1, vec![])],
+        "the Inbox lists a closed Issue a PR brought back, so is:open finds it too"
+    );
+}
+
+#[test]
 fn a_qualifier_the_cache_does_not_read_lists_nothing_and_says_github() {
     let world = ViewWorld::new("inbox-search-github");
-    world.has(
-        vec![pr_at(10, Some(1), ago(1))],
-        vec![issue_at(1, ago(2))],
-    );
+    world.has(vec![pr_at(10, Some(1), ago(1))], vec![issue_at(1, ago(2))]);
 
     let found = searched(&world, "review:approved");
     let local = searched(&world, "fix");
@@ -1324,7 +1385,11 @@ fn a_search_leaves_pinned_archived_and_muted_items_out() {
     let found = searched(&world, "Issue");
     world.finish();
 
-    assert_eq!(outline(&found), [], "a search leaves out what the Inbox does");
+    assert_eq!(
+        outline(&found),
+        [],
+        "a search leaves out what the Inbox does"
+    );
 }
 
 #[test]

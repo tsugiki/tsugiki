@@ -104,28 +104,15 @@ fn inbox_latest(bencher: divan::Bencher<'_, '_>, prs: u32) {
     let (now, page) = (updated(0), InboxPage::Latest);
     let shown = held
         .reads
-        .inbox(
-            &held.settings,
-            InboxAsk {
-                page,
-                search: "",
-            },
-            now,
-        )
+        .inbox(&held.settings, InboxAsk { page, search: "" }, now)
         .expect("the page");
     assert!(
         !shown.items.is_empty() && shown.older.is_some(),
         "the page lists items and has older ones after it"
     );
     bencher.bench(|| {
-        held.reads.inbox(
-            &held.settings,
-            InboxAsk {
-                page,
-                search: "",
-            },
-            now,
-        )
+        held.reads
+            .inbox(&held.settings, InboxAsk { page, search: "" }, now)
     });
     held.close();
 }
@@ -145,28 +132,15 @@ fn inbox_older(bencher: divan::Bencher<'_, '_>, prs: u32) {
     let (now, page) = (updated(0), InboxPage::Older { after });
     let shown = held
         .reads
-        .inbox(
-            &held.settings,
-            InboxAsk {
-                page,
-                search: "",
-            },
-            now,
-        )
+        .inbox(&held.settings, InboxAsk { page, search: "" }, now)
         .expect("the page");
     assert!(
         !shown.items.is_empty() && shown.older.is_some(),
         "the page lists items and has older ones after it"
     );
     bencher.bench(|| {
-        held.reads.inbox(
-            &held.settings,
-            InboxAsk {
-                page,
-                search: "",
-            },
-            now,
-        )
+        held.reads
+            .inbox(&held.settings, InboxAsk { page, search: "" }, now)
     });
     held.close();
 }

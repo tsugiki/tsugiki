@@ -77,6 +77,16 @@ fn is_issue_and_is_pr_match_only_their_kind() {
 }
 
 #[test]
+fn is_open_matches_open_rows_and_an_unknown_is_value_needs_github() {
+    assert!(Search::parse("is:open").finds(&issue("Anything", State::Open)));
+    assert!(!Search::parse("is:open").finds(&issue("Anything", State::Closed)));
+
+    let unknown = Search::parse("is:foo");
+    assert!(unknown.needs_github());
+    assert!(!unknown.finds(&issue("Anything", State::Open)));
+}
+
+#[test]
 fn the_search_adds_is_open_unless_the_query_names_a_state() {
     assert!(!Search::parse("fix").finds(&issue("Fix it", State::Closed)));
     assert!(Search::parse("fix").finds(&issue("Fix it", State::Open)));

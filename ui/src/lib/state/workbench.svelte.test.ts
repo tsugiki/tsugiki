@@ -1729,11 +1729,7 @@ describe("WorkbenchState's Inbox", () => {
 
     paging({ latest: page([3]) });
     await state.setSearch("Issue 3");
-    expect(commands.inbox).toHaveBeenLastCalledWith(
-      "python/cpython",
-      { kind: "latest" },
-      "Issue 3",
-    );
+    expect(commands.inbox).toHaveBeenLastCalledWith("python/cpython", { kind: "latest" }, "Issue 3");
     expect(numbers(state)).toEqual([3]);
     // The search lists every match it finds at once, so nothing older is left to read.
     expect(state.olderToRead).toBe(false);
@@ -1755,9 +1751,12 @@ describe("WorkbenchState's Inbox", () => {
     await state.setSearch("I");
     await state.setSearch("Is");
     await state.setSearch("Issue");
-    expect(
-      vi.mocked(commands.inbox).mock.calls.map(([, , search]) => search),
-    ).toEqual(["", "I", "Is", "Issue"]);
+    expect(vi.mocked(commands.inbox).mock.calls.map(([, , search]) => search)).toEqual([
+      "",
+      "I",
+      "Is",
+      "Issue",
+    ]);
 
     paging({ latest: inboxPage([], null, "off", true) });
     await state.setSearch("review:approved");
@@ -1774,11 +1773,7 @@ describe("WorkbenchState's Inbox", () => {
 
     await state.readOlder();
     expect(numbers(state)).toEqual([3, 2, 1]);
-    expect(commands.inbox).toHaveBeenLastCalledWith(
-      "python/cpython",
-      { kind: "older", after: at(2, 9) },
-      "",
-    );
+    expect(commands.inbox).toHaveBeenLastCalledWith("python/cpython", { kind: "older", after: at(2, 9) }, "");
     expect(state.olderToRead).toBe(false);
 
     await state.readOlder();

@@ -5,6 +5,8 @@
 //! a state: `is:open`, `is:closed`, `is:merged`, `is:unmerged` or `state:`. A query with anything outside
 //! those forms is left to GitHub, which a later ticket asks (#465), and lists no local rows until then.
 
+use std::collections::BTreeSet;
+
 use crate::facts::issues::{IssueFacts, IssueState};
 use crate::facts::labels::Label;
 use crate::facts::pull_requests::{PrState, PullRequestFacts};
@@ -29,7 +31,7 @@ enum Match {
     /// The login of the row's author.
     Author(Login),
     /// A label the row carries, which ignores case as GitHub's do.
-    Label(String),
+    Label(Label),
     /// Whether the row is an Issue or a PR.
     Kind(RowKind),
     /// Whether the row is open, or closed and merged.
@@ -61,15 +63,15 @@ pub(super) struct SearchRow {
 }
 
 impl SearchRow {
-    pub(super) fn issue(facts: &IssueFacts) -> Self {
+    pub(super) fn issue(facts: &IssueFacts, brought_back: &BTreeSet<u32>) -> Self {
         Self {
             kind: RowKind::Issue,
             number: facts.number,
             title: facts.title.to_lowercase(),
             author: facts.author.clone(),
             labels: facts.labels.clone(),
-            // An Issue stored before Tsugiki kept states counts as open, as it does in the Inbox.
-            open: matches!(facts.state, Some(IssueState::Open) | None),
+            // The Inbox lists an open Issue, or a closed one a PR brought back.
+            open: facts.state == Some(IssueState::Open) || brought_back.contains(&facts.number),
         }
     }
 
@@ -118,7 +120,7 @@ impl Search {
                     search.matches.push(Match::Author(Login::new(value)));
                 }
                 ("label", value) if !value.is_empty() => {
-                    search.matches.push(Match::Label(value.to_owned()));
+                    search.matches.push(Match::Label(Label::new(value)));
                 }
                 ("is", value) => match value.to_ascii_lowercase().as_str() {
                     "issue" => search.matches.push(Match::Kind(RowKind::Issue)),
@@ -175,8 +177,7 @@ impl Match {
             Self::Word(word) => row.title.contains(word),
             Self::Number(number) => row.number == *number,
             Self::Author(login) => row.author.as_ref() == Some(login),
-            Self::Label(name) => (row.labels.iter())
-                .any(|label| label.as_str().eq_ignore_ascii_case(name)),
+            Self::Label(label) => row.labels.contains(label),
             Self::Kind(kind) => row.kind == *kind,
             Self::State(State::Open) => row.open,
             Self::State(State::Closed) => !row.open,

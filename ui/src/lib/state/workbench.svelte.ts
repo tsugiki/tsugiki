@@ -270,11 +270,13 @@ export class WorkbenchState {
 
   /** Narrows the Inbox to `text`, which the cache reads (#464), and asks on each key. An empty box brings
    * the whole list back. The pages on show belong to the search before this one, so this starts the new
-   * one at its first page. */
+   * one at its first page. An action's answer reads the listing it sent, whose search is now stale, so this
+   * drops it like a change of view does. */
   async setSearch(text: string) {
     if (text === this.search) return;
     this.search = text;
     this.#reach = undefined;
+    this.#pending.clear();
     await this.#ask();
   }
 

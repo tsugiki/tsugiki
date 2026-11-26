@@ -1597,11 +1597,11 @@
       {@render problems()}
       {#if workbench.items?.length === 0 && workbench.muted.length === 0}
         {#if workbench.selected.kind === "inbox" && workbench.search.trim() !== ""}
-          <p role="status"
-            >{workbench.needsGitHub
+          <p role="status">
+            {workbench.needsGitHub
               ? "This search needs GitHub, which Tsugiki can't ask yet. Clearing the box brings the whole list back."
-              : "Nothing in the cache matches this search. Clearing the box brings the whole list back."}</p
-          >
+              : "Nothing in the cache matches this search. Clearing the box brings the whole list back."}
+          </p>
         {:else}
           <p>{EMPTY[workbench.selected.kind]}</p>
         {/if}

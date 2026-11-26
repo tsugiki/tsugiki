@@ -194,24 +194,22 @@ impl Inbox {
             });
         }
         let facts = snapshot.work_facts()?;
-        if facts.viewer.is_none() {
-            return Ok(Self {
-                items: Vec::new(),
-                older: None,
-                show_muted: show,
-                needs_github: false,
-            });
-        }
         let causes = Causes::of(&facts, repository.conventions);
-        let rows = Index::of(&facts);
+        let rows = Index::of(&facts, &snapshot.brought_back()?);
         let grouped = candidates_of(facts, repository, &BTreeSet::new(), &causes);
-        let mut items: Vec<ListedItem> = (shown(grouped, show, &causes).into_iter())
+        // An item keeps the place its whole tree gives it, before Show muted and the search drop rows.
+        let places: BTreeMap<ItemKey, InboxCursor> = (grouped.iter())
+            .map(|item| (item.key(), item_place(item)))
+            .collect();
+        let mut items: Vec<(InboxCursor, ListedItem)> = (shown(grouped, show, &causes).into_iter())
             .filter_map(|listed| {
+                let place = places.get(&listed.key).copied()?;
                 let item = narrowed(listed.item, search, &rows)?;
-                Some(ListedItem { item, ..listed })
+                Some((place, ListedItem::of(&causes, item)))
             })
             .collect();
-        items.sort_by_key(|listed| Reverse(item_place(&listed.item)));
+        items.sort_by_key(|(place, _)| Reverse(*place));
+        let items = (items.into_iter()).map(|(_, listed)| listed).collect();
         Ok(Self {
             items,
             older: None,
@@ -258,8 +256,7 @@ fn shown(grouped: Vec<WorkbenchItem>, show: ShowMuted, causes: &Causes) -> Vec<L
             Some(Hidden::Archived | Hidden::Muted) => false,
             Some(Hidden::MutedAuthor) => {
                 let key = listed.key;
-                !causes.is_muted_on_its_own(key)
-                    && !causes.is_archived(key, &listed.item.numbers())
+                !causes.is_muted_on_its_own(key) && !causes.is_archived(key, &listed.item.numbers())
             }
         })
         .collect()
@@ -272,10 +269,10 @@ struct Index {
 }
 
 impl Index {
-    fn of(facts: &WorkFacts) -> Self {
+    fn of(facts: &WorkFacts, brought_back: &BTreeSet<u32>) -> Self {
         Self {
             issues: (facts.issues.iter())
-                .map(|issue| (issue.number, SearchRow::issue(issue)))
+                .map(|issue| (issue.number, SearchRow::issue(issue, brought_back)))
                 .collect(),
             pull_requests: (facts.pull_requests.iter())
                 .map(|pr| (pr.number, SearchRow::pull_request(pr)))
@@ -292,21 +289,22 @@ impl Index {
 /// `item` with only the rows `search` finds, or nothing when it finds none. An Issue's header, and a PR's
 /// over the Backports beneath it, stays over the rows that match beneath it, even when it doesn't match
 /// itself, so a matching PR stays in its Issue's fold (#464).
-fn narrowed(
-    item: WorkbenchItem,
-    search: &Search,
-    rows: &Index,
-) -> Option<WorkbenchItem> {
-    let finds = |number: u32| rows.pull_request(number).is_some_and(|row| search.finds(row));
+fn narrowed(item: WorkbenchItem, search: &Search, rows: &Index) -> Option<WorkbenchItem> {
+    let finds = |number: u32| {
+        rows.pull_request(number)
+            .is_some_and(|row| search.finds(row))
+    };
     match item {
         WorkbenchItem::Issue(mut issue) => {
-            let header = rows.issues.get(&issue.number).is_some_and(|row| search.finds(row));
+            let header = rows
+                .issues
+                .get(&issue.number)
+                .is_some_and(|row| search.finds(row));
             issue.pull_requests = (issue.pull_requests.into_iter())
                 .filter_map(|entry| match entry {
                     TreeEntry::Pr(mut tree) => {
                         let top = finds(tree.row.number);
-                        tree.backports
-                            .retain(|backport| finds(backport.row.number));
+                        tree.backports.retain(|backport| finds(backport.row.number));
                         (top || !tree.backports.is_empty()).then_some(TreeEntry::Pr(tree))
                     }
                     TreeEntry::Backport(backport) => {
@@ -318,8 +316,7 @@ fn narrowed(
         }
         WorkbenchItem::StandalonePr(mut tree) => {
             let top = finds(tree.row.number);
-            tree.backports
-                .retain(|backport| finds(backport.row.number));
+            tree.backports.retain(|backport| finds(backport.row.number));
             (top || !tree.backports.is_empty()).then_some(WorkbenchItem::StandalonePr(tree))
         }
         WorkbenchItem::StandaloneBackport(backport) => {

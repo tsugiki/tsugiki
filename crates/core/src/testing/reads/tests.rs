@@ -22,7 +22,8 @@ fn each_read_answers_from_the_database_it_opened() {
             search: "",
         },
         OffsetDateTime::UNIX_EPOCH,
-    );    let issue = reads.issue_view(&settings, 8).unwrap();
+    );
+    let issue = reads.issue_view(&settings, 8).unwrap();
     let pr = reads.pr_view(&settings, 7).unwrap();
     let found = reads.quick_open(&cpython(), "#7").unwrap();
     reads.close();

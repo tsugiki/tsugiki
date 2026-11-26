@@ -5343,11 +5343,7 @@ it("lists the Inbox from the Sidebar, each Issue with its PRs, in its own order"
   expect(await screen.findByRole("heading", { name: "Inbox" })).toBeTruthy();
   await screen.findByRole("button", { name: "#112564 GIL drop during collection" });
   expect(screen.queryByRole("button", { name: "#5 Alone" })).toBeNull();
-  expect(core.inbox).toHaveBeenCalledExactlyOnceWith(
-    "python/cpython",
-    { kind: "latest" },
-    "",
-  );
+  expect(core.inbox).toHaveBeenCalledExactlyOnceWith("python/cpython", { kind: "latest" }, "");
   expect(core.workbench).toHaveBeenLastCalledWith("python/cpython", { kind: "whole" });
   expect(screen.getByRole("button", { name: "Inbox" }).getAttribute("aria-current")).toBe("true");
   expect(screen.queryByRole("button", { name: /⇅$/ })).toBeNull();

@@ -57,11 +57,13 @@
   };
 
   /** Home, End, ← and → in the tab row show the first tab, the one before the tab on show, the one after it,
-   * or the last, round from either end, and focus it. */
+   * or the last, round from either end, and focus it. No key goes on to the window, whose Home and End
+   * scroll the Detail pane's content. */
   async function ontabkeydown(e: KeyboardEvent) {
     const step = STEPS[keyName(e, currentOs()) ?? ""];
     if (step === undefined) return;
     e.preventDefault();
+    e.stopPropagation();
     rail.go(step);
     await tick();
     selectedTab()?.focus();

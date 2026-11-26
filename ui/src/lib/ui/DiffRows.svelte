@@ -384,7 +384,7 @@
 {/snippet}
 
 <!-- A region that scrolls takes focus, so the keys scroll it (axe's scrollable-region-focusable). The Detail
-     pane's ↑ and ↓ scroll it too while the Issue list is hidden, which `data-scrolls` marks it for. A click
+     pane's scroll keys move it too while it holds them, which `data-scrolls` marks it for. A click
      picks a word in it, which the keys can't yet: a caret the keys move waits for after v1 (scope.md). -->
 <!-- svelte-ignore a11y_no_noninteractive_tabindex, a11y_click_events_have_key_events -->
 <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->

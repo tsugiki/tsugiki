@@ -17,7 +17,7 @@
     SIDEBAR_MOST,
     SIDEBAR_WIDTH,
   } from "$lib/state/panes.svelte";
-  import type { PeekLayout } from "$lib/state/peek";
+  import { type PeekLayout, ROW } from "$lib/state/peek";
   import { DiffViewChoice, type FilesMode, type PrFilesState } from "$lib/state/pr-files.svelte";
   import { PrViewState } from "$lib/state/pr-view.svelte";
   import type { ChangedFiles } from "$lib/state/quick-open.svelte";
@@ -258,6 +258,9 @@
    * cursor, so the row the user left doesn't look selected too, and Enter doesn't open it again. A pick
    * from the history's list can land on the item on show, which then only takes the cursor.
    *
+   * The PR on show switches its tab as Enter or a click on its row opens it, and the focus stays where it
+   * was: the press came from the Issue list, which keeps its keys (#1075).
+   *
    * The history can go through to a file view too (#456): it shows its PR, on the Files tab, with the view
    * over it, which takes the focus, and the cursor goes to the PR's row. Any other place shows its PR with no
    * file view, and so does a click on the row of the PR on show, which the history records as the PR's line.
@@ -466,8 +469,8 @@
     return inList ? "list" : inDetail ? "detail" : null;
   }
 
-  /** Whether a press `at` goes to the Detail pane: the pane holds the focus, or the list is hidden. ↑ ↓ then
-   * scroll it, and `Q` marks its item. */
+  /** Whether a press `at` goes to the Detail pane: the pane holds the focus, or the list is hidden. ↑ ↓,
+   * PgDn, PgUp, Home and End then scroll it, and `Q` marks its item. */
   const forDetail = (at: KeyTarget) => panes.hidden("list") || at.pane === "detail";
 
   /** The item `Q` and `Shift+Q` act on for a press `at`: the Detail pane's item while it holds the focus or
@@ -546,6 +549,17 @@
       focusedView = detail ?? unstored;
       await tick();
       pane.focus();
+    });
+  }
+
+  /** Gives the focus to the new tab's content once a tab switch has drawn it: the diff or the file view of
+   * the Files tab, or the Conversation beside the rail, and else the pane, which scrolls the Conversation
+   * without it, so the keys keep acting on the pane (#1075). */
+  function focusTabContent() {
+    void tick().then(() => {
+      const scroller = scrollerIn(detailPane());
+      if (scroller) scroller.focus({ preventScroll: true });
+      else focusDetail();
     });
   }
 
@@ -1004,13 +1018,17 @@
    * and the palette run what it gives, and the `?` list asks it, so none of them can disagree. */
   type ScreenAction = (at: KeyTarget) => Run | undefined;
 
-  /** Switches the tabs of the PR view on show, while one shows. */
+  /** Switches the tabs of the PR view on show, while one shows. The focus stays in the Issue list when it was
+   * there, which keeps its keys, and follows the tab when it was in the Detail pane, the rail inside it too
+   * (#1075). */
   const tabSwitch: ScreenAction = () => {
     const view = detail instanceof PrViewState ? detail : undefined;
     return (
       view &&
       (() => {
+        const follows = focusInDetail();
         view.switchTab();
+        if (follows) focusTabContent();
       })
     );
   };
@@ -1259,6 +1277,10 @@
     return target instanceof Node && detailPane()?.contains(target) === true;
   }
 
+  /** Whether the focus is in the Detail pane, the rail inside it too: a tab switch taken there then moves
+   * the focus to the new tab's content, and one taken in the Issue list leaves it there (#1075). */
+  const focusInDetail = () => inDetailPane(document.activeElement);
+
   /** Whether `focused` is a row of the list, the list itself, which holds the focus whenever nothing else in
    * the list does, or the page's body, which holds it once nothing else does. The focus then follows the
    * cursor. */
@@ -1276,13 +1298,47 @@
     scroller?.scrollBy({ top: step * LINE });
   }
 
+  /** Pages the region PgDn and PgUp move by a screen, less a row, so a line stays in view to read on from. */
+  function pageDetail(step: 1 | -1) {
+    const region = pagedRegion();
+    region?.scrollBy({ top: step * Math.max(0, region.clientHeight - ROW) });
+  }
+
+  /** Goes to the start or the end of the region PgDn and PgUp move, as Home and End do. */
+  function scrollDetailTo(where: "start" | "end") {
+    const region = pagedRegion();
+    region?.scrollBy({
+      top:
+        where === "start" ? -region.scrollTop : region.scrollHeight - region.clientHeight - region.scrollTop,
+    });
+  }
+
+  /** The region PgDn, PgUp, Home and End move: the one that holds the focus when it scrolls, as the
+   * Definition peek's code or a long enough list of its hits does, and else the one the tab's keys scroll
+   * (#1075). A focused region with nothing to scroll, such as a short hits list, leaves the keys their
+   * tab's content. */
+  function pagedRegion(): HTMLElement | null | undefined {
+    const focused = document.activeElement;
+    if (
+      focused instanceof HTMLElement &&
+      focused.hasAttribute("data-scrolls") &&
+      focused.scrollHeight > focused.clientHeight
+    ) {
+      return focused;
+    }
+    const pane = detailPane();
+    return scrollerIn(pane) ?? pane;
+  }
+
   /**
    * The list's keys and the PR view's. A dialog on top keeps them, and a text box or a focused control
    * keeps its own. The window's guard has already stopped the browser for Ctrl+B, Ctrl+Shift+G, Ctrl+Alt+U
    * and Ctrl+F, which work in a text box too unless `[keys]` gives them a key that types there, and for
    * Ctrl+Alt+B outside one, as AltGr sends it to type.
    * ↑ and ↓ go where the focus line shows (#602): they scroll the Detail pane while it holds the focus or
-   * the list is hidden, and move the list's cursor otherwise. With the list hidden, Enter has no row to open.
+   * the list is hidden, and move the list's cursor otherwise. PgDn, PgUp, Home and End scroll the pane's
+   * content the same way, and the list keeps its own keys wherever it holds the focus (#1075). With the
+   * list hidden, Enter has no row to open.
    */
   function onkeydown(e: KeyboardEvent) {
     if (!keysActive) return;
@@ -1315,6 +1371,15 @@
     } else if ((key === "arrowdown" || key === "arrowup") && forDetail(at)) {
       e.preventDefault();
       scrollDetail(key === "arrowdown" ? 1 : -1);
+    } else if (key === "pagedown" && forDetail(at)) {
+      e.preventDefault();
+      pageDetail(1);
+    } else if (key === "pageup" && forDetail(at)) {
+      e.preventDefault();
+      pageDetail(-1);
+    } else if ((key === "home" || key === "end") && forDetail(at)) {
+      e.preventDefault();
+      scrollDetailTo(key === "home" ? "start" : "end");
     } else if (key === "arrowdown" || key === "arrowup") {
       e.preventDefault();
       moveCursor(key === "arrowdown" ? 1 : -1);

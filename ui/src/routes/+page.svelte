@@ -569,6 +569,7 @@
         diffFiles={settings.diffFiles}
         diffPeek={settings.diffPeek}
         repositoryState={repositoryState?.state}
+        statusBarVisible={settings.statusBarVisible}
       />
     {/if}
   {:else if home.error}

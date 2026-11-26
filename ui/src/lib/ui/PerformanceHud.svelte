@@ -11,6 +11,12 @@
     hud.refreshing(refreshing);
   });
 
+  /** The panel's drawn height, which a floating panel above it clears (#1072). */
+  let drawn = $state(0);
+  $effect(() => {
+    hud.height = drawn;
+  });
+
   const ms = (value: number | undefined, digits = 1) =>
     value === undefined ? "—" : `${value.toFixed(digits)} ms`;
   const over = (value: number | undefined, budget: number) => value !== undefined && value > budget;
@@ -121,7 +127,7 @@
   });
 </script>
 
-<aside class="mono" aria-label="Performance HUD">
+<aside class="mono" aria-label="Performance HUD" bind:clientHeight={drawn}>
   <table>
     <thead>
       <tr><th scope="col">Measure</th><th scope="col">Now</th><th scope="col">Budget</th></tr>

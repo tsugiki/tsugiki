@@ -1,5 +1,6 @@
 <script lang="ts">
   import { tick } from "svelte";
+  import { ActionNotice, authorWords, didWords } from "$lib/state/action-notice.svelte";
   import type { GitHubItem } from "$lib/state/browser";
   import { lineOf, samePlace, type FileView, type HistoryPlace } from "$lib/state/file-view.svelte";
   import { hud } from "$lib/state/hud.svelte";
@@ -44,6 +45,7 @@
     type WorkbenchRow,
   } from "$lib/state/workbench.svelte";
   import { keepOnScreen, scrollerIn } from "./focus";
+  import ActionPanel from "./ActionPanel.svelte";
   import HistoryBar from "./HistoryBar.svelte";
   import IssueDetail from "./IssueDetail.svelte";
   import type { ScreenKeys, View } from "./KeyList.svelte";
@@ -113,6 +115,7 @@
     diffFiles = "all",
     diffPeek = "inline",
     repositoryState,
+    statusBarVisible = true,
   }: {
     name: string;
     /** Opens the Repository picker, from the Repository's name atop the Sidebar. */
@@ -126,7 +129,12 @@
     diffPeek?: PeekLayout;
     /** The Repository's state, which its Issue and PR views say atop while it is Read-only (#398). */
     repositoryState?: RepositoryState | undefined;
+    /** Whether the status bar shows, which the action panel sits above while it does (#1072). */
+    statusBarVisible?: boolean;
   } = $props();
+
+  /** What the last action on an item did, which the action panel says (#1072). */
+  const notice = new ActionNotice();
 
   // A window can stay open between syncs, so "3h ago" moves on by itself.
   const clock = minuteClock();
@@ -150,6 +158,7 @@
       swap(undefined);
       links.forget();
       markProblem = undefined;
+      notice.clear();
     };
   });
 
@@ -425,7 +434,13 @@
   /** The item Mark Seen and Mark Unseen act on: the item on show, or the line `stop` of the list. With the
    * key of the Archived item that holds it, if the window draws one, Mark Seen keeps that item Archived
    * (#490). */
-  type Marked = { stop: Stop | undefined; number: number; seen: Seen; archived?: ItemKey | undefined };
+  type Marked = {
+    stop: Stop | undefined;
+    number: number;
+    kind: "issue" | "pull_request";
+    seen: Seen;
+    archived?: ItemKey | undefined;
+  };
 
   /** The item the Detail pane shows, once its view has arrived, unless it is Muted, which takes no mark
    * (#492). */
@@ -436,7 +451,13 @@
     // The Issue view knows whether its Issue is Archived, listed or not.
     const issue = detail instanceof IssueViewState ? detail.view : undefined;
     const archived = issue ? issueArchived(issue) : stop && workbench.hiddenHolding(stop, "archived");
-    return { stop, number: view.number, seen: view.seen, archived };
+    return {
+      stop,
+      number: view.number,
+      kind: detail instanceof IssueViewState ? "issue" : "pull_request",
+      seen: view.seen,
+      archived,
+    };
   }
 
   /** The key of the Issue `view` shows, while it's Archived. */
@@ -480,16 +501,29 @@
     const stop = workbench.underCursor;
     const seen = stop && !workbench.mutedHolding(stop) && workbench.seenOf(stop);
     return stop && seen
-      ? { stop, number: stop.number, seen, archived: workbench.hiddenHolding(stop, "archived") }
+      ? {
+          stop,
+          number: stop.number,
+          kind: stop.kind,
+          seen,
+          archived: workbench.hiddenHolding(stop, "archived"),
+        }
       : undefined;
   }
 
   /** Says what went wrong with a mark that `marking` makes, unless the window has left the Repository it
-   * was made in by the time it's done, and gives it back. */
-  async function sayMarkProblem(marking: (opened: WorkbenchState) => Promise<string | undefined>) {
+   * was made in by the time it's done, and gives it back. Once the core has kept it, says what `words` did
+   * in the action panel (#1072). */
+  async function sayMarkProblem(
+    words: string,
+    marking: (opened: WorkbenchState) => Promise<string | undefined>,
+  ) {
     const opened = workbench;
     const problem = await marking(opened);
-    if (workbench === opened) markProblem = problem;
+    if (workbench === opened) {
+      markProblem = problem;
+      if (problem === undefined) notice.show(words);
+    }
     return problem;
   }
 
@@ -497,7 +531,10 @@
    * `WorkbenchState.markSeen` says (#1052). */
   async function markSeen(marked: Marked | undefined) {
     if (marked) {
-      await sayMarkProblem((opened) => opened.markSeen(marked.stop, marked.seen.mark, marked.archived));
+      const words = didWords({ kind: marked.kind, number: marked.number }, "marked seen");
+      await sayMarkProblem(words, (opened) =>
+        opened.markSeen(marked.stop, marked.seen.mark, marked.archived),
+      );
     }
   }
 
@@ -615,7 +652,10 @@
   /** Mark Unseen on `marked`. It unarchives the Archived item that holds it, which comes back Marked unseen
    * (#491). */
   async function markUnseen(marked: Marked | undefined) {
-    if (marked) await sayMarkProblem((opened) => opened.markUnseen(marked.number, marked.archived));
+    if (marked) {
+      const words = didWords({ kind: marked.kind, number: marked.number }, "marked unseen");
+      await sayMarkProblem(words, (opened) => opened.markUnseen(marked.number, marked.archived));
+    }
   }
 
   /** Mark Seen or Mark Unseen on the item on show, whichever its header's button offers. */
@@ -695,8 +735,8 @@
     if (offered.kind === "off") return undefined;
     const { login } = offered;
     return offered.kind === "mute"
-      ? () => void sayMarkProblem((opened) => opened.muteAuthor(login, stop))
-      : () => void sayMarkProblem((opened) => opened.unmuteAuthor(login));
+      ? () => void sayMarkProblem(authorWords(login, "muted"), (opened) => opened.muteAuthor(login, stop))
+      : () => void sayMarkProblem(authorWords(login, "unmuted"), (opened) => opened.unmuteAuthor(login));
   }
 
   /** The Issue the Detail pane shows, or the Issue `PrViewState.holdingIssue` names for the PR on show.
@@ -724,28 +764,29 @@
   /** Pins the Issue `pin` names, or unpins it if the user pinned it, which moves the cursor on from the
    * selected item where the pin or unpin takes it out of the view on show (#1052). */
   async function togglePin({ number, pinned }: Pin) {
-    await sayMarkProblem((opened) => (pinned ? opened.unpin(number) : opened.pin(number)));
+    const words = didWords({ kind: "issue", number }, pinned ? "unpinned" : "pinned");
+    await sayMarkProblem(words, (opened) => (pinned ? opened.unpin(number) : opened.pin(number)));
   }
 
   /** Archive on `archived`, which moves the cursor on from the selected item (#1052). */
   async function archive(archived: Hiding) {
-    await sayMarkProblem((opened) => opened.archive(archived));
+    await sayMarkProblem(didWords(archived.key, "archived"), (opened) => opened.archive(archived));
   }
 
   /** Mute on `muted`, which moves the cursor on from the selected item (#1052). */
   async function mute(muted: Hiding) {
-    await sayMarkProblem((opened) => opened.mute(muted));
+    await sayMarkProblem(didWords(muted.key, "muted"), (opened) => opened.mute(muted));
   }
 
   /** Unmutes the item `key` names. */
   async function unmute(key: ItemKey) {
-    await sayMarkProblem((opened) => opened.unmute(key));
+    await sayMarkProblem(didWords(key, "unmuted"), (opened) => opened.unmute(key));
   }
 
   /** Unarchives the item `key` names, which moves the cursor on from the selected item in the Archived view
    * (#1052). */
   async function unarchive(key: ItemKey) {
-    await sayMarkProblem((opened) => opened.unarchive(key));
+    await sayMarkProblem(didWords(key, "unarchived"), (opened) => opened.unarchive(key));
   }
 
   /** The Issue view's Archive button: Archive on the Issue `view` shows, or Unarchive on an Archived one. */
@@ -1902,6 +1943,10 @@
     </section>
   {/if}
 </div>
+
+<!-- Says what the last action on an item did (#1072). It stays in the page while it says nothing, so a
+     screen reader announces each change. -->
+<ActionPanel {notice} {hud} {statusBarVisible} />
 
 <style>
   /* The panes take the window's height, and each scrolls by itself. The wheel stops at a pane's end, even

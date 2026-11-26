@@ -3,8 +3,13 @@
 import { vi } from "vitest";
 import { events, type Acted_Serialize, type Hit } from "../data/bindings";
 import { HitCode } from "../state/hit-code.svelte";
+import { HudState, type HudCore } from "../state/hud.svelte";
 import type { Peek } from "../state/peek";
 import type { DarkQuery } from "../state/theme.svelte";
+
+/** A HUD on a clock the test moves by hand, which asks for no real frame. */
+export const testHud = (core: HudCore) =>
+  new HudState({ now: () => 0, requestFrame: () => 1, cancelFrame: () => {}, afterPaint: () => {} }, core);
 
 /** The system on its light side, which says nothing when it changes, for a `ThemeState`. */
 export const LIGHT_SIDE = { matches: false, addEventListener: () => {} } as unknown as DarkQuery;

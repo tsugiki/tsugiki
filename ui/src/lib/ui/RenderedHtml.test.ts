@@ -79,6 +79,12 @@ it("gives no tooltip to a link within the text or one with nowhere to go", () =>
   expect(screen.getByText("Nowhere").hasAttribute("title")).toBe(false);
 });
 
+it("leaves a link with nowhere to go the tooltip the HTML itself gave it", () => {
+  shown('<a title="GitHub wrote this">Nowhere</a>');
+
+  expect(screen.getByText("Nowhere").getAttribute("title")).toBe("GitHub wrote this");
+});
+
 it("leaves other clicks to the browser, so a folded section still unfolds", () => {
   const onlink = shown("<details><summary>More</summary>Inside</details>");
 

@@ -3,16 +3,13 @@
   // running, and from loading anything but images from GitHub's image hosts (ADR 0005, #761). A `<picture>`
   // picks its source by `prefers-color-scheme`, which follows the window as it turns to the theme's side.
   // This keeps the HTML from taking the window away from Tsugiki.
-  import { linkTooltip } from "./link-tooltip";
+  import { followLink, LINK_SELECTOR, linkTitle } from "./link-tooltip";
   import { resign, sameButSignatures } from "./signed-addresses";
 
   let { html, onlink }: { html: string; onlink: (address: string) => void } = $props();
 
   /** The HTML `show` drew last. */
   let drawn: string | undefined;
-
-  /** What a click follows: a link, or an image map's area. A tooltip says where either one goes. */
-  const LINK_SELECTOR = "a, area";
 
   /**
    * Shows `html` in `node` without a refresh or a base address, either of which could move the window if
@@ -34,30 +31,15 @@
 
   /** Gives each link that a click follows its tooltip, from the address it has now. `resign` gives a kept
    * node a fresh address, so this runs after it, and a link within the text, or one with nowhere to go, has
-   * no tooltip to say where it goes. */
+   * no tooltip to say where it goes. A link with no address keeps any tooltip the HTML itself gave it. */
   function titleLinks(node: ParentNode) {
     for (const link of node.querySelectorAll(LINK_SELECTOR)) {
       const address = link.getAttribute("href");
-      if (follows(address)) link.setAttribute("title", linkTooltip(address));
-      else link.removeAttribute("title");
+      if (address === null) continue;
+      const title = linkTitle(address);
+      if (title === undefined) link.removeAttribute("title");
+      else link.setAttribute("title", title);
     }
-  }
-
-  /** Whether a click follows the link at `address`: a link within the text (`#…`) moves to a heading in a
-   * page Tsugiki doesn't show whole, and one with nowhere to go has no address. */
-  function follows(address: string | null): address is string {
-    if (!address) return false;
-    return !address.startsWith("#");
-  }
-
-  /** Follows a link in the system browser. Enter on a link arrives as a click, so keys need nothing more. */
-  function followLink(e: MouseEvent) {
-    // Only an element takes a click.
-    const link = (e.target as Element).closest(LINK_SELECTOR);
-    if (!link) return;
-    e.preventDefault();
-    const address = link.getAttribute("href");
-    if (follows(address)) onlink(address);
   }
 </script>
 
@@ -65,10 +47,12 @@
 <div
   class="rendered reading"
   {@attach show}
-  onclick={followLink}
+  onclick={(e) => {
+    followLink(e, onlink);
+  }}
   onauxclick={(e) => {
     // A right click opens a menu, and the side buttons go back and forward.
-    if (e.button === 1) followLink(e);
+    if (e.button === 1) followLink(e, onlink);
   }}
   onsubmit={(e) => {
     e.preventDefault();

@@ -370,6 +370,7 @@ fn view_statements(connection: &mut Connection) -> Vec<String> {
     assert_eq!(snapshot.issue_content(1).unwrap(), Some(content));
     assert_eq!(snapshot.pull_request_content(1).unwrap(), Some(reviewed));
     assert_eq!(snapshot.filter_results().unwrap().len(), 1);
+    assert_eq!(snapshot.work_facts().unwrap().pull_requests.len(), 1);
     drop(snapshot);
     let found = [linked.len(), fixing.len(), naming.len(), open.len()];
     let updated = [prs_since.len(), prs_before.len()];

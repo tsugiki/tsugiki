@@ -1,6 +1,7 @@
 use super::*;
 use crate::store::testing::World;
 use crate::testing::{cpython, cpython_settings, issue_facts, pr_facts};
+use crate::workbench::inbox::InboxPage;
 
 #[test]
 fn each_read_answers_from_the_database_it_opened() {
@@ -14,7 +15,14 @@ fn each_read_answers_from_the_database_it_opened() {
 
     let facts = reads.work_facts(&cpython()).unwrap();
     let workbench = reads.workbench(&settings, &WorkbenchView::Whole, ListOrder::Attention);
-    let inbox = reads.inbox(&settings, InboxPage::Latest, OffsetDateTime::UNIX_EPOCH);
+    let inbox = reads.inbox(
+        &settings,
+        InboxAsk {
+            page: InboxPage::Latest,
+            search: "",
+        },
+        OffsetDateTime::UNIX_EPOCH,
+    );
     let issue = reads.issue_view(&settings, 8).unwrap();
     let pr = reads.pr_view(&settings, 7).unwrap();
     let found = reads.quick_open(&cpython(), "#7").unwrap();

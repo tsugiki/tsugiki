@@ -38,6 +38,7 @@ use super::links::placed;
 use super::trees::Trees;
 use super::{
     Hidden, ListedItem, PrTree, TreeEntry, Unpin, WorkbenchItem, WorkbenchRow, candidates,
+    candidates_of,
 };
 use crate::conventions::Conventions;
 use crate::error::Error;
@@ -49,6 +50,10 @@ use crate::login::Login;
 use crate::repository_settings::RepositorySettings;
 use crate::store::{Snapshot, StoreReader, Updates};
 use crate::work::{Cause, Causes};
+
+mod search;
+
+use search::{Search, SearchRow};
 
 /// How far back from now the first page reaches.
 const LATEST: Duration = Duration::days(2);
@@ -108,32 +113,50 @@ pub struct Inbox {
     /// Whether the page lists the rows Muted authors wrote, as the Repository's "Show muted" stood when it
     /// was read (#825).
     pub show_muted: ShowMuted,
+    /// Whether the search in the box asks for something the cache doesn't read, so the list holds no local
+    /// rows and says it needs GitHub (#464).
+    pub needs_github: bool,
+}
+
+/// A page of the Inbox the window asks for, with the forms its search box holds (#464).
+#[derive(Debug, Clone, Copy)]
+pub struct InboxAsk<'a> {
+    pub page: InboxPage,
+    /// The search box's text, empty when the box is empty.
+    pub search: &'a str,
 }
 
 impl Inbox {
-    /// Reads `page` of `repository`'s Inbox, the first page reaching two days back from the clock's now.
+    /// Reads `page` of `repository`'s Inbox, the first page reaching two days back from the clock's now,
+    /// with the forms the cache matches in `search` (#464).
     pub(crate) fn read_now(
         reader: &StoreReader,
         repository: &RepositorySettings,
-        page: InboxPage,
+        ask: InboxAsk<'_>,
     ) -> Result<Self, Error> {
-        Self::read(reader, repository, page, OffsetDateTime::now_utc())
+        Self::read(reader, repository, ask, OffsetDateTime::now_utc())
     }
 
     /// Reads `page` of `repository`'s Inbox, the first page reaching two days back from `now`. This waits on
     /// the database and never on a sync (ADR 0018). A page with nothing left to list, as when Archive, Mute,
     /// Pin and Show muted took out all it held, gives way to the next older one, so the window never gets an
-    /// empty page with more to come.
+    /// empty page with more to come. A search that the cache reads lists every match it holds, whatever
+    /// `page` says: the box narrows the whole cache, not the pages on show (#464).
     pub(crate) fn read(
         reader: &StoreReader,
         repository: &RepositorySettings,
-        page: InboxPage,
+        ask: InboxAsk<'_>,
         now: OffsetDateTime,
     ) -> Result<Self, Error> {
         let settings = repository.clone();
+        let InboxAsk { page, search } = ask;
+        let search = Search::parse(search);
         // One snapshot holds the pages it walks, so they fit together as the pages of one read do.
         let job = move |snapshot: &Snapshot<'_>| {
             let show_muted = snapshot.show_muted()?;
+            if !search.is_empty() {
+                return Self::matching(snapshot, &settings, &search, show_muted);
+            }
             let mut page = page;
             loop {
                 let Some(read) = read_page(snapshot, settings.conventions, page, now)? else {
@@ -141,6 +164,7 @@ impl Inbox {
                         items: Vec::new(),
                         older: None,
                         show_muted,
+                        needs_github: false,
                     });
                 };
                 let inbox = Self::listed(read, &settings, show_muted);
@@ -153,6 +177,54 @@ impl Inbox {
         reader.read_snapshot(&repository.name, job)
     }
 
+    /// The Inbox `search` narrows the whole cache to, in its order: every row it finds with its header, and
+    /// nothing else. It lists every match in one page, so a change reads them again as one.
+    fn matching(
+        snapshot: &Snapshot<'_>,
+        repository: &RepositorySettings,
+        search: &Search,
+        show: ShowMuted,
+    ) -> Result<Self, Error> {
+        if search.needs_github() {
+            return Ok(Self {
+                items: Vec::new(),
+                older: None,
+                show_muted: show,
+                needs_github: true,
+            });
+        }
+        let facts = snapshot.work_facts()?;
+        let causes = Causes::of(&facts, repository.conventions);
+        let rows = Index::of(&facts, &snapshot.brought_back()?);
+        let grouped = candidates_of(facts, repository, &BTreeSet::new(), &causes);
+        // An item keeps the place its whole tree gives it, before Show muted and the search drop rows.
+        let places: BTreeMap<ItemKey, InboxCursor> = (grouped.iter())
+            .map(|item| (item.key(), item_place(item)))
+            .collect();
+        let mut items: Vec<(InboxCursor, ListedItem)> = (shown(grouped, show, &causes).into_iter())
+            .filter_map(|listed| {
+                let place = places.get(&listed.key).copied()?;
+                // The item keeps the state the Inbox judged of its whole tree: only attention follows the
+                // rows the search leaves.
+                let hidden = listed.hidden;
+                let item = narrowed(listed.item, search, &rows)?;
+                let judged = match show {
+                    ShowMuted::On => Some(ListedItem::of(&causes, item)),
+                    ShowMuted::Off => ListedItem::without_muted_authors(&causes, item),
+                }?;
+                Some((place, ListedItem { hidden, ..judged }))
+            })
+            .collect();
+        items.sort_by_key(|(place, _)| Reverse(*place));
+        let items = (items.into_iter()).map(|(_, listed)| listed).collect();
+        Ok(Self {
+            items,
+            older: None,
+            show_muted: show,
+            needs_github: false,
+        })
+    }
+
     /// The page `read` holds, Archived and Muted items and Pinned issues left out, and the rows Muted authors
     /// wrote as `show` says.
     fn listed(read: PageRead, repository: &RepositorySettings, show: ShowMuted) -> Self {
@@ -163,25 +235,7 @@ impl Inbox {
             &BTreeSet::new(),
             &causes,
         );
-        // Archive takes an item out until it comes back (#490), Mute until the user unmutes it (#492), and a
-        // pin until the user unpins it (#488). A Muted author's item stays for "Show muted" to judge, unless
-        // one of those takes it out too.
-        let mut items: Vec<ListedItem> = (grouped.into_iter())
-            .filter(|item| !item.is_pinned())
-            .filter_map(|item| match show {
-                ShowMuted::On => Some(ListedItem::of(&causes, item)),
-                ShowMuted::Off => ListedItem::without_muted_authors(&causes, item),
-            })
-            .filter(|listed| match listed.hidden {
-                None => true,
-                Some(Hidden::Archived | Hidden::Muted) => false,
-                Some(Hidden::MutedAuthor) => {
-                    let key = listed.key;
-                    !causes.is_muted_on_its_own(key)
-                        && !causes.is_archived(key, &listed.item.numbers())
-                }
-            })
-            .collect();
+        let mut items = shown(grouped, show, &causes);
         let place_of =
             |listed: &ListedItem| read.places.get(&listed.item.updated_at_and_number().1);
         items.sort_by_key(|listed| Reverse(place_of(listed).copied()));
@@ -189,7 +243,141 @@ impl Inbox {
             items,
             older: read.older,
             show_muted: show,
+            needs_github: false,
         }
+    }
+}
+
+/// The items the Inbox shows of `grouped`: Pinned issues, Archived and Muted items out, and the rows Muted
+/// authors wrote as `show` says.
+fn shown(grouped: Vec<WorkbenchItem>, show: ShowMuted, causes: &Causes) -> Vec<ListedItem> {
+    grouped
+        .into_iter()
+        .filter(|item| !item.is_pinned())
+        .filter_map(|item| match show {
+            ShowMuted::On => Some(ListedItem::of(causes, item)),
+            ShowMuted::Off => ListedItem::without_muted_authors(causes, item),
+        })
+        .filter(|listed| match listed.hidden {
+            None => true,
+            Some(Hidden::Archived | Hidden::Muted) => false,
+            Some(Hidden::MutedAuthor) => {
+                let key = listed.key;
+                !causes.is_muted_on_its_own(key) && !causes.is_archived(key, &listed.item.numbers())
+            }
+        })
+        .collect()
+}
+
+/// The cached Issues and PRs a search reads, by number (#464).
+struct Index {
+    issues: BTreeMap<u32, SearchRow>,
+    pull_requests: BTreeMap<u32, SearchRow>,
+}
+
+impl Index {
+    fn of(facts: &WorkFacts, brought_back: &BTreeSet<u32>) -> Self {
+        Self {
+            issues: (facts.issues.iter())
+                .map(|issue| (issue.number, SearchRow::issue(issue, brought_back)))
+                .collect(),
+            pull_requests: (facts.pull_requests.iter())
+                .map(|pr| (pr.number, SearchRow::pull_request(pr)))
+                .collect(),
+        }
+    }
+
+    /// The row of the PR `number`, which the Inbox draws under an Issue or on its own.
+    fn pull_request(&self, number: u32) -> Option<&SearchRow> {
+        self.pull_requests.get(&number)
+    }
+}
+
+/// `item` with only the rows `search` finds, or nothing when it finds none. An Issue's header, and a PR's
+/// over the Backports beneath it, stays over the rows that match beneath it, even when it doesn't match
+/// itself, so a matching PR stays in its Issue's fold (#464).
+fn narrowed(item: WorkbenchItem, search: &Search, rows: &Index) -> Option<WorkbenchItem> {
+    let finds = |number: u32| {
+        rows.pull_request(number)
+            .is_some_and(|row| search.finds(row))
+    };
+    match item {
+        WorkbenchItem::Issue(mut issue) => {
+            let header = rows
+                .issues
+                .get(&issue.number)
+                .is_some_and(|row| search.finds(row));
+            issue.pull_requests = (issue.pull_requests.into_iter())
+                .filter_map(|entry| match entry {
+                    TreeEntry::Pr(mut tree) => {
+                        let top = finds(tree.row.number);
+                        tree.backports.retain(|backport| finds(backport.row.number));
+                        (top || !tree.backports.is_empty()).then_some(TreeEntry::Pr(tree))
+                    }
+                    TreeEntry::Backport(backport) => {
+                        finds(backport.row.number).then_some(TreeEntry::Backport(backport))
+                    }
+                })
+                .collect();
+            (header || !issue.pull_requests.is_empty()).then_some(WorkbenchItem::Issue(issue))
+        }
+        WorkbenchItem::StandalonePr(mut tree) => {
+            let top = finds(tree.row.number);
+            tree.backports.retain(|backport| finds(backport.row.number));
+            (top || !tree.backports.is_empty()).then_some(WorkbenchItem::StandalonePr(tree))
+        }
+        WorkbenchItem::StandaloneBackport(backport) => {
+            finds(backport.row.number).then_some(WorkbenchItem::StandaloneBackport(backport))
+        }
+    }
+}
+
+/// Whether the Inbox lists an Issue of `state` at `number`: an open one, or one a PR that opened on it
+/// brought back.
+fn lists_issue(state: Option<IssueState>, number: u32, brought_back: &BTreeSet<u32>) -> bool {
+    state == Some(IssueState::Open) || brought_back.contains(&number)
+}
+
+/// Where an Issue of `state` at `number` stands: its own update when it is open, and otherwise its PRs'
+/// latest, where `rows` are theirs.
+fn issue_place(
+    state: Option<IssueState>,
+    number: u32,
+    own: OffsetDateTime,
+    rows: impl Iterator<Item = OffsetDateTime>,
+) -> InboxCursor {
+    // The walk reads the updates of open Issues alone, so a closed one a PR brought back stands at its PRs'
+    // latest update, where the walk meets it.
+    let own = match state {
+        Some(IssueState::Open) => own,
+        _ => OffsetDateTime::UNIX_EPOCH,
+    };
+    InboxCursor {
+        updated_at: rows.fold(own, Ord::max),
+        number,
+    }
+}
+
+/// Where `item` stands in the Inbox's order: the latest update in its tree, and its number.
+fn item_place(item: &WorkbenchItem) -> InboxCursor {
+    match item {
+        WorkbenchItem::Issue(issue) => {
+            let rows = (issue.pull_requests.iter())
+                .flat_map(TreeEntry::rows)
+                .map(|row| row.updated_at);
+            issue_place(issue.state, issue.number, issue.issue_updated_at, rows)
+        }
+        WorkbenchItem::StandalonePr(tree) => {
+            let updated = (tree.rows().into_iter()).map(|row| row.updated_at);
+            InboxCursor {
+                updated_at: updated.fold(OffsetDateTime::UNIX_EPOCH, Ord::max),
+                number: tree.row.number,
+            }
+        }
+        WorkbenchItem::StandaloneBackport(backport) => InboxCursor {
+            updated_at: backport.row.updated_at,
+            number: backport.row.number,
+        },
     }
 }
 
@@ -391,7 +579,7 @@ impl<'s, 't> Walk<'s, 't> {
     /// Whether the Inbox lists the Issue `issue` places: an open one, or one a PR that opened on it brought
     /// back.
     fn lists(&self, issue: &IssuePlace) -> bool {
-        issue.state == Some(IssueState::Open) || self.brought_back.contains(&issue.number)
+        lists_issue(issue.state, issue.number, &self.brought_back)
     }
 
     /// The next `OLDER_BATCH` items after `after`, and where the batch after them starts, if any are left.
@@ -549,17 +737,8 @@ impl<'s, 't> Walk<'s, 't> {
         }
         for (number, issue) in open.iter().filter_map(|n| Some((*n, self.issues.get(n)?))) {
             let rows = under.remove(&number).unwrap_or_default();
-            let updated_at = rows.iter().map(|row| row.updated_at);
-            // The walk reads the updates of open Issues alone, so a closed one a PR brought back stands at
-            // its PRs' latest update, where the walk meets it.
-            let own = match issue.state {
-                Some(IssueState::Open) => issue.updated_at,
-                _ => OffsetDateTime::UNIX_EPOCH,
-            };
-            let place = InboxCursor {
-                updated_at: updated_at.fold(own, Ord::max),
-                number,
-            };
+            let updated = rows.iter().map(|row| row.updated_at);
+            let place = issue_place(issue.state, number, issue.updated_at, updated);
             let prs = rows.iter().map(|row| row.number).collect();
             found.push((place, Member::Issue { number, prs }));
         }

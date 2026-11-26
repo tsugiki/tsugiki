@@ -23,7 +23,7 @@ use tsugiki_core::settings::ListOrder;
 use tsugiki_core::store::Store;
 use tsugiki_core::testing::Reads;
 use tsugiki_core::workbench::WorkbenchView;
-use tsugiki_core::workbench::inbox::{InboxCursor, InboxPage};
+use tsugiki_core::workbench::inbox::{InboxAsk, InboxCursor, InboxPage};
 
 fn main() {
     divan::main();
@@ -104,13 +104,16 @@ fn inbox_latest(bencher: divan::Bencher<'_, '_>, prs: u32) {
     let (now, page) = (updated(0), InboxPage::Latest);
     let shown = held
         .reads
-        .inbox(&held.settings, page, now)
+        .inbox(&held.settings, InboxAsk { page, search: "" }, now)
         .expect("the page");
     assert!(
         !shown.items.is_empty() && shown.older.is_some(),
         "the page lists items and has older ones after it"
     );
-    bencher.bench(|| held.reads.inbox(&held.settings, page, now));
+    bencher.bench(|| {
+        held.reads
+            .inbox(&held.settings, InboxAsk { page, search: "" }, now)
+    });
     held.close();
 }
 
@@ -129,13 +132,16 @@ fn inbox_older(bencher: divan::Bencher<'_, '_>, prs: u32) {
     let (now, page) = (updated(0), InboxPage::Older { after });
     let shown = held
         .reads
-        .inbox(&held.settings, page, now)
+        .inbox(&held.settings, InboxAsk { page, search: "" }, now)
         .expect("the page");
     assert!(
         !shown.items.is_empty() && shown.older.is_some(),
         "the page lists items and has older ones after it"
     );
-    bencher.bench(|| held.reads.inbox(&held.settings, page, now));
+    bencher.bench(|| {
+        held.reads
+            .inbox(&held.settings, InboxAsk { page, search: "" }, now)
+    });
     held.close();
 }
 

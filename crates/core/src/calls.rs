@@ -38,7 +38,7 @@ use crate::settings::{Home, LoadedSettings, SettingsChanges, SettingsOwner, Sett
 use crate::status::{ItemUnread, Shown};
 use crate::store::StoreReader;
 use crate::work::{Hiding, SeenMark, Unseen};
-use crate::workbench::inbox::{Inbox, InboxPage};
+use crate::workbench::inbox::{Inbox, InboxAsk, InboxPage};
 use crate::workbench::issue_view::IssueView;
 use crate::workbench::pr_files::{
     DiffSources, DiffThread, FileLine, FilesRead, LineInDiff, OlderDiff, ShownDiff,
@@ -156,9 +156,19 @@ impl Calls {
         Workbench::read(&self.reader, &repository, view, settings.panes.order)
     }
 
-    /// Page `page` of `repository`'s Inbox, as of now.
-    pub fn inbox(&self, repository: RepositoryName, page: InboxPage) -> Result<Inbox, Error> {
-        Inbox::read_now(&self.reader, &self.repository(repository), page)
+    /// Page `page` of `repository`'s Inbox, as of now, narrowed by the forms the cache reads in `search`
+    /// (#464).
+    pub fn inbox(
+        &self,
+        repository: RepositoryName,
+        page: InboxPage,
+        search: &str,
+    ) -> Result<Inbox, Error> {
+        Inbox::read_now(
+            &self.reader,
+            &self.repository(repository),
+            InboxAsk { page, search },
+        )
     }
 
     /// The Issue view of Issue `number`, or nothing if Tsugiki doesn't hold it.

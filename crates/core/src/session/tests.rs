@@ -1046,6 +1046,7 @@ fn a_mark_in_the_inbox_answers_with_the_page_it_left() {
             id: 7,
             listing: Listing::Inbox {
                 page: InboxPage::Latest,
+                search: String::new(),
             },
         }),
     );

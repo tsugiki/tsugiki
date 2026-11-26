@@ -95,14 +95,11 @@ pub(super) fn read(
     let Some((total, cut_off)) = state else {
         return Ok(None);
     };
-    let mut statement = connection.prepare(
-        "SELECT number, kind, updated_at FROM inbox_search_hits
-         WHERE repository = :repository AND query = :query ORDER BY position",
-    )?;
-    let rows = statement.query_map(
-        named_params! { ":repository": repository, ":query": query },
-        hit_in,
-    )?;
+    let sql = "SELECT number, kind, updated_at FROM inbox_search_hits
+               WHERE repository = :repository AND query = :query ORDER BY position";
+    let mut statement = connection.prepare(sql)?;
+    let asked = named_params! { ":repository": repository, ":query": query };
+    let rows = statement.query_map(asked, hit_in)?;
     let hits: Vec<SearchHit> = rows.collect::<rusqlite::Result<_>>()?;
     Ok(Some(InboxSearch {
         hits,

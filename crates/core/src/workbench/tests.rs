@@ -320,3 +320,45 @@ fn nothing_is_the_users_before_anyone_signs_in() {
     );
     assert_eq!(found.items, []);
 }
+
+/// A result GitHub found that the cache lacks (#465).
+fn placeholder(kind: RowKind, number: u32) -> WorkbenchItem {
+    WorkbenchItem::Placeholder(Placeholder {
+        number,
+        item_kind: kind,
+        updated_at: at(2),
+    })
+}
+
+#[test]
+fn a_placeholder_holds_no_rows_mark_or_state_and_says_where_it_stands() {
+    let mut pr = placeholder(RowKind::PullRequest, 4242);
+    assert_eq!(pr.updated_at_and_number(), (at(2), 4242));
+    assert!(pr.rows().is_empty());
+    assert_eq!(pr.key(), ItemKey::PullRequest { number: 4242 });
+    assert!(pr.marks_mut().is_empty());
+    assert!(pr.seen().is_none());
+    assert!(!pr.is_open());
+    assert!(pr.numbers().is_empty());
+
+    let issue = placeholder(RowKind::Issue, 4243);
+    assert_eq!(issue.key(), ItemKey::Issue { number: 4243 });
+}
+
+#[test]
+fn a_standalone_backport_is_open_as_its_row_is() {
+    let world = ViewWorld::new("workbench-backport-open");
+    world.has_crossed_links();
+    let (items, _) = grouped_whole(&world, &world.settings());
+    let backport = (items.into_iter()).find_map(|item| match item {
+        WorkbenchItem::StandaloneBackport(backport) => Some(backport),
+        WorkbenchItem::Issue(_)
+        | WorkbenchItem::StandalonePr(_)
+        | WorkbenchItem::Placeholder(_) => None,
+    });
+    world.finish();
+
+    let backport = backport.expect("the fixture holds a Standalone Backport");
+    let item = WorkbenchItem::StandaloneBackport(backport.clone());
+    assert_eq!(item.is_open(), backport.row.state == PrState::Open);
+}

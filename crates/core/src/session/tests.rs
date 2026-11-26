@@ -5,6 +5,7 @@ use crate::deadline::received_until;
 use crate::facts::CommitSha;
 use crate::facts::activity::{ActivityFacts, ItemKey, ShowMuted};
 use crate::facts::filters::FilterResults;
+use crate::facts::inbox_search::InboxSearch;
 use crate::facts::issue_content::IssueContent;
 use crate::facts::issues::{IssueFacts, IssueState};
 use crate::facts::patch_ids::{CantCheck, CommitPatches, FilePatch, PatchId, PatchesOf};
@@ -18,8 +19,8 @@ use crate::github::GitHub;
 use crate::github::points::HourPoints;
 use crate::github::replay::Replayer;
 use crate::github::testing::{
-    Canned, RATE_LIMIT, SIGNED_IN, Scripted, answer, answered, dated, fetched_nodes, github,
-    issue_item, item_answer, item_missing, page_info, pr_content, pr_item, pr_node,
+    Canned, RATE_LIMIT, SIGNED_IN, Scripted, answer, answered, dated, fetched_nodes, filter_page,
+    github, issue_item, item_answer, item_missing, page_info, pr_content, pr_item, pr_node,
     pull_request_answer, reply_ok, search_page, signed_in_as,
 };
 use crate::github::{Reply, Request, Transport, Unreachable};
@@ -52,7 +53,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::mpsc::{RecvError, Sender, TryRecvError};
+use std::sync::mpsc::{Receiver, RecvError, Sender, TryRecvError};
 use std::time::Instant;
 use time::OffsetDateTime;
 use tsugiki_test_git::{pass_on, wait_for_message};
@@ -590,6 +591,92 @@ fn a_query_typed_after_a_search_makes_the_older_answers_out_of_date() {
         !refreshes.newer_search(&RepositoryName::parse("a/b").unwrap(), "older"),
         "a search in another Repository says nothing of this one"
     );
+}
+
+/// GitHub's page of a search that found Issue 7 of gcmon.
+fn gcmon_issue_page() -> Result<Reply, Unreachable> {
+    let nodes = json!([{
+        "__typename": "Issue",
+        "number": 7,
+        "updatedAt": "2026-11-01T10:00:00Z",
+        "repository": { "nameWithOwner": "some-maintainer/gcmon" },
+    }]);
+    filter_page(1, nodes.as_array().unwrap(), None, RATE_LIMIT)
+}
+
+/// GitHub that answers `replies` in order, and what it is asked, so a test can wait for the search.
+fn scripted(replies: Vec<Result<Reply, Unreachable>>) -> (GitHubAccess, Receiver<(String, Value)>) {
+    let (script, asked) = Scripted::new(replies);
+    (
+        GitHubAccess {
+            transport: Box::new(script),
+            token_from: SIGNED_IN,
+        },
+        asked,
+    )
+}
+
+/// Waits until GitHub is asked for the typed search, so the thread has answered it before the session stops.
+fn wait_for_search(asked: &Receiver<(String, Value)>) {
+    loop {
+        let (operation, _) = asked
+            .recv_timeout(PLENTY)
+            .expect("the search reaches GitHub");
+        if operation == "SearchFilter" {
+            return;
+        }
+    }
+}
+
+/// A session that searches gcmon for `text`, and what the database then holds as its answer.
+fn after_searching(
+    name: &str,
+    (access, asked): (GitHubAccess, Receiver<(String, Value)>),
+    text: &str,
+) -> Option<InboxSearch> {
+    let (folders, folder) = temp_folders(name);
+    let (board, _seen) = watched_board();
+    let session = Session::start(board, Ok(folders.clone()), reaching(access), HOURLY);
+    session.fetching().search(gcmon(), text.to_owned());
+    wait_for_search(&asked);
+    session.stop(PLENTY);
+
+    let db = OpenStore::of(folders.database(), folder);
+    let query = text.to_owned();
+    let answer = db
+        .reader
+        .read_snapshot(&gcmon(), move |snapshot| snapshot.inbox_search(&query))
+        .unwrap();
+    db.close();
+    answer
+}
+
+#[test]
+fn a_search_the_window_types_is_asked_of_github_and_kept_for_the_inbox() {
+    let access = scripted(vec![signed_in(), gcmon_issue_page()]);
+
+    let answer = after_searching("session-search-saved", access, "review:approved").unwrap();
+
+    assert_eq!(answer.hits.len(), 1);
+    assert_eq!(answer.hits[0].number, 7);
+    assert!(!answer.cut_off);
+}
+
+#[test]
+fn a_search_github_cant_answer_says_the_problem_and_keeps_no_answer() {
+    let access = scripted(vec![signed_in(), Err(Unreachable::Offline)]);
+
+    assert!(after_searching("session-search-offline", access, "fix").is_none());
+}
+
+#[test]
+fn a_search_github_refuses_is_logged_and_keeps_no_answer() {
+    let access = scripted(vec![
+        signed_in(),
+        reply_ok(r#"{"errors":[{"message":"Something broke"}]}"#),
+    ]);
+
+    assert!(after_searching("session-search-refused", access, "fix").is_none());
 }
 
 #[test]

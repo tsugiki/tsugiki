@@ -673,3 +673,27 @@ fn each_repository_says_where_its_mirror_gets_its_objects_and_how_much_of_the_di
     };
     assert_eq!(found, [borrowing, unasked]);
 }
+
+#[test]
+fn a_search_the_window_types_goes_to_the_session_with_its_text_and_a_blank_one_sends_nothing() {
+    let root = temp_path("calls-inbox-search");
+    fs::create_dir_all(&root).unwrap();
+    let folders = one_folder(&root);
+    let settings = SettingsOwner::start(Ok(SettingsFiles::load(folders.clone())));
+    let (fetching, session, _heard, _headless) = handle_with_headless();
+    let db = OpenStore::new("calls-inbox-search-store");
+    let (_status, copy) = shown(Account::Offline);
+    let parts = CallParts {
+        folders: Ok(folders),
+        settings,
+        definitions: no_servers(),
+    };
+    let calls = Calls::launched(fetching, db.reader.clone(), copy, parts);
+
+    calls.search_inbox(cpython(), "  review:approved  ");
+    calls.search_inbox(cpython(), "   ");
+    db.close();
+
+    let sent: Vec<String> = (session.try_iter()).map(named).collect();
+    assert_eq!(sent, ["search review:approved"]);
+}

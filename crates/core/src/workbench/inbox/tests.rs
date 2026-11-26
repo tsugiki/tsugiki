@@ -1769,3 +1769,28 @@ fn the_answer_to_another_query_lists_nothing_of_it() {
     );
     assert!(!listed.needs_github);
 }
+
+/// A result GitHub found that the cache lacks (#465).
+fn placeholder(kind: RowKind, number: u32) -> WorkbenchItem {
+    WorkbenchItem::Placeholder(Placeholder {
+        number,
+        item_kind: kind,
+        updated_at: ago(2),
+    })
+}
+
+#[test]
+fn a_placeholder_keeps_its_place_and_narrows_to_itself() {
+    let item = placeholder(RowKind::PullRequest, 4242);
+
+    assert_eq!(
+        item_place(&item),
+        InboxCursor {
+            updated_at: ago(2),
+            number: 4242,
+        }
+    );
+    assert_eq!(narrowed_by(item.clone(), &|_, _| false), Some(item.clone()));
+    assert!(item.keys().is_empty());
+    assert_eq!(item.clone().without(&|_| true), Some(item));
+}

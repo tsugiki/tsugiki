@@ -273,28 +273,18 @@ impl Inbox {
         let positions: BTreeMap<u32, usize> = (answer.hits.iter().enumerate())
             .map(|(position, hit)| (hit.number, position))
             .collect();
-        let mut items: Vec<(usize, InboxCursor, ListedItem)> = Vec::new();
-        for listed in shown(grouped, show, &causes) {
-            let Some(place) = places.get(&listed.key).copied() else {
-                continue;
-            };
+        let mut items: Vec<(usize, InboxCursor, ListedItem)> = (shown(grouped, show, &causes)
+            .into_iter())
+        .filter_map(|listed| {
+            let place = places.get(&listed.key).copied()?;
             let hidden = listed.hidden;
-            let Some(item) = narrowed_by(listed.item, |_, number| positions.contains_key(&number))
-            else {
-                continue;
-            };
+            let item = narrowed_by(listed.item, &|_, number| positions.contains_key(&number))?;
             // The item stands where GitHub put the first result it holds.
-            let Some(rank) = (item.keys().into_iter())
-                .filter_map(|key| positions.get(&key.number()).copied())
-                .min()
-            else {
-                continue;
-            };
-            let Some(judged) = judge(&causes, show, item) else {
-                continue;
-            };
-            items.push((rank, place, ListedItem { hidden, ..judged }));
-        }
+            let rank = rank_of(&item, &positions)?;
+            let judged = judge(&causes, show, item)?;
+            Some((rank, place, ListedItem { hidden, ..judged }))
+        })
+        .collect();
         for (position, hit) in answer.hits.iter().enumerate() {
             let held = rows.issues.contains_key(&hit.number)
                 || rows.pull_requests.contains_key(&hit.number);
@@ -416,7 +406,7 @@ impl Index {
 
 /// `item` with only the rows `search` finds in the cache, or nothing when it finds none.
 fn narrowed(item: WorkbenchItem, search: &Search, rows: &Index) -> Option<WorkbenchItem> {
-    narrowed_by(item, |kind, number| match kind {
+    narrowed_by(item, &|kind, number| match kind {
         RowKind::Issue => (rows.issues.get(&number)).is_some_and(|row| search.finds(row)),
         RowKind::PullRequest => rows
             .pull_request(number)
@@ -424,10 +414,17 @@ fn narrowed(item: WorkbenchItem, search: &Search, rows: &Index) -> Option<Workbe
     })
 }
 
+/// Where GitHub put the first result `item` holds, or nothing when it holds none that GitHub returned.
+fn rank_of(item: &WorkbenchItem, positions: &BTreeMap<u32, usize>) -> Option<usize> {
+    (item.keys().into_iter())
+        .filter_map(|key| positions.get(&key.number()).copied())
+        .min()
+}
+
 /// `item` with only the rows `finds` keeps, or nothing when it keeps none. An Issue's header, and a PR's
 /// over the Backports beneath it, stays over the rows that match beneath it, even when it doesn't match
 /// itself, so a matching PR stays in its Issue's fold (#464).
-fn narrowed_by(item: WorkbenchItem, finds: impl Fn(RowKind, u32) -> bool) -> Option<WorkbenchItem> {
+fn narrowed_by(item: WorkbenchItem, finds: &dyn Fn(RowKind, u32) -> bool) -> Option<WorkbenchItem> {
     match item {
         WorkbenchItem::Issue(mut issue) => {
             let header = finds(RowKind::Issue, issue.number);
@@ -563,7 +560,7 @@ impl WorkbenchItem {
         issue.into_iter().chain(prs).collect()
     }
 
-    fn without(self, hides: &impl Fn(ItemKey) -> bool) -> Option<Self> {
+    fn without(self, hides: &dyn Fn(ItemKey) -> bool) -> Option<Self> {
         match self {
             Self::Issue(mut issue) => {
                 let entries = std::mem::take(&mut issue.pull_requests).into_iter();
@@ -584,7 +581,7 @@ impl WorkbenchItem {
 }
 
 impl TreeEntry {
-    fn without(self, hides: &impl Fn(ItemKey) -> bool) -> Option<Self> {
+    fn without(self, hides: &dyn Fn(ItemKey) -> bool) -> Option<Self> {
         match self {
             Self::Pr(tree) => tree.without(hides).map(Self::Pr),
             Self::Backport(backport) => {
@@ -595,7 +592,7 @@ impl TreeEntry {
 }
 
 impl PrTree {
-    fn without(mut self, hides: &impl Fn(ItemKey) -> bool) -> Option<Self> {
+    fn without(mut self, hides: &dyn Fn(ItemKey) -> bool) -> Option<Self> {
         self.backports
             .retain(|backport| !backport.row.hidden_by(hides));
         (!self.backports.is_empty() || !self.row.hidden_by(hides)).then_some(self)
@@ -604,7 +601,7 @@ impl PrTree {
 
 impl WorkbenchRow {
     /// Whether `hides` takes out this PR's row.
-    fn hidden_by(&self, hides: &impl Fn(ItemKey) -> bool) -> bool {
+    fn hidden_by(&self, hides: &dyn Fn(ItemKey) -> bool) -> bool {
         hides(ItemKey::PullRequest {
             number: self.number,
         })

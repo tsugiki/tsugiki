@@ -1113,3 +1113,6 @@ fn unconfirmed(account: &Account, store: &Store) -> Account {
         },
     }
 }
+
+#[cfg(test)]
+mod tests;

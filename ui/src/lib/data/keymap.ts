@@ -69,6 +69,18 @@ export const KEYMAP = [
     "context": "anywhere"
   },
   {
+    "action": "next_pane",
+    "title": "Next Pane",
+    "key": "f6",
+    "context": "anywhere"
+  },
+  {
+    "action": "previous_pane",
+    "title": "Previous Pane",
+    "key": "shift+f6",
+    "context": "anywhere"
+  },
+  {
     "action": "unfold",
     "title": "Unfold an Issue's PRs",
     "key": "arrowright",

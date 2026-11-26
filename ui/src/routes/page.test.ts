@@ -1197,6 +1197,7 @@ describe("the palette's order", () => {
     expect(titles()).toEqual([
       "Reset Layout",
       "Reload Themes",
+      "Previous Pane",
       "Switch Repository",
       "View: Stale Reviews",
       "Repository: python/peps",
@@ -1298,6 +1299,8 @@ describe("every action in the palette", () => {
     expect(rows()).toEqual([
       ["Hide Sidebar", "Ctrl+B"],
       ["Hide Issue List", "Ctrl+Alt+B"],
+      ["Next Pane", "F6"],
+      ["Previous Pane", "Shift+F6"],
       ["Unfold an Issue's PRs", "→"],
       ["Fold an Issue's PRs", "←"],
       ["Show Only the Detail Pane", "Ctrl+K Z"],
@@ -1347,6 +1350,8 @@ describe("every action in the palette", () => {
       ["Find in Diff", "Ctrl+F"],
       ["Hide Sidebar", "Ctrl+B"],
       ["Hide Issue List", "Ctrl+Alt+B"],
+      ["Next Pane", "F6"],
+      ["Previous Pane", "Shift+F6"],
       ["Show Only the Detail Pane", "Ctrl+K Z"],
       ["Unified or Side by Side", "Ctrl+Alt+U"],
       ["View: One File at a Time", "Ctrl+K O"],

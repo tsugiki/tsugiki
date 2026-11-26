@@ -371,6 +371,10 @@ const DOCUMENTED: &[(&str, &[Action])] = &[
     ("Hide / show the Sidebar", &[Action::ToggleSidebar]),
     ("Hide / show the Issue list", &[Action::ToggleIssueList]),
     (
+        "Next / previous pane",
+        &[Action::NextPane, Action::PreviousPane],
+    ),
+    (
         "Unfold / fold an Issue's PRs in the Issue list",
         &[Action::Unfold, Action::Fold],
     ),

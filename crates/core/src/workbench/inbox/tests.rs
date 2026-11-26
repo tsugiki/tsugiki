@@ -3,6 +3,7 @@ use time::Duration;
 use super::*;
 use crate::facts::activity::{Activity, ActivityKind, ItemActivity, ItemKey, PutAway};
 use crate::facts::issues::IssueFacts;
+use crate::facts::labels::Label;
 use crate::facts::pull_requests::{PrState, PullRequestFacts};
 use crate::store::testing::{OpenStore, archived_on_closing, seeing};
 use crate::store::{Archiving, AuthorMuting, Flagging, Muting, Opened};
@@ -48,7 +49,27 @@ fn outline(inbox: &Inbox) -> Vec<(&'static str, u32, Vec<u32>)> {
 }
 
 fn read(world: &ViewWorld, page: InboxPage) -> Inbox {
-    Inbox::read(&world.db.reader, &world.settings(), page, now()).unwrap()
+    Inbox::read(
+        &world.db.reader,
+        &world.settings(),
+        InboxAsk { page, search: "" },
+        now(),
+    )
+    .unwrap()
+}
+
+/// The Inbox `text` narrows the whole cache to, as the search box reads it (#464).
+fn searched(world: &ViewWorld, text: &str) -> Inbox {
+    Inbox::read(
+        &world.db.reader,
+        &world.settings(),
+        InboxAsk {
+            page: InboxPage::Latest,
+            search: text,
+        },
+        now(),
+    )
+    .unwrap()
 }
 
 fn in_state(state: PrState, facts: PullRequestFacts) -> PullRequestFacts {
@@ -193,7 +214,16 @@ fn a_change_of_conventions_regroups_the_prs_with_no_sync() {
     };
 
     let under_cpython = read(&world, InboxPage::Latest);
-    let under_github = Inbox::read(&world.db.reader, &github, InboxPage::Latest, now()).unwrap();
+    let under_github = Inbox::read(
+        &world.db.reader,
+        &github,
+        InboxAsk {
+            page: InboxPage::Latest,
+            search: "",
+        },
+        now(),
+    )
+    .unwrap();
     world.finish();
 
     assert_eq!(outline(&under_cpython), [("issue", 1, vec![10, 11])]);
@@ -1026,7 +1056,10 @@ fn an_item_updated_in_the_second_the_first_page_starts_is_on_it_alone() {
     let latest = Inbox::read(
         &world.db.reader,
         &world.settings(),
-        InboxPage::Latest,
+        InboxAsk {
+            page: InboxPage::Latest,
+            search: "",
+        },
         within_a_second,
     )
     .unwrap();
@@ -1098,7 +1131,15 @@ fn nothing_is_listed_before_anyone_signs_in() {
         .save_pull_requests(&cpython(), vec![fixing(10, 1)])
         .unwrap();
 
-    let read = Inbox::read(&db.reader, &cpython_settings(), InboxPage::Latest, now());
+    let read = Inbox::read(
+        &db.reader,
+        &cpython_settings(),
+        InboxAsk {
+            page: InboxPage::Latest,
+            search: "",
+        },
+        now(),
+    );
 
     db.close();
     let read = read.unwrap();
@@ -1125,6 +1166,7 @@ fn the_window_sends_a_page_and_gets_the_next_one_s_start_as_text() {
         items: vec![],
         older: Some(InboxCursor::at(now())),
         show_muted: ShowMuted::On,
+        needs_github: false,
     };
 
     let sent = serde_json::to_value(&inbox).unwrap();
@@ -1142,4 +1184,162 @@ fn the_window_sends_a_page_and_gets_the_next_one_s_start_as_text() {
         serde_json::json!({ "updated_at": "1970-04-11T00:00:00Z", "number": 0 })
     );
     assert_eq!(sent["show_muted"], "on");
+}
+
+#[test]
+fn a_search_narrows_the_whole_cache_by_every_word_of_a_title() {
+    let world = ViewWorld::new("inbox-search-title");
+    let old_issue = IssueFacts {
+        title: "Parser crash on import".to_owned(),
+        ..issue_at(1, ago(24 * 100))
+    };
+    let old_pr = PullRequestFacts {
+        title: "gh-1: Fix the parser".to_owned(),
+        ..pr_at(10, Some(1), ago(24 * 100))
+    };
+    world.has(
+        vec![old_pr, pr_at(20, None, ago(1))],
+        vec![old_issue, issue_at(2, ago(1))],
+    );
+
+    let found = searched(&world, "parser");
+    world.finish();
+
+    assert_eq!(
+        outline(&found),
+        [("issue", 1, vec![10])],
+        "the item is older than the first page's two days, and one word of the title finds it"
+    );
+    assert_eq!(found.older, None);
+}
+
+#[test]
+fn a_matching_pr_stays_in_its_issue_s_fold_and_a_matching_issue_with_none_shows_alone() {
+    let world = ViewWorld::new("inbox-search-fold");
+    let mut matched_pr = pr_at(10, Some(1), ago(4));
+    matched_pr.title = "gh-1: Fix the parser".to_owned();
+    let mut other_pr = pr_at(11, Some(1), ago(6));
+    other_pr.title = "gh-1: Something else".to_owned();
+    let mut matched_issue = issue_at(2, ago(3));
+    matched_issue.title = "Parser speed".to_owned();
+    let mut other = pr_at(20, Some(2), ago(2));
+    other.title = "gh-2: Unrelated".to_owned();
+    world.has(
+        vec![matched_pr, other_pr, other],
+        vec![issue_at(1, ago(5)), matched_issue],
+    );
+
+    let found = searched(&world, "parser");
+    world.finish();
+
+    assert_eq!(
+        outline(&found),
+        [("issue", 2, vec![]), ("issue", 1, vec![10])],
+        "an Issue whose own title doesn't match keeps the header of the PR that does, and one that \
+         matches shows alone"
+    );
+}
+
+#[test]
+fn is_closed_lists_the_cached_closed_rows() {
+    let world = ViewWorld::new("inbox-search-closed");
+    let mut open = pr_at(10, Some(1), ago(5));
+    open.title = "gh-1: Fix it".to_owned();
+    let mut merged = in_state(PrState::Merged, pr_at(11, Some(1), ago(1)));
+    merged.title = "gh-1: Fix it for 3.14".to_owned();
+    let mut standalone = in_state(PrState::Closed, pr_at(30, None, ago(3)));
+    standalone.title = "Fix it again".to_owned();
+    world.has(vec![open, merged, standalone], vec![issue_at(1, ago(6))]);
+
+    let found = searched(&world, "is:closed fix");
+    world.finish();
+
+    assert_eq!(
+        outline(&found),
+        [("issue", 1, vec![11]), ("standalone", 30, vec![])],
+        "the merged PR under an open Issue and the closed Standalone PR, and neither open row"
+    );
+}
+
+#[test]
+fn a_label_and_an_author_narrow_the_rows_together() {
+    let world = ViewWorld::new("inbox-search-label");
+    let labelled = IssueFacts {
+        labels: vec![Label::new("bug")],
+        ..issue_at(1, ago(2))
+    };
+    let other = IssueFacts {
+        labels: vec![Label::new("docs")],
+        ..issue_at(2, ago(1))
+    };
+    world.has(vec![], vec![labelled, other]);
+
+    let found = searched(&world, "label:BUG author:issue-author");
+    world.finish();
+
+    assert_eq!(outline(&found), [("issue", 1, vec![])]);
+}
+
+#[test]
+fn a_qualifier_the_cache_does_not_read_lists_nothing_and_says_github() {
+    let world = ViewWorld::new("inbox-search-github");
+    world.has(
+        vec![pr_at(10, Some(1), ago(1))],
+        vec![issue_at(1, ago(2))],
+    );
+
+    let found = searched(&world, "review:approved");
+    let local = searched(&world, "fix");
+    world.finish();
+
+    assert_eq!(outline(&found), []);
+    assert!(found.needs_github);
+    assert_eq!(found.older, None);
+    assert!(!local.needs_github);
+}
+
+#[test]
+fn a_search_leaves_pinned_archived_and_muted_items_out() {
+    let world = ViewWorld::new("inbox-search-hidden");
+    world.has(
+        vec![],
+        vec![
+            issue_at(1, ago(1)),
+            issue_at(2, ago(1)),
+            issue_at(3, ago(1)),
+        ],
+    );
+    let store = &world.db.store;
+    store.pin(&cpython(), 1).unwrap();
+    let archiving = Archiving {
+        key: ItemKey::Issue { number: 2 },
+        numbers: vec![2],
+        up_to: Some(ago(0)),
+        put_away: PutAway::Now,
+        findings: vec![],
+    };
+    store.archive(&cpython(), archiving, now()).unwrap();
+    world.mute_issue(3, vec![3]);
+
+    let found = searched(&world, "Issue");
+    world.finish();
+
+    assert_eq!(outline(&found), [], "a search leaves out what the Inbox does");
+}
+
+#[test]
+fn an_empty_box_reads_the_pages_as_the_inbox_does() {
+    let world = ViewWorld::new("inbox-search-empty");
+    world.has(
+        vec![pr_at(10, Some(1), ago(60))],
+        vec![issue_at(1, ago(70)), issue_at(2, ago(1))],
+    );
+
+    let normal = read(&world, InboxPage::Latest);
+    let found = searched(&world, "  ");
+    world.finish();
+
+    assert_eq!(outline(&found), outline(&normal));
+    assert!(!found.needs_github);
+    assert_eq!(found.older, normal.older);
 }

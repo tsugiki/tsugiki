@@ -3162,7 +3162,10 @@ fn inbox_items(harness: &Harness, settings: &RepositorySettings) -> Vec<ListedIt
     let read = Inbox::read(
         &harness.db.reader,
         settings,
-        InboxPage::All,
+        crate::workbench::inbox::InboxAsk {
+            page: InboxPage::All,
+            search: "",
+        },
         moment(AFTER_IT),
     );
     read.unwrap().items

@@ -171,6 +171,10 @@ export class WorkbenchState {
   switching = $state(false);
   /** The Inbox's "Show muted" (#825), as the last answer about the Inbox says the core holds it. */
   showMuted = $state<ShowMuted>("off");
+  /** The text of the Inbox's search box (#464). */
+  search = $state("");
+  /** Whether the search the last answer read needs GitHub, so the Inbox lists no local rows (#464). */
+  needsGitHub = $state(false);
   /** A change to "Show muted" is saving. */
   savingShowMuted = $state(false);
   /** The reason the core refused the last change to "Show muted", if it did. */
@@ -261,6 +265,16 @@ export class WorkbenchState {
     // A change of view is neither a user action nor a core change (#1052): an answer to an action made in
     // the view left behind moves nothing.
     this.#pending.clear();
+    await this.#ask();
+  }
+
+  /** Narrows the Inbox to `text`, which the cache reads (#464), and asks on each key. An empty box brings
+   * the whole list back. The pages on show belong to the search before this one, so this starts the new
+   * one at its first page. */
+  async setSearch(text: string) {
+    if (text === this.search) return;
+    this.search = text;
+    this.#reach = undefined;
     await this.#ask();
   }
 
@@ -434,7 +448,7 @@ export class WorkbenchState {
   #listing(): Listing {
     const shown = this.#shown;
     return shown.kind === "inbox"
-      ? { kind: "inbox", page: this.#againPage() }
+      ? { kind: "inbox", page: this.#againPage(), search: this.search }
       : { kind: "workbench", view: shown };
   }
 
@@ -825,7 +839,12 @@ export class WorkbenchState {
       this.pinned = answer.data.pinned;
       this.filters = answer.data.filters;
     }
-    if (list?.status === "ok") this.showMuted = list.data.show_muted;
+    if (list?.status === "ok") {
+      this.showMuted = list.data.show_muted;
+      this.needsGitHub = list.data.needs_github;
+    } else if (list?.status === "error") {
+      this.needsGitHub = false;
+    }
     const listed = list ?? answer;
     if (listed.status === "ok") {
       const muted = list === undefined && answer.status === "ok" ? answer.data.muted : [];
@@ -872,8 +891,8 @@ export class WorkbenchState {
     return reach === null ? { kind: "all" } : { kind: "through", until: reach };
   }
 
-  /** Reads page `page` of the Inbox, timed as a view query. */
+  /** Reads page `page` of the Inbox, timed as a view query, narrowed by the search box's forms (#464). */
   #inboxPage(page: InboxPage_Deserialize) {
-    return ask(hud.timed(() => commands.inbox(this.#repository, page)));
+    return ask(hud.timed(() => commands.inbox(this.#repository, page, this.search)));
   }
 }

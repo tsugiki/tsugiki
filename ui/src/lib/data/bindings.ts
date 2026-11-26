@@ -262,11 +262,11 @@ export const commands = {
 	 */
 	workbench: (repository: string, view: WorkbenchView) => typedError<Workbench_Serialize, Error_Serialize>(__TAURI_INVOKE("workbench", { repository, view })),
 	/**
-	 *  Page `page` of a Repository's Inbox: its open Issues, each with its open PRs, and its open Standalone
-	 *  PRs, the latest update first. This waits on the database and never on GitHub (ADR 0018), and queues
-	 *  nothing, so the Inbox adds nothing to Reach.
+	 *  Page `page` of a Repository's Inbox, narrowed by the forms the cache reads in `search` (#464): its open
+	 *  Issues, each with its PRs, and its open Standalone PRs, the latest update first. This waits on the
+	 *  database and never on GitHub (ADR 0018), and queues nothing, so the Inbox adds nothing to Reach.
 	 */
-	inbox: (repository: string, page: InboxPage_Deserialize) => typedError<Inbox_Serialize, Error_Serialize>(__TAURI_INVOKE("inbox", { repository, page })),
+	inbox: (repository: string, page: InboxPage_Deserialize, search: string) => typedError<Inbox_Serialize, Error_Serialize>(__TAURI_INVOKE("inbox", { repository, page, search })),
 	/**
 	 *  The Issue view of Issue `number`, or nothing if Tsugiki doesn't hold it. This waits on the database and
 	 *  never on GitHub (ADR 0018).
@@ -1727,6 +1727,11 @@ export type Inbox_Deserialize = {
 	 *  was read (#825).
 	 */
 	show_muted: ShowMuted,
+	/**
+	 *  Whether the search in the box asks for something the cache doesn't read, so the list holds no local
+	 *  rows and says it needs GitHub (#464).
+	 */
+	needs_github: boolean,
 };
 
 /**  A page of the Inbox. It is empty only when the Inbox is, as before anyone signs in. */
@@ -1743,6 +1748,11 @@ export type Inbox_Serialize = {
 	 *  was read (#825).
 	 */
 	show_muted: ShowMuted,
+	/**
+	 *  Whether the search in the box asks for something the cache doesn't read, so the list holds no local
+	 *  rows and says it needs GitHub (#464).
+	 */
+	needs_github: boolean,
 };
 
 /**
@@ -2180,15 +2190,15 @@ export type Listing = Listing_Serialize | Listing_Deserialize;
 export type Listing_Deserialize = 
 /**  The Workbench, or one of its views. */
 { kind: "workbench"; view: WorkbenchView } | 
-/**  A page of the Inbox. */
-{ kind: "inbox"; page: InboxPage_Deserialize };
+/**  A page of the Inbox, with the forms the cache reads in its search box (#464). */
+{ kind: "inbox"; page: InboxPage_Deserialize; search: string };
 
 /**  The list the window showed when the user acted, as the window asked for it. */
 export type Listing_Serialize = 
 /**  The Workbench, or one of its views. */
 { kind: "workbench"; view: WorkbenchView } | 
-/**  A page of the Inbox. */
-{ kind: "inbox"; page: InboxPage_Serialize };
+/**  A page of the Inbox, with the forms the cache reads in its search box (#464). */
+{ kind: "inbox"; page: InboxPage_Serialize; search: string };
 
 /**  A first sync's progress through its queue. It learns of more PRs as it reads, so `prs_known` grows. */
 export type LoadProgress = LoadProgress_Serialize | LoadProgress_Deserialize;

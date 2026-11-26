@@ -1562,6 +1562,15 @@
           >
         {/if}
         {#if workbench.selected.kind === "inbox"}
+          <input
+            class="search"
+            type="search"
+            aria-label="Search the Inbox"
+            placeholder="Search, such as is:open label:bug"
+            spellcheck="false"
+            value={workbench.search}
+            oninput={(event) => void workbench.setSearch(event.currentTarget.value)}
+          />
           <label class="switch" title="Lists the items of the authors you muted, greyed">
             <input
               type="checkbox"
@@ -1587,7 +1596,15 @@
       </header>
       {@render problems()}
       {#if workbench.items?.length === 0 && workbench.muted.length === 0}
-        <p>{EMPTY[workbench.selected.kind]}</p>
+        {#if workbench.selected.kind === "inbox" && workbench.search.trim() !== ""}
+          <p role="status"
+            >{workbench.needsGitHub
+              ? "This search needs GitHub, which Tsugiki can't ask yet. Clearing the box brings the whole list back."
+              : "Nothing in the cache matches this search. Clearing the box brings the whole list back."}</p
+          >
+        {:else}
+          <p>{EMPTY[workbench.selected.kind]}</p>
+        {/if}
       {:else if workbench.items}
         <!-- The Inbox can hold every open item the cache does, so the browser draws only its rows on
              screen. -->
@@ -1720,6 +1737,19 @@
     flex: 1;
     margin: 4px 0;
     font-size: 13px;
+  }
+
+  /* The Inbox's search box, atop the list, which narrows it on the cache as the user types (#464). */
+  .search {
+    flex: 2;
+    min-width: 120px;
+    padding: 2px 6px;
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    background: var(--bg);
+    color: var(--fg);
+    font: inherit;
+    font-size: 12px;
   }
 
   /* A switch of the view on show: a Filter's "On the Workbench", the Inbox's "Show muted". */

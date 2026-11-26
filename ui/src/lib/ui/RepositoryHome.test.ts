@@ -5343,7 +5343,11 @@ it("lists the Inbox from the Sidebar, each Issue with its PRs, in its own order"
   expect(await screen.findByRole("heading", { name: "Inbox" })).toBeTruthy();
   await screen.findByRole("button", { name: "#112564 GIL drop during collection" });
   expect(screen.queryByRole("button", { name: "#5 Alone" })).toBeNull();
-  expect(core.inbox).toHaveBeenCalledExactlyOnceWith("python/cpython", { kind: "latest" });
+  expect(core.inbox).toHaveBeenCalledExactlyOnceWith(
+    "python/cpython",
+    { kind: "latest" },
+    "",
+  );
   expect(core.workbench).toHaveBeenLastCalledWith("python/cpython", { kind: "whole" });
   expect(screen.getByRole("button", { name: "Inbox" }).getAttribute("aria-current")).toBe("true");
   expect(screen.queryByRole("button", { name: /⇅$/ })).toBeNull();
@@ -5451,10 +5455,14 @@ it("reads the Inbox's next page once the list is scrolled near its end", async (
   await fireEvent.scroll(pane);
 
   await screen.findByRole("button", { name: "#5 Alone" });
-  expect(core.inbox).toHaveBeenLastCalledWith("python/cpython", {
-    kind: "older",
-    after: { updated_at: "2026-11-04T09:00:00Z", number: 112564 },
-  });
+  expect(core.inbox).toHaveBeenLastCalledWith(
+    "python/cpython",
+    {
+      kind: "older",
+      after: { updated_at: "2026-11-04T09:00:00Z", number: 112564 },
+    },
+    "",
+  );
   expect(screen.getByRole("button", { name: "#112564 GIL drop during collection" })).toBeTruthy();
 });
 

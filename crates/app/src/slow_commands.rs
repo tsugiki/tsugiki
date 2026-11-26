@@ -285,17 +285,18 @@ pub(crate) fn workbench(
     crate::read_workbench(repository, &view, &calls)
 }
 
-/// Page `page` of a Repository's Inbox: its open Issues, each with its open PRs, and its open Standalone
-/// PRs, the latest update first. This waits on the database and never on GitHub (ADR 0018), and queues
-/// nothing, so the Inbox adds nothing to Reach.
+/// Page `page` of a Repository's Inbox, narrowed by the forms the cache reads in `search` (#464): its open
+/// Issues, each with its PRs, and its open Standalone PRs, the latest update first. This waits on the
+/// database and never on GitHub (ADR 0018), and queues nothing, so the Inbox adds nothing to Reach.
 #[tauri::command(async)]
 #[specta::specta]
 pub(crate) fn inbox(
     repository: &str,
     page: InboxPage,
+    search: &str,
     calls: State<'_, Calls>,
 ) -> Result<Inbox, Error> {
-    crate::read_inbox(repository, page, &calls)
+    crate::read_inbox(repository, page, search, &calls)
 }
 
 /// The Issue view of Issue `number`, or nothing if Tsugiki doesn't hold it. This waits on the database and

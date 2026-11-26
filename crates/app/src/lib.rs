@@ -637,8 +637,13 @@ fn read_workbench(
     calls.workbench(RepositoryName::parse(repository)?, view)
 }
 
-fn read_inbox(repository: &str, page: InboxPage, calls: &Calls) -> Result<Inbox, Error> {
-    calls.inbox(RepositoryName::parse(repository)?, page)
+fn read_inbox(
+    repository: &str,
+    page: InboxPage,
+    search: &str,
+    calls: &Calls,
+) -> Result<Inbox, Error> {
+    calls.inbox(RepositoryName::parse(repository)?, page, search)
 }
 
 fn read_issue(repository: &str, number: u32, calls: &Calls) -> Result<Option<IssueView>, Error> {

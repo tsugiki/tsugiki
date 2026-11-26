@@ -1061,6 +1061,11 @@ impl Snapshot<'_> {
         read_last_login(&self.transaction).map_err(saying(CANT_READ))
     }
 
+    /// Every Issue and PR of the Repository, as a search of the Inbox reads the whole cache (#464).
+    pub fn work_facts(&self) -> Result<WorkFacts, Error> {
+        work_facts_in(&self.transaction, &self.repository).map_err(saying(CANT_READ))
+    }
+
     /// The Issues a PR that opened on them brought back to the Inbox (#823), closed or not.
     pub fn brought_back(&self) -> Result<BTreeSet<u32>, Error> {
         activity::brought_back(&self.transaction, &self.repository).map_err(saying(CANT_READ))

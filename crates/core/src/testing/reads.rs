@@ -12,7 +12,7 @@ use crate::repository::RepositoryName;
 use crate::repository_settings::RepositorySettings;
 use crate::settings::ListOrder;
 use crate::store::{self, OpenReader, StoreReader};
-use crate::workbench::inbox::{Inbox, InboxPage};
+use crate::workbench::inbox::{Inbox, InboxAsk};
 use crate::workbench::issue_view::IssueView;
 use crate::workbench::pr_view::PrView;
 use crate::workbench::quick_open::{self, QuickOpenFound};
@@ -49,10 +49,10 @@ impl Reads {
     pub fn inbox(
         &self,
         settings: &RepositorySettings,
-        page: InboxPage,
+        ask: InboxAsk<'_>,
         now: OffsetDateTime,
     ) -> Result<Inbox, Error> {
-        Inbox::read(&self.reader, settings, page, now)
+        Inbox::read(&self.reader, settings, ask, now)
     }
 
     pub fn issue_view(

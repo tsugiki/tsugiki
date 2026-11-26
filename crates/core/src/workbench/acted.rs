@@ -4,7 +4,7 @@
 use serde::{Deserialize, Serialize};
 use specta::Type;
 
-use super::inbox::{Inbox, InboxPage};
+use super::inbox::{Inbox, InboxAsk, InboxPage};
 use super::{Workbench, WorkbenchView};
 use crate::error::Error;
 use crate::repository::RepositoryName;
@@ -18,8 +18,8 @@ use crate::store::StoreReader;
 pub enum Listing {
     /// The Workbench, or one of its views.
     Workbench { view: WorkbenchView },
-    /// A page of the Inbox.
-    Inbox { page: InboxPage },
+    /// A page of the Inbox, with the forms the cache reads in its search box (#464).
+    Inbox { page: InboxPage, search: String },
 }
 
 /// The window's ask about an action it made (#1052): the number it gives the action, and the list it showed,
@@ -54,8 +54,15 @@ impl Page {
             Listing::Workbench { view } => Self::Workbench {
                 workbench: Workbench::read(reader, repository, view, order)?,
             },
-            Listing::Inbox { page } => Self::Inbox {
-                inbox: Inbox::read_now(reader, repository, *page)?,
+            Listing::Inbox { page, search } => Self::Inbox {
+                inbox: Inbox::read_now(
+                    reader,
+                    repository,
+                    InboxAsk {
+                        page: *page,
+                        search,
+                    },
+                )?,
             },
         })
     }

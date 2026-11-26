@@ -1216,7 +1216,7 @@ fn switch_show_muted_answers_once_saved_and_the_inbox_read_next_says_it_stands()
     );
     let inbox = wired.ask(
         "inbox",
-        json!({ "repository": CPYTHON, "page": { "kind": "latest" } }),
+        json!({ "repository": CPYTHON, "page": { "kind": "latest" }, "search": "" }),
     );
     let refused = wired.ask(
         "switch_show_muted",
@@ -1571,7 +1571,10 @@ fn inbox_pages(wired: &Wired) -> Vec<Value> {
     let mut pages = Vec::new();
     loop {
         let read = wired
-            .ask("inbox", json!({ "repository": CPYTHON, "page": page }))
+            .ask(
+                "inbox",
+                json!({ "repository": CPYTHON, "page": page, "search": "" }),
+            )
             .unwrap();
         let older = read["older"].clone();
         pages.push(read);
@@ -1589,7 +1592,11 @@ fn the_inbox_reads_the_synced_open_items_a_page_at_a_time_latest_first() {
     wired.call("add_repository", add_cpython());
     let workbench = workbench_after_sync(&wired);
     let pages = inbox_pages(&wired);
-    let bad = json!({ "repository": "not a name", "page": { "kind": "latest" } });
+    let bad = json!({
+        "repository": "not a name",
+        "page": { "kind": "latest" },
+        "search": "",
+    });
     let refused = wired.ask("inbox", bad).unwrap_err();
     drop(wired.stop());
 

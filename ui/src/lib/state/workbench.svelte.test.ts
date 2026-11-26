@@ -1720,6 +1720,52 @@ describe("WorkbenchState's Inbox", () => {
     state.stop();
   });
 
+  it("narrows the Inbox with each search the box takes, and brings the whole list back when it clears", async () => {
+    catchChanged();
+    vi.mocked(commands.workbench).mockResolvedValue(answer());
+    paging({ latest: page([3, 2], at(2, 9)) });
+    const state = await showingInbox();
+    expect(numbers(state)).toEqual([3, 2]);
+
+    paging({ latest: page([3]) });
+    await state.setSearch("Issue 3");
+    expect(commands.inbox).toHaveBeenLastCalledWith(
+      "python/cpython",
+      { kind: "latest" },
+      "Issue 3",
+    );
+    expect(numbers(state)).toEqual([3]);
+    // The search lists every match it finds at once, so nothing older is left to read.
+    expect(state.olderToRead).toBe(false);
+    expect(state.needsGitHub).toBe(false);
+
+    paging({ latest: page([3, 2], at(2, 9)) });
+    await state.setSearch("");
+    expect(commands.inbox).toHaveBeenLastCalledWith("python/cpython", { kind: "latest" }, "");
+    expect(numbers(state)).toEqual([3, 2]);
+    state.stop();
+  });
+
+  it("asks on each key, and says when a search needs GitHub", async () => {
+    catchChanged();
+    vi.mocked(commands.workbench).mockResolvedValue(answer());
+    paging({ latest: page([3]) });
+    const state = await showingInbox();
+
+    await state.setSearch("I");
+    await state.setSearch("Is");
+    await state.setSearch("Issue");
+    expect(
+      vi.mocked(commands.inbox).mock.calls.map(([, , search]) => search),
+    ).toEqual(["", "I", "Is", "Issue"]);
+
+    paging({ latest: inboxPage([], null, "off", true) });
+    await state.setSearch("review:approved");
+    expect(state.needsGitHub).toBe(true);
+    expect(numbers(state)).toEqual([]);
+    state.stop();
+  });
+
   it("reads the older pages onto the end, each item once, until the cache holds nothing older", async () => {
     catchChanged();
     vi.mocked(commands.workbench).mockResolvedValue(answer());
@@ -1728,7 +1774,11 @@ describe("WorkbenchState's Inbox", () => {
 
     await state.readOlder();
     expect(numbers(state)).toEqual([3, 2, 1]);
-    expect(commands.inbox).toHaveBeenLastCalledWith("python/cpython", { kind: "older", after: at(2, 9) });
+    expect(commands.inbox).toHaveBeenLastCalledWith(
+      "python/cpython",
+      { kind: "older", after: at(2, 9) },
+      "",
+    );
     expect(state.olderToRead).toBe(false);
 
     await state.readOlder();
@@ -1779,7 +1829,11 @@ describe("WorkbenchState's Inbox", () => {
     await vi.waitFor(() => {
       expect(numbers(state)).toEqual([1, 5, 4, 3, 2]);
     });
-    expect(commands.inbox).toHaveBeenLastCalledWith("python/cpython", { kind: "through", until: at(2, 7) });
+    expect(commands.inbox).toHaveBeenLastCalledWith(
+      "python/cpython",
+      { kind: "through", until: at(2, 7) },
+      "",
+    );
     expect(state.olderToRead).toBe(true);
     send("python/cpython");
     await nextTask();

@@ -5,7 +5,7 @@ import type {
 } from "../src/lib/data/bindings.ts";
 import { inboxPage, workbenchPage, workbenchRow } from "../src/lib/testing/fixtures.ts";
 import { home, palette, repository } from "./fixtures.ts";
-import { changeAnswer, emitFromCore, mockCore } from "./mock-core.ts";
+import { changeAnswer, callsOf, emitFromCore, mockCore } from "./mock-core.ts";
 
 const workbench = workbenchPage([] as ListedItem[]);
 
@@ -81,6 +81,37 @@ test("the Sidebar and the palette open the Inbox, each Issue with its PRs, in it
   await expect(page.getByRole("heading", { name: "Workbench" })).toBeVisible();
   await palette(page, "View: Inbox");
   await expect(page.getByRole("heading", { name: "Inbox" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "#1 Issue 1" })).toBeVisible();
+});
+
+test("typing in the search box narrows the Inbox on the cache, and an empty box brings the whole list back", async ({
+  page,
+}) => {
+  await mockCore(page, { home, workbench, inbox: pageOf(issues(3, 1), false) });
+  await page.goto("/");
+  await openInbox(page);
+  await expect(page.getByRole("button", { name: "#3 Issue 3" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "#1 Issue 1" })).toBeVisible();
+  const search = page.getByRole("searchbox", { name: "Search the Inbox" });
+
+  // Each key asks the core, which answers on the cache with the rows it found.
+  await changeAnswer(page, "inbox", pageOf([issue(3)], false));
+  await search.press("I");
+  await expect.poll(() => callsOf(page, "inbox")).toBe(2);
+  await search.fill("Issue 3");
+  await expect(page.getByRole("button", { name: "#3 Issue 3" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "#1 Issue 1" })).toHaveCount(0);
+
+  // A form the cache doesn't read lists nothing and says the search needs GitHub.
+  await changeAnswer(page, "inbox", inboxPage([], null, "off", true));
+  await search.fill("review:approved");
+  await expect(page.locator(".list").getByRole("status")).toContainText("needs GitHub");
+  await expect(page.locator(".list li.item")).toHaveCount(0);
+
+  // Clearing the box brings the whole list back.
+  await changeAnswer(page, "inbox", pageOf(issues(3, 1), false));
+  await search.fill("");
+  await expect(page.getByRole("button", { name: "#3 Issue 3" })).toBeVisible();
   await expect(page.getByRole("button", { name: "#1 Issue 1" })).toBeVisible();
 });
 

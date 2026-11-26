@@ -1238,11 +1238,12 @@
     }
   }
 
-  /** Gives the list the focus, on the row under the cursor, or on the list itself when it has no row. */
+  /** Gives the list the focus, on the row under the cursor, which scrolls into view, or on the list itself
+   * when it has no row. */
   function focusList() {
     void tick().then(() => {
       const row = cursorRow();
-      if (row) row.line.focus({ preventScroll: true });
+      if (row) row.line.focus();
       else list?.focus({ preventScroll: true });
     });
   }
@@ -1252,12 +1253,12 @@
     return target instanceof Node && detailPane()?.contains(target) === true;
   }
 
-  /** Whether `focused` is a row of the list, or the page's body, which holds the focus once nothing else
-   * does. The focus then follows the cursor. */
+  /** Whether `focused` is a row of the list, the list itself, which holds the focus when no row does, or the
+   * page's body, which holds it once nothing else does. The focus then follows the cursor. */
   function followsCursor(focused: Element | null): boolean {
     const onRow =
       focused instanceof HTMLElement && focused.matches("[data-item]") && list?.contains(focused) === true;
-    return onRow || focused === document.body;
+    return onRow || focused === list || focused === document.body;
   }
 
   /** Scrolls the Detail pane by a line, or the diff on a PR's Files tab, or the file view over it, or the
@@ -1312,7 +1313,7 @@
       moveCursor(key === "arrowdown" ? 1 : -1);
     } else if (
       key === "enter" &&
-      e.target === document.body &&
+      (e.target === document.body || e.target === list) &&
       workbench.underCursor &&
       !panes.hidden("list")
     ) {
@@ -1618,6 +1619,7 @@
          one. -->
     <section
       class={["list", { sized: panes.list !== null && detail !== undefined }]}
+      aria-label="Issue list"
       data-pane="list"
       tabindex="-1"
       bind:this={list}

@@ -52,11 +52,12 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
 - `F6` moves the focus to the next pane on show, and `Shift+F6` to the previous one, in the order Sidebar,
   Issue list, Detail pane, round from either end. A pane that isn't shown is skipped: a hidden Sidebar or
   Issue list, and the Detail pane when nothing is open. With the focus in no pane, `F6` goes to the Issue
-  list, or to the Detail pane when the list is hidden, and `Shift+F6` to the pane before it. The focus lands
-  on the Sidebar's entry for the view on show, the row under the cursor in the Issue list, or the Detail
-  pane itself, where ↑ ↓ scroll it. The rail inside the Detail pane is not a stop; its tabs have their own
-  keys ([layout.md](layout.md)). In the Detail pane, Esc with nothing on top gives the focus back to the
-  Issue list, on the row of the item on show, when the list shows.
+  list, or to the Detail pane when the list is hidden, and to the Sidebar when neither of those shows;
+  `Shift+F6` goes to the pane before it. The focus lands on the Sidebar's entry for the view on show; in the
+  Issue list, on the row under the cursor, or on the list itself when it has no row; and in the Detail pane,
+  on the pane itself, where ↑ ↓ scroll it. The rail inside the Detail pane is not a stop; its tabs have
+  their own keys ([layout.md](layout.md)). In the Detail pane, Esc with nothing on top gives the focus back
+  to the Issue list, on the row of the item on show, when the list shows.
 - `Ctrl+K O`, "one", switches the Files tab between all files and one file at a time. It is a `Ctrl+K`
   chord, as `Ctrl+K Z` is for the panes, because a free `Ctrl+Alt` letter would clash with AltGr, which
   Windows sends as `Ctrl+Alt` to type characters such as Polish ó on `AltGr+O`. VS Code's own `Ctrl+K O`

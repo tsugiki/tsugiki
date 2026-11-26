@@ -4781,8 +4781,7 @@ const rowNamed = (name: string) =>
   within(document.querySelector<HTMLElement>(".list") as HTMLElement).getByRole("button", { name });
 
 /** The Sidebar's entry for the view on show, which F6 lands on. */
-const currentSidebarEntry = () =>
-  document.querySelector<HTMLElement>('nav[aria-label="Sidebar"] [aria-current="true"]');
+const currentSidebarEntry = () => sidebar()?.querySelector<HTMLElement>('[aria-current="true"]');
 
 it("hides the Issue list and its edge with Ctrl+Alt+B, and brings them back at their width", async () => {
   core.paneLayout.mockResolvedValue({ ...DEFAULT_LAYOUT, list: 500 });
@@ -5317,6 +5316,36 @@ it("marks the Detail pane's item on Q once F6 puts the focus there", async () =>
   await fireEvent.keyDown(view, { key: "q" });
 
   expect(core.markSeen.mock.lastCall?.[1]).toMatchObject({ numbers: [112564, 160662] });
+});
+
+it("opens the cursor's item on Enter when the list itself holds the focus", async () => {
+  const { issueRow } = await listing();
+  await press("ArrowDown");
+  expect(document.activeElement).toBe(issueRow);
+  const pane = issueList() as HTMLElement;
+  pane.focus();
+
+  await fireEvent.keyDown(pane, { key: "Enter" });
+
+  expect(await screen.findByRole("region", { name: "Issue view" })).toBeTruthy();
+  expect(core.openIssue).toHaveBeenCalledWith("python/cpython", 112564);
+});
+
+it("moves the focus with the cursor once Q clears the item while the list itself holds the focus", async () => {
+  const { markedSeen } = await threeAlone();
+  const pane = issueList() as HTMLElement;
+  pane.focus();
+
+  await fireEvent.keyDown(pane, { key: "q" });
+  await vi.waitFor(() => {
+    expect(core.markSeen).toHaveBeenCalledOnce();
+  });
+  markedSeen();
+
+  const landed = await screen.findByRole("button", { name: "#6 Next" });
+  await vi.waitFor(() => {
+    expect(document.activeElement).toBe(landed);
+  });
 });
 
 it("says what went wrong above the panes while the list is hidden", async () => {

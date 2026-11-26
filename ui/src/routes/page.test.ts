@@ -2385,7 +2385,9 @@ describe("the key list", () => {
     fireEvent.keyDown(target, { key: "?", code: "Slash", shiftKey: true });
   const keyList = () => screen.queryByRole("dialog", { name: "Keys" });
   const sections = () =>
-    screen.getAllByRole("region").flatMap((section) => section.getAttribute("aria-label") ?? []);
+    within(keyList() as HTMLElement)
+      .getAllByRole("region")
+      .flatMap((section) => section.getAttribute("aria-label") ?? []);
 
   beforeEach(() => {
     vi.spyOn(navigator, "platform", "get").mockReturnValue("Win32");
@@ -2407,7 +2409,7 @@ describe("the key list", () => {
     expect(list).toBeTruthy();
     expect(document.activeElement).toBe(list);
     expect(sections()).toEqual(["Issue list", "Anywhere"]);
-    const issueList = within(screen.getByRole("region", { name: "Issue list" }));
+    const issueList = within(within(list as HTMLElement).getByRole("region", { name: "Issue list" }));
     expect(issueList.getByText("Unfold an Issue's PRs").previousElementSibling?.textContent).toBe("→");
     // Archive and Mute act on the Detail pane's item too, as Q does.
     const anywhere = within(screen.getByRole("region", { name: "Anywhere" }));

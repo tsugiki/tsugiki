@@ -50,8 +50,9 @@
     /** Whether the header offers Mark Seen or Mark Unseen, which it doesn't on a PR of a Muted item
      * (#492). */
     marks?: boolean;
-    /** Whether the pane takes the focus, as it does while the Issue list is hidden. Otherwise a click in it
-     * leaves the focus where it was, so Enter still opens the row under the cursor. */
+    /** Whether the pane takes the focus itself: while the Issue list is hidden, and while the list shows
+     * after a click in its controls or a press of F6. Otherwise a click on its background leaves the focus
+     * where it was, so Enter still opens the row under the cursor. */
     focusable?: boolean;
     /** What sits at the top of the pane, such as the history's arrows (#586). */
     header?: Snippet;

@@ -92,12 +92,11 @@ impl From<OnWorkbench> for bool {
 }
 
 /// Whether the search `token` names a state: `is:open`, `is:closed`, `is:merged`, `is:unmerged` or
-/// `state:` (#464, #465). Tsugiki adds `is:open` to a query that names none, in the cache and on GitHub. A
-/// token the user excludes names none, as the cache reads it.
+/// `state:` (#464, #465), excluded with a leading `-` or not. Tsugiki adds `is:open` to a query that names
+/// none, in the cache and on GitHub: an excluded state names one too, so `-is:open` never gets an `is:open`
+/// that would contradict it.
 pub(crate) fn names_a_state(token: &str) -> bool {
-    if token.starts_with('-') {
-        return false;
-    }
+    let token = token.strip_prefix('-').unwrap_or(token);
     let Some((qualifier, value)) = token.split_once(':') else {
         return false;
     };

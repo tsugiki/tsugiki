@@ -184,6 +184,14 @@ fn a_typed_search_keeps_its_own_state_and_sort() {
         "repo:python/cpython (state:merged fix) sort:updated-desc"
     );
     assert_eq!(
+        typed_text(&cpython(), "-is:open fix"),
+        "repo:python/cpython (-is:open fix) sort:updated-desc"
+    );
+    assert_eq!(
+        typed_text(&cpython(), "-state:closed fix"),
+        "repo:python/cpython (-state:closed fix) sort:updated-desc"
+    );
+    assert_eq!(
         typed_text(&cpython(), "fix sort:created-asc"),
         "repo:python/cpython (fix sort:created-asc) is:open"
     );
@@ -229,9 +237,27 @@ fn a_typed_search_reads_every_page_github_lists_in_its_order() {
 }
 
 #[test]
+fn a_result_github_lists_on_two_pages_is_read_once() {
+    let repeated = issue(7, "python/cpython");
+    let (script, _asked) = Scripted::new(vec![
+        page_of(&json!([repeated.clone()]), Some("page-2")),
+        page_of(&json!([repeated, issue(8, "python/cpython")]), None),
+    ]);
+
+    let found = github(script).search_inbox(&cpython(), "fix").unwrap();
+
+    let numbers: Vec<u32> = found.hits.iter().map(|listed| listed.number).collect();
+    assert_eq!(numbers, [7, 8], "a result two pages name is one row");
+    assert_eq!(found.total, 3214);
+}
+
+#[test]
 fn a_typed_search_stops_at_github_s_thousand_results() {
     let pages: Vec<_> = (0..10)
-        .map(|_| page_of(&json!([issue(1, "python/cpython")]), Some("more")))
+        .map(|page| {
+            let number = u32::try_from(page).unwrap() + 1;
+            page_of(&json!([issue(number, "python/cpython")]), Some("more"))
+        })
         .collect();
     let (script, asked) = Scripted::new(pages);
 

@@ -1810,6 +1810,24 @@ describe("WorkbenchState's Inbox", () => {
     state.stop();
   });
 
+  it("drops a paused search when the user leaves the Inbox before it sends", async () => {
+    vi.useFakeTimers();
+    try {
+      catchChanged();
+      vi.mocked(commands.workbench).mockResolvedValue(answer(9));
+      paging({ latest: page([3]) });
+      const state = await showingInbox();
+
+      await state.setSearch("review:approved");
+      await state.select(whole);
+      await vi.advanceTimersByTimeAsync(SEARCH_PAUSE_MS);
+      expect(commands.searchInbox).not.toHaveBeenCalled();
+      state.stop();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("reads the older pages onto the end, each item once, until the cache holds nothing older", async () => {
     catchChanged();
     vi.mocked(commands.workbench).mockResolvedValue(answer());

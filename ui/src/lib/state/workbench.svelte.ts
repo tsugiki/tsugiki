@@ -277,6 +277,8 @@ export class WorkbenchState {
     // A change of view is neither a user action nor a core change (#1052): an answer to an action made in
     // the view left behind moves nothing.
     this.#pending.clear();
+    // A paused search the user abandoned by leaving the Inbox sends nothing (#465).
+    this.#clearSearchTimer();
     if (view.kind !== "inbox") {
       this.needsGitHub = false;
       this.truncated = null;

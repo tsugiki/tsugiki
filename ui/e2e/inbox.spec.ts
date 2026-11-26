@@ -142,6 +142,10 @@ test("Enter sends the whole search to GitHub, and its rows show with a placehold
   });
   await changeAnswer(page, "inbox", answered);
   await search.fill("review:approved");
+  // Enter sends the box's whole text to GitHub at once, without waiting for the pause in typing, and drops
+  // the pause's timer so only this one search goes.
+  await search.press("Enter");
+  await expect.poll(() => callsOf(page, "searchInbox")).toBe(1);
 
   // A result the cache lacks holds its place, and a search past 1,000 says how many it showed.
   await expect(page.getByText("PR not in the cache yet")).toBeVisible();
@@ -149,10 +153,6 @@ test("Enter sends the whole search to GitHub, and its rows show with a placehold
   await expect(page.locator(".list").getByRole("status")).toHaveText(
     "1,000 of 1,712 shown. Narrow the search, or save it as a Filter.",
   );
-
-  // Enter sends the box's whole text to GitHub at once, without waiting for the pause in typing.
-  await search.press("Enter");
-  await expect.poll(() => callsOf(page, "searchInbox")).toBe(1);
 });
 
 test("scrolling to the end of the Inbox reads the next page and draws it", async ({ page }) => {

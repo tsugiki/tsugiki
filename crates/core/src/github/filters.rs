@@ -257,7 +257,7 @@ impl GitHub {
         }
         let query = typed_text(repository, text);
         let request = search_filter_query();
-        let mut hits = Vec::new();
+        let mut hits: Vec<SearchHit> = Vec::new();
         let mut total = 0;
         let mut after: Option<String> = None;
         for _ in 0..TYPED_PAGES {
@@ -272,7 +272,15 @@ impl GitHub {
             })?;
             let page = data.search.into_page(repository, data.rate_limit);
             total = page.total;
-            hits.extend(page.hits.into_iter().map(hit));
+            // A result GitHub lists on two pages, because the item moved between their reads under
+            // `sort:updated-desc`, is one result (#465).
+            for found in page.hits {
+                let listed = hit(found);
+                if hits.iter().any(|seen| seen.number == listed.number) {
+                    continue;
+                }
+                hits.push(listed);
+            }
             match page.next {
                 Some(next) => after = Some(next),
                 None => {

@@ -3,11 +3,11 @@
      diff does, from window.css (#754). It scrolls inside the peek, and draws only the rows near what shows,
      asking the core for their lines as they come into view, highlighted as the diff's rows are (#455). In
      the peek a click puts the caret on a word and a double-click selects it, as in the diff, for `Alt+F12`
-     to look it up (#447). The file view shows its file the same way (#453), and `data-scrolls` lets the
-     Detail pane's ↑ and ↓ scroll it there. The file view picks words too, goes to a word's definition on
-     Ctrl+click, Cmd+click on macOS, and opens the Definition peek under one of its lines as an inset, which
-     pushes the lines after it down (#457), or split below it, which keeps the line it opened under in view
-     (#459). -->
+     to look it up (#447). The file view shows its file the same way (#453), and `data-scrolls` marks it as
+     a region the Detail pane's scroll keys move there. The file view picks words too, goes to a word's
+     definition on Ctrl+click, Cmd+click on macOS, and opens the Definition peek under one of its lines as
+     an inset, which pushes the lines after it down (#457), or split below it, which keeps the line it opened
+     under in view (#459). -->
 <script lang="ts">
   import { untrack, type Snippet } from "svelte";
   import type { CodePick, HitCode } from "$lib/state/hit-code.svelte";

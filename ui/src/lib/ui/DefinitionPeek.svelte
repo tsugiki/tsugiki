@@ -131,7 +131,8 @@
   <div class="body indexing">{words.indexing}</div>
 {/if}
 <!-- The list of hits, beside a file that can't be read too: the focus may be on it, and in 2 rows its first
-     line shows. -->
+     line shows. It scrolls by itself, which `data-scrolls` marks for the Detail pane's paging keys
+     (#1075). -->
 {#snippet hits(found: Found)}
   <ol
     class="hits"
@@ -139,6 +140,7 @@
     aria-label="Definitions"
     aria-activedescendant={rowId(found.shown)}
     tabindex="0"
+    data-scrolls
     {@attach (list) => {
       keepInSight(list, found.shown);
     }}

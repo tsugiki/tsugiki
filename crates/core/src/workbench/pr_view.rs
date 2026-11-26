@@ -89,7 +89,7 @@ impl PrView {
             let hidden = Hidden::of(&causes, item.key(), &item.numbers());
             let holding = Hiding {
                 key: item.key(),
-                mark: item.seen().mark.clone(),
+                mark: item.seen()?.mark.clone(),
             };
             Some((row.clone(), hidden, holding))
         });

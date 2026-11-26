@@ -353,6 +353,7 @@ const LAYERS: &[Layer] = &[
         uses: &[
             "error",
             "facts",
+            "filters",
             "login",
             "mirror",
             "mirror_source",
@@ -367,7 +368,8 @@ const LAYERS: &[Layer] = &[
               Mirror worker's through `mirror`, and the session's, whose messages it defines so the session \
               above can take them. A Mark Seen names what `work` marks, and Mute author the `login` it \
               mutes. A PR whose Conversation read failed keeps the `status` failure, for its Files tab. An \
-              action carries the `Asked`, the number and the `workbench` view the core answers with.",
+              action carries the `Asked`, the number and the `workbench` view the core answers with. A saved \
+              Filter's first search carries the `filters` query it searches.",
     },
     Layer {
         module: "sync",
@@ -398,6 +400,7 @@ const LAYERS: &[Layer] = &[
             "error",
             "facts",
             "fetching",
+            "filters",
             "folders",
             "github",
             "latest",
@@ -420,7 +423,8 @@ const LAYERS: &[Layer] = &[
               which it builds on the requests `mirror` gives. Mute author asks `workbench` which items of \
               the `login` it mutes the window lists, to mark them seen. Each Repository's settings come \
               from the view `settings` shares through `latest`. The GitHub thread has `read_only` judge \
-              from the token's scopes which Repositories it can't write to.",
+              from the token's scopes which Repositories it can't write to, and queues a saved Filter's \
+              first search with its `filters` query.",
     },
     Layer {
         module: "calls",

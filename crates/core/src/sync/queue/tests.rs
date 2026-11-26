@@ -1,7 +1,8 @@
 use super::*;
 use crate::facts::issues::{IssueFacts, IssueState};
+use crate::filters::FilterQuery;
 use crate::github::in_flight::Asking;
-use crate::github::testing::{dated, in_flight_heard, reply_ok, signed_in_as};
+use crate::github::testing::{dated, filter_page, in_flight_heard, reply_ok, signed_in_as};
 use crate::github::{Reply, Unreachable};
 use crate::repository::RepositoryName;
 use crate::sync::testing::{
@@ -76,6 +77,32 @@ fn told_giving_up(syncs: &mut Syncs, failure: &StepFailure) -> Vec<Progress> {
     }
     assert_eq!(syncs.ready_at(), None, "the queue gave up the sync");
     told
+}
+
+#[test]
+fn a_filter_saved_while_a_sync_is_queued_searches_ahead_of_the_syncs_next_step() {
+    let harness = Harness::new(
+        "filter-saved-while-queued",
+        vec![filter_page(0, &[], None, RATE_LIMIT)],
+    );
+    let mut syncs = Syncs::default();
+    syncs.add_listed(plain(cpython()));
+    let query: FilterQuery = "label:bug".to_owned().try_into().unwrap();
+
+    // The queued sync was built with no Filters, so only the demand for the new one searches it.
+    syncs.search_filter(&cpython(), query.clone());
+    drop(syncs.step(&harness.github, &harness.db.store).unwrap());
+
+    assert_eq!(harness.operations(), ["SearchFilter"]);
+    assert!(
+        harness
+            .db
+            .store
+            .filter_results(&cpython())
+            .unwrap()
+            .contains_key(&query)
+    );
+    harness.finish();
 }
 
 #[test]

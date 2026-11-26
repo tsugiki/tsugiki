@@ -1762,6 +1762,7 @@
           >
         {/if}
         {#if workbench.selected.kind === "inbox"}
+          {@const draft = workbench.searchDraft}
           <input
             class="search"
             type="search"
@@ -1777,15 +1778,9 @@
               }
             }}
           />
-          {#if workbench.search.trim() !== ""}
-            <button
-              class="link"
-              title="Save the search as a Filter"
-              onclick={() =>
-                onsavefilter({
-                  name: workbench.search.trim(),
-                  query: workbench.saveQuery,
-                })}>Save</button
+          {#if draft}
+            <button class="link" title="Save the search as a Filter" onclick={() => onsavefilter(draft)}
+              >Save</button
             >
           {/if}
           <label class="switch" title="Lists the items of the authors you muted, greyed">

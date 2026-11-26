@@ -19,6 +19,7 @@ use crate::facts::pull_request_content::PullRequestContent;
 use crate::fetching::{
     Fetched, Fetching, Headless, Item, ItemFetch, ItemUnfetched, NoHead, ScreenMove,
 };
+use crate::filters::FilterQuery;
 use crate::github::in_flight::{self, AnnounceInFlight, Asking};
 use crate::github::{GitHub, GitHubAccess};
 use crate::latest::{self, LatestReader, LatestWriter};
@@ -55,6 +56,12 @@ pub(super) enum GitHubMessage {
     },
     /// The user asked to refresh the open Repository now.
     Refresh,
+    /// The user saved the Filter that searches `query` in `repository`, whose first whole search runs ahead
+    /// of the sync's next step (#471).
+    FilterSearch {
+        repository: RepositoryName,
+        query: FilterQuery,
+    },
     /// A read of what an item says. A demand that comes while the same read waits or runs shares its outcome.
     Fetch(Fetched),
     /// What the user did with an item on screen, or with the window.
@@ -386,6 +393,9 @@ impl Refreshes {
                     syncs.add(repository.clone());
                     show_last_sync(board, store, repository);
                 }
+                Ok(GitHubMessage::FilterSearch { repository, query }) => {
+                    syncs.search_filter(&repository, query);
+                }
                 Ok(GitHubMessage::Screen(moved)) => {
                     self.on_screen.borrow_mut().moved(moved, Instant::now());
                 }
@@ -424,6 +434,9 @@ impl Refreshes {
                 }
                 Ok(GitHubMessage::Search { repository, text }) => {
                     return Turn::Search { repository, text };
+                }
+                Ok(GitHubMessage::FilterSearch { repository, query }) => {
+                    syncs.search_filter(&repository, query);
                 }
                 Ok(GitHubMessage::Problem(problem)) => return Turn::Problem(problem),
                 Ok(GitHubMessage::Screen(moved)) => {

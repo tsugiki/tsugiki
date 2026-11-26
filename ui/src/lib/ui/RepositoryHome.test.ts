@@ -6428,10 +6428,9 @@ it("offers to save the Inbox search as a Filter, named after the text and queryi
   await fireEvent.input(screen.getByRole("searchbox", { name: "Search the Inbox" }), {
     target: { value: "label:bug" },
   });
-  await waitFor(() => {
-    expect(core.inbox).toHaveBeenLastCalledWith("python/cpython", { kind: "latest" }, "label:bug");
-  });
-  await fireEvent.click(screen.getByRole("button", { name: "Save" }));
+  // The button arrives with the answer for this text, which spells the query out.
+  const save = await screen.findByRole("button", { name: "Save" });
+  await fireEvent.click(save);
 
   expect(onsavefilter).toHaveBeenCalledExactlyOnceWith({ name: "label:bug", query: "label:bug is:open" });
 });

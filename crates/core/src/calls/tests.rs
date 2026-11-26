@@ -80,6 +80,7 @@ impl Setup {
                 | SessionMessage::Check { .. }
                 | SessionMessage::FetchUnstored { .. }
                 | SessionMessage::Search { .. }
+                | SessionMessage::FilterSearch { .. }
                 | SessionMessage::ShowMuted { .. }
                 | SessionMessage::Sync { .. }
                 | SessionMessage::Refresh
@@ -212,6 +213,7 @@ fn synced_and_saved(messages: &Receiver<SessionMessage>) -> Vec<String> {
             | SessionMessage::Check { .. }
             | SessionMessage::FetchUnstored { .. }
             | SessionMessage::Search { .. }
+            | SessionMessage::FilterSearch { .. }
             | SessionMessage::ShowMuted { .. }
             | SessionMessage::Refresh
             | SessionMessage::Mark { .. }
@@ -352,9 +354,16 @@ fn saving_a_filter_appends_it_off_the_workbench_and_starts_its_search_ahead_of_t
     let saved = &reloaded.loaded().settings.repositories[0].filters[2];
     db.close();
 
-    // The save reaches the session before the Refresh the save asks for, so the sync it starts sees the
-    // Filter in the settings.
-    assert_eq!(heard, ["other", "switch", "refresh"]);
+    // The save reaches the session before the demand that searches the new Filter, so the search the
+    // session starts reads the Filter from the settings.
+    assert_eq!(
+        heard,
+        [
+            "other",
+            "switch",
+            "filter search review-requested:@me is:open"
+        ]
+    );
     assert!(
         after.contains(
             "[[repositories.filters]]\nname = \"Needs review\"\nquery = \

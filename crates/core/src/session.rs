@@ -400,6 +400,9 @@ impl Keeper {
             SessionMessage::Search { repository, text } => {
                 telling.to_github(GitHubMessage::Search { repository, text });
             }
+            SessionMessage::FilterSearch { repository, query } => {
+                telling.to_github(GitHubMessage::FilterSearch { repository, query });
+            }
             SessionMessage::Refresh => self.refresh(),
             SessionMessage::Check { name, reply } => {
                 telling.to_github(GitHubMessage::Check { name, reply });

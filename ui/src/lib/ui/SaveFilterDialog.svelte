@@ -21,12 +21,17 @@
     onclose: () => void;
   } = $props();
 
-  // The dialog's own fields: it opens with the draft's name and query, and edits them on their own.
+  // The dialog's own fields: it opens with the draft's name and query, and edits them on their own. A
+  // refusal speaks of what the fields held, so an edit drops it.
   let name = $state(untrack(() => defaultName));
   let query = $state(untrack(() => defaultQuery));
   let problem = $state<string>();
   let saving = $state(false);
   const incomplete = $derived(name.trim() === "" || query.trim() === "");
+
+  function edited() {
+    problem = undefined;
+  }
 
   async function submit(event: SubmitEvent) {
     event.preventDefault();
@@ -42,11 +47,11 @@
   <form onsubmit={submit}>
     <label>
       Name
-      <input {@attach takeFocus} bind:value={name} autocomplete="off" spellcheck="false" />
+      <input {@attach takeFocus} bind:value={name} autocomplete="off" spellcheck="false" oninput={edited} />
     </label>
     <label>
       Query
-      <input bind:value={query} autocomplete="off" spellcheck="false" />
+      <input bind:value={query} autocomplete="off" spellcheck="false" oninput={edited} />
     </label>
     {#if problem}
       <p role="alert">{problem}</p>

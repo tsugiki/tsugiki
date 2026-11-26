@@ -400,6 +400,17 @@ it("keeps the Save dialog open and says why the core refused the Filter's name",
   expect((screen.getByRole("searchbox", { name: "Search the Inbox" }) as HTMLInputElement).value).toBe(
     "label:bug",
   );
+  // An edit says the refusal spoke of what the fields held, so it goes.
+  await fireEvent.input(within(dialog).getByRole("textbox", { name: "Name" }), {
+    target: { value: "Crash bugs" },
+  });
+  expect(within(dialog).queryByRole("alert")).toBeNull();
+  await fireEvent.click(within(dialog).getByRole("button", { name: "Save" }));
+  await within(dialog).findByRole("alert");
+  await fireEvent.input(within(dialog).getByRole("textbox", { name: "Query" }), {
+    target: { value: "label:crash is:open" },
+  });
+  expect(within(dialog).queryByRole("alert")).toBeNull();
 });
 
 it("says a Read-only Repository is so in the status bar and atop its Issue view, until the core says otherwise", async () => {

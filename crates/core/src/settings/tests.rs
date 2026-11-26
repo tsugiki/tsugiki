@@ -1369,7 +1369,7 @@ on_workbench = true
 
     files
         .append_filter(
-            &repository("A/B"),
+            &repository("a/b"),
             &filter("Needs review", "review-requested:@me is:open"),
         )
         .unwrap();
@@ -1483,6 +1483,68 @@ fn a_saved_filter_refuses_a_repository_the_file_doesnt_hold() {
 
     assert_eq!(missing.kind, ErrorKind::NotFound);
     assert_eq!(missing.message, "Tsugiki doesn't have c/d.");
+    assert_eq!(fs::read_to_string(folders.settings_file()).unwrap(), before);
+}
+
+#[test]
+fn a_saved_filter_refuses_a_search_or_name_the_repository_s_filters_already_have() {
+    let before = "[[repositories]]\nname = \"a/b\"\n\n[[repositories.filters]]\nname = \"Bugs\"\nquery = \"label:bug\"\n";
+    let (mut files, folders, _root) = settings_saying("append-filter-search-taken", before);
+
+    let search = files
+        .append_filter(&repository("a/b"), &filter("Docs", "label:bug"))
+        .unwrap_err();
+    let name = files
+        .append_filter(&repository("a/b"), &filter("Bugs", "label:docs"))
+        .unwrap_err();
+
+    assert_eq!(search.kind, ErrorKind::Conflict);
+    assert_eq!(
+        search.message,
+        "a/b already has a Filter that searches label:bug. Choose another search."
+    );
+    assert_eq!(name.kind, ErrorKind::Conflict);
+    assert_eq!(
+        name.message,
+        "a/b already has a Filter named Bugs. Choose another name."
+    );
+    assert_eq!(fs::read_to_string(folders.settings_file()).unwrap(), before);
+}
+
+#[test]
+fn a_saved_filter_refuses_a_file_that_names_the_repository_twice() {
+    // The settings take a name in any case as one Repository, and the file the first that names it.
+    let before = "[[repositories]]\nname = \"a/b\"\n\n[[repositories]]\nname = \"A/B\"\n";
+    let (mut files, folders, _root) = settings_saying("append-filter-twice", before);
+
+    let twice = files
+        .append_filter(&repository("A/B"), &filter("Bugs", "label:bug"))
+        .unwrap_err();
+
+    assert_eq!(twice.kind, ErrorKind::Conflict);
+    assert_eq!(
+        twice.message,
+        "settings.toml names A/B twice, first as a/b, and Tsugiki saves only the Filters of the first. \
+         Take one out of the file, then save the Filter again."
+    );
+    assert_eq!(fs::read_to_string(folders.settings_file()).unwrap(), before);
+}
+
+#[test]
+fn a_saved_filter_refuses_a_file_that_already_holds_two_filters_with_one_search() {
+    let before = "[[repositories]]\nname = \"a/b\"\n\n[[repositories.filters]]\nname = \"Bugs\"\nquery = \"label:bug\"\n\n[[repositories.filters]]\nname = \"Also bugs\"\nquery = \"label:bug\"\n";
+    let (mut files, folders, _root) = settings_saying("append-filter-repeated", before);
+
+    let repeated = files
+        .append_filter(&repository("a/b"), &filter("Docs", "label:docs"))
+        .unwrap_err();
+
+    assert_eq!(repeated.kind, ErrorKind::Conflict);
+    assert_eq!(
+        repeated.message,
+        "settings.toml holds two Filters of a/b that search label:bug, and Tsugiki shows only the first. \
+         Take one out of the file, then save the Filter again."
+    );
     assert_eq!(fs::read_to_string(folders.settings_file()).unwrap(), before);
 }
 

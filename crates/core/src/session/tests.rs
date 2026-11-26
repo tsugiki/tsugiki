@@ -1811,6 +1811,9 @@ fn named_for_github(message: GitHubMessage) -> String {
             SessionMessage::FetchUnstored { item, reply }
         }
         GitHubMessage::Search { repository, text } => SessionMessage::Search { repository, text },
+        GitHubMessage::FilterSearch { repository, query } => {
+            SessionMessage::FilterSearch { repository, query }
+        }
         GitHubMessage::Size { .. } | GitHubMessage::Problem(_) | GitHubMessage::Stopped(_) => {
             return "other".to_owned();
         }

@@ -1576,10 +1576,10 @@ impl SettingsOwner {
                         finishing: _finishing,
                     } => break,
                 };
-                // Only the Sidebar's switch saves a Repository's settings from a window that asks again by
-                // itself. Every other change reloads the files, and so takes in a hand edit to them. The
-                // Filters an Apply saves (#535) reach the Sidebar as a hand edit's do, as Settings doesn't
-                // ask the Workbench again.
+                // Only the Sidebar's switch and the Save as Filter dialog save a Repository's settings from a
+                // window that asks again by itself. Every other change reloads the files, and so takes in a
+                // hand edit to them. The Filters an Apply saves (#535) reach the Sidebar as a hand edit's do,
+                // as Settings doesn't ask the Workbench again.
                 let by = match change {
                     Change::OnWorkbench { .. } | Change::AppendFilter { .. } => SavedBy::Window,
                     Change::Add { .. }
@@ -2093,16 +2093,44 @@ impl TomlEdit<'_, Settings> {
     }
 
     /// Adds `filter` at the end of the Filters of the Repository `name` names, in the form the file uses and
-    /// with the comments it holds (#471). It refuses a name the Repository's Filters already use, and a
-    /// Repository the file doesn't hold. A Repository without `filters` gets the Filters it reads as written
-    /// out first, as `put_filters` says.
+    /// with the comments it holds (#471). It refuses a Repository the file doesn't hold, a name the
+    /// Repository's Filters already use, and a search one of them already has, as the settings read only the
+    /// first Filter of a search. It also refuses a file that names the Repository twice, as `put_filters`
+    /// does. A Repository without `filters` gets the Filters it reads as written out first, as `put_filters`
+    /// says.
     fn append_filter(&mut self, name: &RepositoryName, filter: &Filter) -> Result<(), Error> {
+        // The settings take a name in any case as one Repository, and the file the first that names it.
+        let first = (self.values.repositories.iter()).find(|one| one.name.is_same(name));
+        if let Some(first) = first
+            && first.name.to_string() != name.to_string()
+        {
+            let message = format!(
+                "settings.toml names {name} twice, first as {}, and Tsugiki saves only the Filters of the \
+                 first. Take one out of the file, then save the Filter again.",
+                first.name
+            );
+            return Err(Error::new(ErrorKind::Conflict, &message));
+        }
         let repository = self.repository_with_filters(name)?;
         let held = names_and_searches(repository.get_mut(FILTERS));
+        if let Some(query) = repeated_search(&held) {
+            let message = format!(
+                "settings.toml holds two Filters of {name} that search {query}, and Tsugiki shows only the \
+                 first. Take one out of the file, then save the Filter again."
+            );
+            return Err(Error::new(ErrorKind::Conflict, &message));
+        }
         if held.iter().any(|(held, _)| held == filter.name.as_str()) {
             let message = format!(
                 "{name} already has a Filter named {}. Choose another name.",
                 filter.name.as_str()
+            );
+            return Err(Error::new(ErrorKind::Conflict, &message));
+        }
+        if held.iter().any(|(_, query)| query == filter.query.as_str()) {
+            let message = format!(
+                "{name} already has a Filter that searches {}. Choose another search.",
+                filter.query.as_str()
             );
             return Err(Error::new(ErrorKind::Conflict, &message));
         }

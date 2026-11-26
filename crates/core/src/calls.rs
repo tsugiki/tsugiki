@@ -194,16 +194,15 @@ impl Calls {
     ) -> Result<(), Error> {
         let filter = Filter {
             name,
-            query,
+            query: query.clone(),
             on_workbench: OnWorkbench::Off,
         };
         self.settings
             .append_filter(repository.clone(), filter)
             .map(drop)?;
-        // The new Filter has no stored results, so the refresh reads its search whole, with ADR 0015's
-        // `created:` splitting past 1,000. A Refresh is the user's demand, which goes ahead of the sync's
-        // next step.
-        self.fetching.refresh();
+        // A sync already queued was built before the Filter existed, so the session runs the whole search of
+        // this one ahead of the queue, with ADR 0015's `created:` splitting past 1,000.
+        self.fetching.search_filter(repository, query);
         Ok(())
     }
 

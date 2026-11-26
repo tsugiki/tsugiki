@@ -21,6 +21,7 @@ use crate::error::{Error, ErrorKind};
 use crate::facts::activity::{ItemKey, PutAway, ShowMuted};
 use crate::facts::patch_ids::PatchesOf;
 use crate::facts::pull_requests::{HeadInMirror, PrHead, ReviewedCommit};
+use crate::filters::FilterQuery;
 use crate::login::Login;
 use crate::mirror::{CloneRefusal, LookupAt, MirrorRequests};
 use crate::mirror_source::MirrorSource;
@@ -245,6 +246,12 @@ pub(crate) enum SessionMessage {
     },
     /// The user asked to refresh the open Repository now.
     Refresh,
+    /// The user saved the Filter that searches `query` in `repository`, whose first whole search runs ahead
+    /// of the sync's next step (#471).
+    FilterSearch {
+        repository: RepositoryName,
+        query: FilterQuery,
+    },
     /// The user changed what a Repository's settings say, and nothing on GitHub changed with them.
     SettingsChanged(SettingsSave),
     /// The user's mark, with the number and the list it asks the core to answer about (#1052). Unmute and
@@ -404,6 +411,13 @@ impl Fetching {
     /// The user asked to refresh the open Repository now. A sync already under way covers this.
     pub fn refresh(&self) {
         self.to_session(SessionMessage::Refresh);
+    }
+
+    /// The user saved the Filter that searches `query` in `repository` (#471): the session runs its first
+    /// whole search at once, ahead of the sync's next step. A sync already queued was built before the Filter
+    /// existed, so it wouldn't search it.
+    pub fn search_filter(&self, repository: RepositoryName, query: FilterQuery) {
+        self.to_session(SessionMessage::FilterSearch { repository, query });
     }
 
     /// The settings owner saved a Repository's settings otherwise, and its view already says so. The Mirror

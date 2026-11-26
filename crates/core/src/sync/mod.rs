@@ -374,6 +374,17 @@ impl UserWorkSync {
         sync
     }
 
+    /// The whole first search of the Filter that searches `query`, and what it finds (#471). It runs as a
+    /// tree does: the queue drops it once its steps end, so it moves neither the Repository's last sync nor
+    /// the other Filters' results.
+    fn filter_of(repository: &RepositorySettings, query: FilterQuery) -> Self {
+        let mut sync = Self::new(repository);
+        sync.filters = vec![query.clone()];
+        sync.phase = Resumable::SearchingFilters(FilterWalk::new(&[query], Vec::new())).into();
+        sync.kind = Kind::Tree;
+        sync
+    }
+
     /// A first sync's own state, if this is one.
     fn first_sync(&self) -> Option<&FirstSync> {
         match &self.kind {

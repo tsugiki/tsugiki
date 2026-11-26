@@ -24,7 +24,8 @@ const KB_PER_MB: u64 = 1024;
 /// What changed a Repository's settings, which says whether the window asks for its views again itself.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SavedBy {
-    /// The window, as a Filter's switch in the Sidebar, which asks again once the save is done.
+    /// The window, as a Filter's switch in the Sidebar or the Save as Filter dialog, which asks again once
+    /// the save is done.
     Window,
     /// A hand edit of the files, which a reload took in. The window hears of it from the session (#822).
     HandEdit,

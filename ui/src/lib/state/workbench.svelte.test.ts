@@ -1828,7 +1828,7 @@ describe("WorkbenchState's Inbox", () => {
     const state = await showingInbox();
 
     await state.setSearch("label:bug");
-    expect(state.saveQuery).toBe("label:bug is:open");
+    expect(state.searchDraft).toEqual({ name: "label:bug", query: "label:bug is:open" });
 
     vi.mocked(commands.saveFilter).mockResolvedValueOnce(done);
     const problem = await state.saveFilter("Bugs", "label:bug is:open");
@@ -1861,17 +1861,26 @@ describe("WorkbenchState's Inbox", () => {
     state.stop();
   });
 
-  it("opens the Save dialog with the text as its query until the answer for it arrives", async () => {
+  it("offers no Save until the Inbox's answer for the text arrives, nor once that answer fails", async () => {
     catchChanged();
     vi.mocked(commands.workbench).mockResolvedValue(answer());
     paging({ latest: inboxPage([], null, "off", false, null, "label:bug is:open") });
     const state = await showingInbox();
 
-    // The answer on show is for the empty box, so a text typed since gets no additions yet.
+    // The answer on show is for the empty box, so the text typed since has no spelled query yet.
     paging({ latest: page([3]) });
     await state.setSearch("label:bug");
+    expect(state.searchDraft).toBeUndefined();
 
-    expect(state.saveQuery).toBe("label:bug");
+    // The answer for the text on show offers the draft.
+    paging({ latest: inboxPage([], null, "off", false, null, "label:bug is:open") });
+    await state.setSearch("label:bug ");
+    expect(state.searchDraft).toEqual({ name: "label:bug", query: "label:bug is:open" });
+
+    // A failed answer says nothing about the text's meaning, so it offers no Save either.
+    paging({ latest: refused("disk gone") });
+    await state.setSearch("review:approved");
+    expect(state.searchDraft).toBeUndefined();
     state.stop();
   });
 

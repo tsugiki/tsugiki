@@ -330,11 +330,13 @@ export class WorkbenchState {
     this.#searchTimer = undefined;
   }
 
-  /** The Filter query the Save as Filter dialog opens with: the box's text with Tsugiki's additions spelled
-   * out once the answer for the text on show has arrived, and the text itself until then (#471). */
-  get saveQuery(): string {
-    const text = this.search.trim();
-    return this.#filterQuery?.search === text ? this.#filterQuery.query : text;
+  /** The Save as Filter dialog's draft: the box's text as its name, and the query with Tsugiki's additions
+   * spelled out once the answer for the text on show has arrived (#471). Nothing while that answer waits or
+   * failed, as the text alone doesn't say what the Filter would search. */
+  get searchDraft(): { name: string; query: string } | undefined {
+    const name = this.search.trim();
+    if (name === "" || this.#filterQuery?.search !== name) return undefined;
+    return { name, query: this.#filterQuery.query };
   }
 
   /** Saves the Inbox's search as a Filter named `name` that searches `query`, opens it in place of the Inbox,

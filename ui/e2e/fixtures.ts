@@ -1,4 +1,5 @@
 import { expect, type Locator, type Page } from "@playwright/test";
+import { callsOf } from "./mock-core.ts";
 import type {
   Filter_Serialize as Filter,
   IssueView_Serialize as IssueView,
@@ -120,4 +121,45 @@ export async function dragEdge(edge: Locator, by: number) {
   const grip = await grabEdge(edge);
   await grip.moveBy(by);
   await grip.release();
+}
+
+/** Expects the title link `link` in `heading` to hug its own text, and a click in the heading past it to
+ * open nothing (#1082): the button grew across the heading before, so that space opened the item. */
+export async function expectShortTitleHugsItsText(page: Page, heading: Locator, link: Locator) {
+  const text = await link.evaluate((element) => {
+    const range = document.createRange();
+    range.selectNodeContents(element);
+    return Math.max(0, ...[...range.getClientRects()].map((line) => line.width));
+  });
+  const [headingBox, linkBox] = [await heading.boundingBox(), await link.boundingBox()];
+  expect(Math.abs((linkBox?.width ?? Number.NaN) - text)).toBeLessThanOrEqual(2);
+
+  const calls = await callsOf(page, "openOnGithub");
+  await page.mouse.click((headingBox?.x ?? 0) + (headingBox?.width ?? 0) - 10, (headingBox?.y ?? 0) + 2);
+  expect(await callsOf(page, "openOnGithub")).toBe(calls);
+}
+
+/** Expects the title heading `heading` shows to wrap beside its state icon (#1082): the icon centres on the
+ * title's first line, the title starts past the icon, and each later line starts under the title's start. */
+export async function expectTitleBesideItsIcon(heading: Locator) {
+  const { icon, lines, titleLeft } = await heading.evaluate((element) => {
+    const box = element.querySelector(".state-icon")?.getBoundingClientRect();
+    const title = element.querySelector("button");
+    if (box === undefined || title === null) throw new Error("the heading shows no state icon or title");
+    const range = document.createRange();
+    range.selectNodeContents(title);
+    const lines = [...range.getClientRects()].map((line) => ({
+      left: line.left,
+      middle: (line.top + line.bottom) / 2,
+    }));
+    return {
+      icon: { middle: (box.top + box.bottom) / 2, right: box.right },
+      lines,
+      titleLeft: title.getBoundingClientRect().left,
+    };
+  });
+  expect(lines.length).toBeGreaterThan(1);
+  expect(Math.abs(icon.middle - (lines[0]?.middle ?? Number.NaN))).toBeLessThanOrEqual(0.5);
+  for (const line of lines) expect(Math.abs(line.left - titleLeft)).toBeLessThanOrEqual(0.5);
+  expect(titleLeft).toBeGreaterThanOrEqual(icon.right - 0.5);
 }

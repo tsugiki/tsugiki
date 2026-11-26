@@ -167,9 +167,10 @@
    * on show there, until the item it found opens (#981). */
   let unstored = $state<UnstoredViewState>();
   /** The view the Detail pane took the focus for while the list shows, which then takes it as it would with
-   * the list hidden: the view of the item after the one the user finished with (#982). It keeps that until
-   * the focus goes elsewhere in the page, so the palette or another app in front hands it back. */
-  let focusedView = $state<IssueViewState | PrViewState>();
+   * the list hidden: the view of the item after the one the user finished with (#982), or the one F6 moved
+   * the focus to. It keeps that until the focus goes elsewhere in the page, so the palette or another app in
+   * front hands it back. */
+  let focusedView = $state<IssueViewState | PrViewState | UnstoredViewState>();
   const links = new LinkOpener();
   /** The reason the last Mark Seen or Mark Unseen didn't reach the core. */
   let markProblem = $state<string>();
@@ -335,8 +336,8 @@
     focusCursor();
     void view.load((kind) => {
       // The answer can come long after the pick, as it waits for the sync's step under way. It takes the
-      // focus as a pick does only from a row, the Detail pane or nowhere, and leaves it anywhere else the
-      // user went meanwhile, such as a text box or the Sidebar.
+      // focus as a pick does only from the list (a row or the list itself), the Detail pane or nowhere, and
+      // leaves it anywhere else the user went meanwhile, such as a text box or the Sidebar.
       const focused = document.activeElement;
       const pick = inDetailPane(focused) || followsCursor(focused);
       open(workbench.stopFor(number, kind), pick ? "pick" : "open");
@@ -542,7 +543,7 @@
         return;
       }
       // Only once the view the pane left has gone, as the control that goes with it drops the focus.
-      focusedView = detail;
+      focusedView = detail ?? unstored;
       await tick();
       pane.focus();
     });
@@ -1119,6 +1120,8 @@
     toggle_issue_list: () => (held) => {
       if (!held) void toggleListByKey();
     },
+    next_pane: () => () => movePaneFocus(1),
+    previous_pane: () => () => movePaneFocus(-1),
     unfold: folding("unfold"),
     fold: folding("fold"),
     next_tab: tabSwitch,
@@ -1178,17 +1181,91 @@
 
   const detailPane = () => home?.querySelector<HTMLElement>('[data-pane="detail"]');
 
+  /** The Sidebar's nav, in either of its shapes: the full Sidebar or its strip of icons. */
+  const sidebarPane = () => home?.querySelector<HTMLElement>('nav[aria-label="Sidebar"]');
+
+  /** A pane F6 stops on, in the order it moves through them. */
+  type PaneStop = "sidebar" | "list" | "detail";
+
+  /** The panes F6 moves through, in order: the Sidebar, the Issue list, and the Detail pane while it has an
+   * item open. A pane that doesn't show is skipped, and so is the Detail pane with nothing open. */
+  function paneStops(): PaneStop[] {
+    const stops: PaneStop[] = [];
+    if (!panes.hidden("sidebar")) stops.push("sidebar");
+    if (!panes.hidden("list")) stops.push("list");
+    if (detail !== undefined || unstored !== undefined) stops.push("detail");
+    return stops;
+  }
+
+  /** The pane holding the focus, or nothing while the focus is elsewhere, such as on the page. */
+  function focusedPane(): PaneStop | undefined {
+    const active = document.activeElement;
+    if (inDetailPane(active)) return "detail";
+    if (active instanceof Node && list?.contains(active) === true) return "list";
+    if (active instanceof Node && sidebarPane()?.contains(active) === true) return "sidebar";
+    return undefined;
+  }
+
+  /** The index in `stops` where F6 starts when no pane holds the focus: the Issue list, or the Detail pane
+   * when the list is hidden, and the Sidebar once those are hidden too. */
+  function paneStart(stops: PaneStop[]): number {
+    const listAt = stops.indexOf("list");
+    if (listAt !== -1) return listAt;
+    const detailAt = stops.indexOf("detail");
+    return detailAt === -1 ? 0 : detailAt;
+  }
+
+  /** F6 moves the focus to the next pane on show, and Shift+F6 to the previous one, round from either end.
+   * From no pane, F6 starts where `paneStart` says, and Shift+F6 starts one pane before it. The focus lands
+   * on the Sidebar's entry for the view on show, the list's row under the cursor, or the Detail pane itself,
+   * as a click in it does. */
+  function movePaneFocus(step: 1 | -1) {
+    const stops = paneStops();
+    if (stops.length === 0) return;
+    const current = focusedPane();
+    const at = current === undefined ? -1 : stops.indexOf(current);
+    const to =
+      at === -1
+        ? step === 1
+          ? paneStart(stops)
+          : (paneStart(stops) - 1 + stops.length) % stops.length
+        : (at + step + stops.length) % stops.length;
+    // As far as TypeScript knows, the pane at `to` may be past the end, and a check for that would leave a
+    // branch no test reaches, which the coverage gate fails. So this looks for the pane at `to` among them.
+    stops.forEach((pane, index) => {
+      if (index !== to) return;
+      if (pane === "sidebar") {
+        sidebarPane()?.querySelector<HTMLElement>('[aria-current="true"]')?.focus();
+      } else if (pane === "list") {
+        focusList();
+      } else {
+        focusDetail();
+      }
+    });
+  }
+
+  /** Gives the list the focus, on the row under the cursor, which scrolls into view, or on the list itself
+   * when it has no row. */
+  function focusList() {
+    void tick().then(() => {
+      const row = cursorRow();
+      if (row) row.line.focus();
+      else list?.focus({ preventScroll: true });
+    });
+  }
+
   /** Whether `target`, such as the focused element, is in the Detail pane. */
   function inDetailPane(target: EventTarget | null): boolean {
     return target instanceof Node && detailPane()?.contains(target) === true;
   }
 
-  /** Whether `focused` is a row of the list, or the page's body, which holds the focus once nothing else
-   * does. The focus then follows the cursor. */
+  /** Whether `focused` is a row of the list, the list itself, which holds the focus whenever nothing else in
+   * the list does, or the page's body, which holds it once nothing else does. The focus then follows the
+   * cursor. */
   function followsCursor(focused: Element | null): boolean {
     const onRow =
       focused instanceof HTMLElement && focused.matches("[data-item]") && list?.contains(focused) === true;
-    return onRow || focused === document.body;
+    return onRow || focused === list || focused === document.body;
   }
 
   /** Scrolls the Detail pane by a line, or the diff on a PR's Files tab, or the file view over it, or the
@@ -1243,7 +1320,7 @@
       moveCursor(key === "arrowdown" ? 1 : -1);
     } else if (
       key === "enter" &&
-      e.target === document.body &&
+      (e.target === document.body || e.target === list) &&
       workbench.underCursor &&
       !panes.hidden("list")
     ) {
@@ -1266,6 +1343,11 @@
       // A PR opened from a row of its own has nothing under it, so it stays on show.
       e.preventDefault();
       back(detail.issue);
+    } else if (key === "escape" && at.pane === "detail" && !panes.hidden("list")) {
+      // Nothing on top: the focus goes back to the list, on the row of the item on show.
+      e.preventDefault();
+      cursorToDetail();
+      focusList();
     }
   }
 
@@ -1287,7 +1369,7 @@
   icon: Octicon | undefined,
 )}
   {#if icon}
-    <StateIcon {icon} />
+    <span class="state-icon"><StateIcon {icon} /></span>
   {/if}
   <button
     class="link title"
@@ -1544,7 +1626,9 @@
          one. -->
     <section
       class={["list", { sized: panes.list !== null && detail !== undefined }]}
+      aria-label="Issue list"
       data-pane="list"
+      tabindex="-1"
       bind:this={list}
       onscroll={readOlderNearEnd}
     >
@@ -1682,7 +1766,7 @@
     {/key}
   {:else if unstored}
     {#key unstored}
-      <UnstoredDetail view={unstored} focusable={panes.hidden("list")} />
+      <UnstoredDetail view={unstored} focusable={panes.hidden("list") || focusedView === unstored} />
     {/key}
   {:else if panes.hidden("list")}
     {@const key = actionLabel("toggle_issue_list", currentOs())}
@@ -1845,11 +1929,16 @@
   }
 
   /* The state icon sits above the title's cover, so its tooltip names the state, and a Stale review does too,
-     so its tooltip lists the files. */
-  .headline > :global(.octicon),
+     so its tooltip lists the files. Inside its wrapper, one line tall, the icon centres on the title's
+     line. */
+  .headline > .state-icon,
   .stale {
     position: relative;
     z-index: 1;
+  }
+
+  .headline > .state-icon {
+    align-self: center;
   }
 
   .stale {
@@ -1920,6 +2009,7 @@
     position: relative;
     z-index: 1;
     flex: none;
+    align-self: center;
     width: 1em;
     text-align: center;
     cursor: pointer;
@@ -1951,6 +2041,11 @@
     display: block;
     flex: none;
     height: 2px;
+  }
+
+  /* The pane's focus shows as that line, as VS Code has it, so no ring goes round the whole pane. */
+  .home :global([data-pane]:focus) {
+    outline: none;
   }
 
   /* With the focus on no element, as at launch, the list takes the keys, so it shows the line too. */

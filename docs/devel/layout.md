@@ -170,8 +170,10 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
       drops the fetch's answer, though the database still keeps what it brought.
     - **Look**, which the prototype settled, with colours from the Theme's tokens ([themes.md](themes.md)):
       - A muted 12 px line over the title gives the Issue's state, or the Issue a PR was opened under, the
-        branch it goes into and when it changed. The title is 18 px. The 13 px line under it names the
-        author in the text colour at weight 600, and a PR's state words follow.
+        branch it goes into and when it changed. The title is 18 px, its state icon centred on its first
+        line; a title too long for the line wraps beside the icon, its later lines under the title's start.
+        The 13 px line under it names the author in the text colour at weight 600, and a PR's state words
+        follow.
       - The Issue view keeps to 900 px and the Conversation to 860 px, so lines stay short in a wide
         window. Section headings, "Origin PRs" and "Description", are 13 px with 18 px above.
       - The PR tree is a box with 6 px corners and a line between rows. Each row is 13 px, with the number
@@ -196,19 +198,24 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
     Esc closes what is on top, wherever the focus is: a dialog, the palette or a Peek first, then the wait
     for a chord's second key, a Definition peek, in the diff or the file view, or the diff's search, then the
     file view, which goes back to the PR's diff, and last a PR, which goes back to the Issue it was opened
-    under. With nothing on top, Esc
-    does nothing. A PR opened from a row of its own (a Standalone PR, one of its Backports, a Dependency
-    update) has nothing under it, so Esc leaves it on show, as it leaves an Issue. A text box keeps Esc,
+    under. With nothing on top, Esc in the Detail pane gives the focus back to the Issue list, on the row of
+    the item on show, or on the list itself when that item has no row, when the list shows; with the list
+    hidden, Esc does nothing. A PR opened from a row of
+    its own (a Standalone PR, one of its Backports, a Dependency update) has nothing under it, so Esc leaves
+    it on show, as it leaves an Issue, and moves only the focus. A text box keeps Esc,
     unless it belongs to what Esc closes, like the search box. Esc gives the focus to whatever lay under the
     thing it closed: going back from the file view moves it to the diff, and going back from a PR moves the
     cursor and the focus to the Issue's row, or to the Detail pane while the Issue list is hidden. Esc leaves
     the panes as they are. Esc in the PR view's rail closes nothing: it gives the focus to the diff or the
     Conversation beside the rail ([review.md](review.md)).
 
-    The pane that holds the keyboard focus, the Issue list or the Detail pane, shows a 2 px line in the
-    Theme's focus colour along its top edge, as VS Code does, so the user can tell where ↑ ↓ go. With the
-    focus in the Detail pane, as after a click on one of its buttons, ↑ ↓ scroll it even while the list
-    shows. With the focus on no control, as at launch, the list takes the keys and shows the line. While the
+    `F6` and `Shift+F6` move the focus through the panes on show, in the order Sidebar, Issue list, Detail
+    pane, and back, skipping a pane that isn't shown and the Detail pane with nothing open
+    ([keyboard.md](keyboard.md)). The pane that holds the keyboard focus, the Issue list or the Detail pane,
+    shows a 2 px line in the Theme's focus colour along its top edge, as VS Code does, so the user can tell
+    where ↑ ↓ go. With the focus in the Detail pane, as after a click on one of its buttons or a press of
+    `F6`, ↑ ↓ scroll it even while the list shows. With the focus on no control, as at launch, the list takes
+    the keys and shows the line. While the
     list holds the focus, its row under the cursor takes the active selection colour, and the inactive one,
     a dim tint, once the focus moves away. The palette or a dialog on top, or another app in front, leaves
     every pane inactive. No ring goes round a whole pane.
@@ -246,8 +253,9 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
     - The list's header, 8 px by 10 px with a line under it, names the view. Each item is three lines of
       13 px, 7 px above and below, with a line between items: the people; the state icon, the number in the
       code font, the title, then the PR count and the age in muted 12 px; and the preview in muted 12 px.
-      An Issue with nothing waiting on the user counts its open PRs on the third line, or says it has none
-      yet, and a PR gives its facts there. An ellipsis cuts a long title, people or preview.
+      The state icon, and an Issue's fold chevron, centre on the title's line. An Issue with nothing waiting
+      on the user counts its open PRs on the third line, or says it has none yet, and a PR gives its facts
+      there. An ellipsis cuts a long title, people or preview.
     - An item that Needs attention looks like unread mail: a 3 px accent bar on its left edge, the title in
       the accent colour at weight 600, the people at weight 600 and the age in the accent colour.
     - The row under the cursor takes the selected tint, and a row under the pointer a light tint of the

@@ -12,6 +12,7 @@ import {
 } from "../src/lib/testing/fixtures.ts";
 import { grabEdge, home, own, repository } from "./fixtures.ts";
 import { changeAnswer, emitFromCore, mockCore } from "./mock-core.ts";
+import { themes } from "./themes.ts";
 
 const mine = { name: "Mine", query: "is:open author:@me", on_workbench: true, count: 1, problem: null };
 
@@ -64,6 +65,34 @@ test("the Workbench lists what waits on the user", async ({ page }) => {
   await expect(rows.nth(1)).toContainText("Review request · some-author · into main · Open · CI passed");
   await expect(rows.nth(2)).toContainText("Bot backport · some-author · into 3.14 · Merged · CI passed");
   await expect(rows.nth(3)).toContainText("Own PR · octocat · into 3.14 · Open · Draft · CI failed");
+});
+
+test("a row's state icon and fold chevron centre on its title's line, in either theme", async ({ page }) => {
+  await mockCore(page, {
+    themes: ok(themes),
+    home,
+    workbench: workbenchPage([review, own], { count: 2 }),
+  });
+  await page.setViewportSize({ width: 900, height: 600 });
+  await page.goto("/");
+
+  const item = page.getByRole("listitem").first();
+  const title = item.locator("button.title");
+  const icon = item.getByRole("img", { name: "Open issue" });
+  const chevron = item.getByRole("button", { name: "PRs of #112564" });
+  const middle = async (part: Locator) => {
+    const box = await part.boundingBox();
+    return (box?.y ?? Number.NaN) + (box?.height ?? Number.NaN) / 2;
+  };
+  // The icon's colour says which side's theme is in force: Light Modern's open green, then Dark Modern's.
+  const colours = { light: "rgb(26, 127, 55)", dark: "rgb(63, 185, 80)" } as const;
+  for (const colorScheme of ["light", "dark"] as const) {
+    await page.emulateMedia({ colorScheme });
+    await expect(icon).toHaveCSS("color", colours[colorScheme]);
+    const line = await middle(title);
+    expect(Math.abs((await middle(icon)) - line)).toBeLessThanOrEqual(0.5);
+    expect(Math.abs((await middle(chevron)) - line)).toBeLessThanOrEqual(0.5);
+  }
 });
 
 test("an item that Needs attention shows an accent bar and title, and a long title ends in an ellipsis", async ({

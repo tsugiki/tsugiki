@@ -51,6 +51,7 @@ const core = vi.hoisted(() => ({
   putFilterOnWorkbench: vi.fn(),
   switchShowMuted: vi.fn(),
   openOnGithub: vi.fn(),
+  fetchItem: vi.fn(),
   pullRequestFiles: vi.fn(),
   pullRequestFind: vi.fn(),
   definitions: vi.fn(),
@@ -99,6 +100,7 @@ vi.mock("$lib/data/bindings", async () => {
       putFilterOnWorkbench: core.putFilterOnWorkbench,
       switchShowMuted: core.switchShowMuted,
       openOnGithub: core.openOnGithub,
+      fetchItem: core.fetchItem,
       pullRequestFiles: core.pullRequestFiles,
       pullRequestFind: core.pullRequestFind,
       definitions: core.definitions,
@@ -4780,6 +4782,9 @@ const toggleList = (target: Element = document.body, init: KeyboardEventInit = {
 const rowNamed = (name: string) =>
   within(document.querySelector<HTMLElement>(".list") as HTMLElement).getByRole("button", { name });
 
+/** The Sidebar's entry for the view on show, which F6 lands on. */
+const currentSidebarEntry = () => sidebar()?.querySelector<HTMLElement>('[aria-current="true"]');
+
 it("hides the Issue list and its edge with Ctrl+Alt+B, and brings them back at their width", async () => {
   core.paneLayout.mockResolvedValue({ ...DEFAULT_LAYOUT, list: 500 });
   const { issueRow } = await listing();
@@ -5172,6 +5177,222 @@ it("lets the Detail pane take the focus only while the list is hidden, so a clic
   await toggleList();
 
   expect([shown, view.getAttribute("tabindex")]).toEqual([null, "-1"]);
+});
+
+it("moves the focus through the panes on show with F6 and Shift+F6, round from either end", async () => {
+  const { issueRow } = await listing();
+  await fireEvent.click(issueRow);
+  const view = await screen.findByRole("region", { name: "Issue view" });
+  const entry = currentSidebarEntry();
+  const row = rowNamed("#112564 GIL drop during collection");
+
+  await press("F6");
+  await vi.waitFor(() => {
+    expect(document.activeElement).toBe(row);
+  });
+  await press("F6");
+  await vi.waitFor(() => {
+    expect(document.activeElement).toBe(view);
+  });
+  await press("F6");
+  expect(document.activeElement).toBe(entry);
+  await press("F6");
+  await vi.waitFor(() => {
+    expect(document.activeElement).toBe(row);
+  });
+  await press("F6", { shiftKey: true });
+  expect(document.activeElement).toBe(entry);
+});
+
+it("skips the Detail pane with nothing open on F6", async () => {
+  await listing();
+  const entry = currentSidebarEntry();
+  const pane = issueList() as HTMLElement;
+
+  await press("F6");
+  await vi.waitFor(() => {
+    expect(document.activeElement).toBe(pane);
+  });
+  await press("F6");
+  expect(document.activeElement).toBe(entry);
+  await press("F6");
+  await vi.waitFor(() => {
+    expect(document.activeElement).toBe(pane);
+  });
+});
+
+it("skips a hidden Sidebar on F6, and goes from nothing to the Detail pane when the list is hidden", async () => {
+  const { issueRow } = await listing();
+  await fireEvent.click(issueRow);
+  const view = await screen.findByRole("region", { name: "Issue view" });
+  const row = rowNamed("#112564 GIL drop during collection");
+  await press("b", { ctrlKey: true });
+
+  await press("F6");
+  await vi.waitFor(() => {
+    expect(document.activeElement).toBe(row);
+  });
+  await press("F6");
+  await vi.waitFor(() => {
+    expect(document.activeElement).toBe(view);
+  });
+  await press("F6", { shiftKey: true });
+  await vi.waitFor(() => {
+    expect(document.activeElement).toBe(row);
+  });
+
+  await toggleList();
+  await vi.waitFor(() => {
+    expect(document.activeElement).toBe(view);
+  });
+  (document.activeElement as HTMLElement).blur();
+  await press("F6");
+  await vi.waitFor(() => {
+    expect(document.activeElement).toBe(view);
+  });
+});
+
+it("takes the focus to the Detail pane on F6 while it fetches an item", async () => {
+  core.fetchItem.mockReturnValue(new Promise(() => {}));
+  const { component } = await listing();
+  component.fetchUnstored(99);
+  await screen.findByText(/Fetching python\/cpython #99/);
+
+  await press("F6");
+  const pane = issueList() as HTMLElement;
+  await vi.waitFor(() => {
+    expect(document.activeElement).toBe(pane);
+  });
+  await press("F6");
+
+  const detail = screen.getByRole("region", { name: "Detail pane" });
+  await vi.waitFor(() => {
+    expect(document.activeElement).toBe(detail);
+  });
+});
+
+it("goes from nothing to the Sidebar on F6 with the list hidden and nothing open, either way", async () => {
+  await listing();
+  await toggleList();
+  (document.activeElement as HTMLElement).blur();
+  const entry = currentSidebarEntry();
+
+  await press("F6");
+  expect(document.activeElement).toBe(entry);
+
+  (document.activeElement as HTMLElement).blur();
+  await press("F6", { shiftKey: true });
+  expect(document.activeElement).toBe(entry);
+});
+
+it("does nothing on F6 with no pane on show", async () => {
+  await listing();
+  await toggleList();
+  await press("b", { ctrlKey: true });
+  (document.activeElement as HTMLElement).blur();
+
+  await press("F6");
+
+  expect(document.activeElement).toBe(document.body);
+});
+
+it("gives the focus back to the list on the item's row on Esc in the Detail pane", async () => {
+  const { issueRow, treeRow } = await listing();
+  await fireEvent.click(issueRow);
+  const view = await screen.findByRole("region", { name: "Issue view" });
+  await press("ArrowDown");
+  expect(document.activeElement).toBe(treeRow);
+  await press("F6");
+  await vi.waitFor(() => {
+    expect(document.activeElement).toBe(view);
+  });
+
+  await fireEvent.keyDown(view, { key: "Escape" });
+
+  await vi.waitFor(() => {
+    expect(document.activeElement).toBe(issueRow);
+  });
+  expect(issueRow.getAttribute("aria-current")).toBe("true");
+});
+
+it("leaves Esc in the Detail pane alone while the list is hidden", async () => {
+  const { issueRow } = await listing();
+  await fireEvent.click(issueRow);
+  const view = await screen.findByRole("region", { name: "Issue view" });
+  await toggleList();
+  await vi.waitFor(() => {
+    expect(document.activeElement).toBe(view);
+  });
+  const escape = keydown({ key: "Escape" });
+
+  await fireEvent(view, escape);
+
+  expect(escape.defaultPrevented).toBe(false);
+  expect(document.activeElement).toBe(view);
+});
+
+it("keeps the focus on the row of the item already open on Enter", async () => {
+  const { issueRow } = await listing();
+  await press("ArrowDown");
+  expect(document.activeElement).toBe(issueRow);
+  await press("Enter");
+  await screen.findByRole("region", { name: "Issue view" });
+  expect(document.activeElement).toBe(issueRow);
+
+  await press("Enter");
+
+  await vi.waitFor(() => {
+    expect(core.openIssue).toHaveBeenCalledTimes(2);
+  });
+  expect(document.activeElement).toBe(issueRow);
+});
+
+it("marks the Detail pane's item on Q once F6 puts the focus there", async () => {
+  const { issueRow, treeRow } = await listing();
+  await fireEvent.click(issueRow);
+  await screen.findByRole("button", { name: "Mark Seen" });
+  await press("ArrowDown");
+  expect(document.activeElement).toBe(treeRow);
+  await press("F6");
+  const view = screen.getByRole("region", { name: "Issue view" });
+  await vi.waitFor(() => {
+    expect(document.activeElement).toBe(view);
+  });
+
+  await fireEvent.keyDown(view, { key: "q" });
+
+  expect(core.markSeen.mock.lastCall?.[1]).toMatchObject({ numbers: [112564, 160662] });
+});
+
+it("opens the cursor's item on Enter when the list itself holds the focus", async () => {
+  const { issueRow } = await listing();
+  await press("ArrowDown");
+  expect(document.activeElement).toBe(issueRow);
+  const pane = issueList() as HTMLElement;
+  pane.focus();
+  expect(document.activeElement).toBe(pane);
+
+  await fireEvent.keyDown(pane, { key: "Enter" });
+
+  expect(await screen.findByRole("region", { name: "Issue view" })).toBeTruthy();
+  expect(core.openIssue).toHaveBeenCalledWith("python/cpython", 112564);
+});
+
+it("moves the focus with the cursor once Q clears the item while the list itself holds the focus", async () => {
+  const { markedSeen } = await threeAlone();
+  const pane = issueList() as HTMLElement;
+  pane.focus();
+
+  await fireEvent.keyDown(pane, { key: "q" });
+  await vi.waitFor(() => {
+    expect(core.markSeen).toHaveBeenCalledOnce();
+  });
+  markedSeen();
+
+  const landed = await screen.findByRole("button", { name: "#6 Next" });
+  await vi.waitFor(() => {
+    expect(document.activeElement).toBe(landed);
+  });
 });
 
 it("says what went wrong above the panes while the list is hidden", async () => {

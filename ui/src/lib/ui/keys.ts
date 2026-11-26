@@ -60,6 +60,8 @@ const IN_TEXT_BOX: ReadonlySet<Action> = new Set([
   "pick_theme",
   "reload_themes",
   "toggle_sidebar",
+  "next_pane",
+  "previous_pane",
   "open_on_github",
   "toggle_diff_view",
   "find_in_diff",

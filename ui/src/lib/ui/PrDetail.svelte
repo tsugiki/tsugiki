@@ -50,8 +50,9 @@
     /** Whether the header offers Mark Seen or Mark Unseen, which it doesn't on a PR of a Muted item
      * (#492). */
     marks?: boolean;
-    /** Whether the pane takes the focus, as it does while the Issue list is hidden. Otherwise a click in it
-     * leaves the focus where it was, so Enter still opens the row under the cursor. */
+    /** Whether the pane takes the focus itself: while the Issue list is hidden, and while the list shows
+     * after a click in its controls or a press of F6. Otherwise a click on its background drops the focus to
+     * the page, which the list's keys take, so Enter still opens the row under the cursor. */
     focusable?: boolean;
     /** What sits at the top of the pane, such as the history's arrows (#586). */
     header?: Snippet;
@@ -181,8 +182,8 @@
   {:else if pr.view}
     {@const view = pr.view}
     {@const stale = staleReviewLine(view.your_review, view.shares_review_of)}
-    <h2>
-      <StateIcon icon={prIcon(view)} />
+    <h2 class="title-line">
+      <span class="state-icon"><StateIcon icon={prIcon(view)} /></span>
       <button
         class="link"
         onclick={() => void links.openOnGitHub(repository, { kind: "pull_request", number: view.number })}

@@ -45,8 +45,9 @@
     onmuteauthor: (view: IssueView) => void;
     /** Pin, or Unpin on a Pinned issue, as the header's ★ offers for the view on show (#488). */
     onpin: (view: IssueView) => void;
-    /** Whether the pane takes the focus, as it does while the Issue list is hidden. Otherwise a click in it
-     * leaves the focus where it was, so Enter still opens the row under the cursor. */
+    /** Whether the pane takes the focus itself: while the Issue list is hidden, and while the list shows
+     * after a click in its controls or a press of F6. Otherwise a click on its background drops the focus to
+     * the page, which the list's keys take, so Enter still opens the row under the cursor. */
     focusable?: boolean;
     /** What sits at the top of the pane, such as the history's arrows (#586). */
     header?: Snippet;
@@ -165,9 +166,9 @@
     <div class="page">
       <!-- The icon in the heading names the state to a screen reader already. -->
       <p class="crumb" aria-hidden="true">{icon?.label ?? "Issue"}</p>
-      <h2>
+      <h2 class="title-line">
         {#if icon}
-          <StateIcon {icon} />
+          <span class="state-icon"><StateIcon {icon} /></span>
         {/if}
         <button
           class="link"

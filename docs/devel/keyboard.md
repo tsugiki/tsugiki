@@ -15,6 +15,7 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
 | Find in diff | `Ctrl+F` |
 | Hide / show the Sidebar | `Ctrl+B` |
 | Hide / show the Issue list | `Ctrl+Alt+B` |
+| Next / previous pane | `F6` / `Shift+F6` |
 | Unfold / fold an Issue's PRs in the Issue list | `→` / `←` |
 | Show only the Detail pane / show the panes | `Ctrl+K Z` |
 | Unified ↔ side-by-side | `Ctrl+Alt+U` |
@@ -48,6 +49,16 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
   Tsugiki's keys win, on any keyboard layout. Zoom is Tsugiki's, kept per machine, and Ctrl+wheel doesn't
   zoom. On macOS the standard menu stays, with Settings… on `Cmd+,`; a remap onto one of its shortcuts is
   refused ([ADR 0013](../adr/0013-webview2-browser-shortcuts-off-tsugiki-owns-its-keys.md)).
+- `F6` moves the focus to the next pane on show, and `Shift+F6` to the previous one, in the order Sidebar,
+  Issue list, Detail pane, round from either end. A pane that isn't shown is skipped: a hidden Sidebar or
+  Issue list, and the Detail pane when nothing is open. With the focus in no pane, `F6` goes to the Issue
+  list, or to the Detail pane when the list is hidden, and to the Sidebar when neither of those shows;
+  `Shift+F6` goes to the pane before it. The focus lands on the Sidebar's entry for the view on show; in the
+  Issue list, on the row under the cursor, or on the list itself when it has no row; and in the Detail pane,
+  on the pane itself, where ↑ ↓ scroll it. The rail inside the Detail pane is not a stop; its tabs have
+  their own keys ([layout.md](layout.md)). In the Detail pane, Esc with nothing on top gives the focus back
+  to the Issue list, on the row of the item on show, or on the list itself when that item has no row, when
+  the list shows.
 - `Ctrl+K O`, "one", switches the Files tab between all files and one file at a time. It is a `Ctrl+K`
   chord, as `Ctrl+K Z` is for the panes, because a free `Ctrl+Alt` letter would clash with AltGr, which
   Windows sends as `Ctrl+Alt` to type characters such as Polish ó on `AltGr+O`. VS Code's own `Ctrl+K O`

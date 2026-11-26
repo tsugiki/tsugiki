@@ -570,7 +570,7 @@
         onpick={openPicker}
         onsettings={openSettings}
         onsavefilter={(draft) => {
-          if (!dialogOpen) saveFilterDraft = draft;
+          saveFilterDraft = draft;
         }}
         {keysActive}
         diffFiles={settings.diffFiles}
@@ -641,8 +641,8 @@
     name={saveFilterDraft.name}
     query={saveFilterDraft.query}
     onsave={async (name, query) => {
-      if (!repositoryHome) return "Tsugiki can't save a Filter without a Repository open.";
-      return repositoryHome.saveFilter(name, query);
+      // Only the Repository's screen, which is what saved this search, opens this dialog.
+      return repositoryHome!.saveFilter(name, query);
     }}
     onclose={() => {
       saveFilterDraft = undefined;

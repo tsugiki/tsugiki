@@ -440,6 +440,39 @@ it("takes no edits to the Save dialog's fields while the save is in flight", asy
   expect(query.readOnly).toBe(true);
   name.focus();
   expect(document.activeElement).toBe(name);
+
+  // A second submit waits for the one in flight, as the button does.
+  await fireEvent.submit(dialog.querySelector("form")!);
+  expect(core.saveFilter).toHaveBeenCalledTimes(1);
+});
+
+it("saves no Filter while a field is empty, even when the form is submitted", async () => {
+  core.home.mockResolvedValue(gcmonHome);
+  core.inbox.mockResolvedValue(inboxPage([]));
+  render(Page);
+  await fireEvent.click(await screen.findByRole("button", { name: "Inbox" }));
+  await screen.findByRole("heading", { name: "Inbox" });
+  core.inbox.mockResolvedValue(
+    inboxPage([listedIssue(7, { title: "It crashes" })], null, "off", false, null, "label:bug is:open"),
+  );
+  await fireEvent.input(screen.getByRole("searchbox", { name: "Search the Inbox" }), {
+    target: { value: "label:bug" },
+  });
+  await screen.findByRole("button", { name: "#7 It crashes" });
+  await fireEvent.click(screen.getByRole("button", { name: "Save" }));
+  const dialog = await screen.findByRole("dialog", { name: "Save as Filter" });
+  await fireEvent.input(within(dialog).getByRole("textbox", { name: "Query" }), {
+    target: { value: "  " },
+  });
+
+  await fireEvent.submit(dialog.querySelector("form")!);
+
+  expect(core.saveFilter).not.toHaveBeenCalled();
+
+  await fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+  await vi.waitFor(() => {
+    expect(screen.queryByRole("dialog", { name: "Save as Filter" })).toBeNull();
+  });
 });
 
 it("says a Read-only Repository is so in the status bar and atop its Issue view, until the core says otherwise", async () => {

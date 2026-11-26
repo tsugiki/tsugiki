@@ -270,9 +270,7 @@ impl Syncs {
         if !self.is_open(repository) {
             return;
         }
-        let Some(settings) = self.open_settings() else {
-            return;
-        };
+        let settings = self.settings_of(repository);
         self.searches.push_back(FilterSearch {
             sync: UserWorkSync::filter_of(&settings, query),
         });
@@ -330,13 +328,12 @@ impl Syncs {
         if queued {
             return;
         }
-        if let Some(open) = self.open_settings() {
-            self.trees.push_back(OpenedTree {
-                number,
-                sync: UserWorkSync::tree_of(&open, number),
-                failures: 0,
-            });
-        }
+        let open = self.settings_of(repository);
+        self.trees.push_back(OpenedTree {
+            number,
+            sync: UserWorkSync::tree_of(&open, number),
+            failures: 0,
+        });
     }
 
     /// The settings of `repository` in the settings owner's view now, or the defaults for one they don't
@@ -388,6 +385,13 @@ impl Syncs {
             (None, None) => self.queue.iter().min_by_key(|queued| queued.held_until)?,
         };
         self.position(&next.sync.repository)
+    }
+
+    /// The place and the sync that take the next step, taken out of the queue.
+    fn take_next(&mut self) -> Option<(usize, Queued)> {
+        let at = self.next_sync()?;
+        let queued = self.queue.remove(at)?;
+        Some((at, queued))
     }
 
     /// The time the next step can run, if there is one.
@@ -516,10 +520,7 @@ impl Syncs {
         {
             return self.step_fill(fill, github, store);
         }
-        let Some(taken) = self
-            .next_sync()
-            .and_then(|at| Some((at, self.queue.remove(at)?)))
-        else {
+        let Some(taken) = self.take_next() else {
             return Ok(None);
         };
         self.step_sync(taken, github, store)
@@ -592,23 +593,14 @@ impl Syncs {
         let repository = search.sync.repository.clone();
         let Some(stepped) = unfinished(step) else {
             // The queue drops a search once its steps end, so no `finish` marks read the pin trees it read.
-            return match search.sync.mark_pin_trees_read(store) {
-                Ok(()) => Ok(None),
-                Err(problem) if !problem.kind.speaks_for_all_of_github() => {
-                    log::warn!(
-                        "Tsugiki couldn't save the trees the saved Filter's search read: {}",
-                        problem.message
-                    );
-                    Ok(None)
-                }
-                Err(problem) => {
-                    self.searches.push_front(search);
-                    Err(StepFailure {
-                        problem,
-                        turn: Turn::Filter,
-                    })
-                }
-            };
+            // A store that won't take them leaves them for the next sync, as a tree's trouble ends the tree.
+            if let Err(problem) = search.sync.mark_pin_trees_read(store) {
+                log::warn!(
+                    "Tsugiki couldn't save the trees the saved Filter's search read: {}",
+                    problem.message
+                );
+            }
+            return Ok(None);
         };
         self.searches.push_front(search);
         Ok(self.after_step(repository, stepped, github))

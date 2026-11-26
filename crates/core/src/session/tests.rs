@@ -1909,6 +1909,17 @@ fn pr_7() -> Fetched {
 }
 
 #[test]
+fn a_saved_filter_s_search_reaches_the_github_thread() {
+    let one = OneRead::new("filter-search-forward", None, vec![]);
+    let query: FilterQuery = "label:bug".to_owned().try_into().unwrap();
+
+    one.demands.search_filter(gcmon(), query);
+
+    assert_eq!(one.queued(), ["filter search label:bug"]);
+    one.finish();
+}
+
+#[test]
 fn a_conversation_that_fills_the_head_of_a_pr_answers_the_await_of_a_demand_it_merged() {
     let one = OneRead::new(
         "conversation-fills-head",

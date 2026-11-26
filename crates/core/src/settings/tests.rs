@@ -3177,6 +3177,7 @@ fn without_folders_the_owner_says_what_went_wrong_with_them() {
         MirrorSource::Download,
     );
     let switching = owner.put_on_workbench(repository("a/b"), query("label:bug"), OnWorkbench::On);
+    let appending = owner.append_filter(repository("a/b"), filter("Bugs", "label:bug"));
     let answering = owner.save_mirror_source(repository("a/b"), MirrorSource::Download);
     let resizing = owner.save_panes(WIDE);
     let running = owner.remember_command(CommandId::new("Reset Layout"));
@@ -3190,6 +3191,7 @@ fn without_folders_the_owner_says_what_went_wrong_with_them() {
     assert_eq!(applying.unwrap_err(), lost);
     assert_eq!(adding.unwrap_err(), lost);
     assert_eq!(switching.unwrap_err(), lost);
+    assert_eq!(appending.unwrap_err(), lost);
     assert_eq!(opening.unwrap_err(), lost);
     assert_eq!(answering.unwrap_err(), lost);
     assert_eq!(resizing.unwrap_err(), lost);

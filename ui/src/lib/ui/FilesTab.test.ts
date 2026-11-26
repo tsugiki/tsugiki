@@ -22,6 +22,7 @@ import {
   done,
   fileLines,
   foundText,
+  newsEntry,
   ok,
   readyFiles,
   refused,
@@ -479,29 +480,7 @@ it("says in their headers which files changed since a Stale review, and starts t
 
 it("renders the PR's NEWS entries above its rows, and follows their links in the browser", async () => {
   const news: NewsEntry[] = [
-    {
-      path: "Misc/NEWS.d/next/Library/2026-11-07.gh-issue-1.abc.rst",
-      section: "Library",
-      issue: { text: "gh-1", to: { site: "gh_issue", number: 1 } },
-      blocks: [
-        {
-          kind: "paragraph",
-          pieces: [
-            { kind: "text", text: "Fix " },
-            { kind: "code", text: "ast.parse()" },
-            { kind: "text", text: " with " },
-            { kind: "emphasis", text: "care" },
-            { kind: "text", text: " and " },
-            { kind: "strong", text: "force" },
-            { kind: "text", text: "; see " },
-            { kind: "link", text: "PEP 8", to: { site: "pep", number: 8 } },
-            { kind: "text", text: "." },
-          ],
-        },
-        { kind: "list", items: [[{ kind: "paragraph", pieces: [{ kind: "text", text: "One" }] }]] },
-        { kind: "code", text: "x = 1" },
-      ],
-    },
+    newsEntry(),
     {
       path: "Misc/NEWS.d/next/C_API/notes.rst",
       section: "C API",

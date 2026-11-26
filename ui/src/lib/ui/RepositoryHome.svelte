@@ -258,9 +258,8 @@
    * cursor, so the row the user left doesn't look selected too, and Enter doesn't open it again. A pick
    * from the history's list can land on the item on show, which then only takes the cursor.
    *
-   * The tab a PR on show switches to as Enter or a click on its row opens it leaves the focus where it was:
-   * in the Issue list it stays there, and in the Detail pane it moves to the new tab's content, as a tab
-   * switch does (#1075).
+   * The PR on show switches its tab as Enter or a click on its row opens it, and the focus stays where it
+   * was: the press came from the Issue list, which keeps its keys (#1075).
    *
    * The history can go through to a file view too (#456): it shows its PR, on the Files tab, with the view
    * over it, which takes the focus, and the cursor goes to the PR's row. Any other place shows its PR with no
@@ -276,11 +275,7 @@
     workbench.moveTo(stop);
     if (how !== "open" && fileView === undefined) focusCursor();
     if (stop.kind === "pull_request" && detail instanceof PrViewState && sameStop(detail.line, stop)) {
-      if (how === "open") {
-        const follows = focusInDetail();
-        detail.switchTab();
-        if (follows) focusTabContent();
-      }
+      if (how === "open") detail.switchTab();
       showFileView(detail, fileView);
       return;
     }
@@ -1282,9 +1277,8 @@
     return target instanceof Node && detailPane()?.contains(target) === true;
   }
 
-  /** Whether the focus is in the Detail pane, the rail inside it too: a tab switch, as Enter or a click on
-   * the open PR's row makes, then moves the focus to the new tab's content, and leaves it in the Issue list
-   * when it was there (#1075). */
+  /** Whether the focus is in the Detail pane, the rail inside it too: a tab switch taken there then moves
+   * the focus to the new tab's content, and one taken in the Issue list leaves it there (#1075). */
   const focusInDetail = () => inDetailPane(document.activeElement);
 
   /** Whether `focused` is a row of the list, the list itself, which holds the focus whenever nothing else in
@@ -1319,11 +1313,19 @@
     });
   }
 
-  /** The region PgDn, PgUp, Home and End move: the one that holds the focus when it scrolls by itself, as
-   * the Definition peek's code and its hits do, and else the one the tab's keys scroll (#1075). */
+  /** The region PgDn, PgUp, Home and End move: the one that holds the focus when it scrolls, as the
+   * Definition peek's code or a long enough list of its hits does, and else the one the tab's keys scroll
+   * (#1075). A focused region with nothing to scroll, such as a short hits list, leaves the keys their
+   * tab's content. */
   function pagedRegion(): HTMLElement | null | undefined {
     const focused = document.activeElement;
-    if (focused instanceof HTMLElement && focused.hasAttribute("data-scrolls")) return focused;
+    if (
+      focused instanceof HTMLElement &&
+      focused.hasAttribute("data-scrolls") &&
+      focused.scrollHeight > focused.clientHeight
+    ) {
+      return focused;
+    }
     const pane = detailPane();
     return scrollerIn(pane) ?? pane;
   }

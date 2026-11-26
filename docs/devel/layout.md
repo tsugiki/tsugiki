@@ -217,8 +217,9 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
     shows a 2 px line in the Theme's focus colour along its top edge, as VS Code does, so the user can tell
     where ↑ ↓ go. With the focus in the Detail pane, as after a click on one of its buttons or a press of
     `F6`, ↑ ↓ scroll it a step at a time, `PgDn` and `PgUp` page it, and `Home` and `End` go to its start and
-    end, even while the list shows: the diff on Files, the file view over it, or the Conversation. With the
-    focus on no control, as at launch, the list takes the keys and shows the line. While the
+    end, even while the list shows: the diff on Files, the file view over it, the Conversation, or the code
+    and hits of a Definition peek. With the focus on no control, as at launch, the list takes the keys and
+    shows the line. While the
     list holds the focus, its row under the cursor takes the active selection colour, and the inactive one,
     a dim tint, once the focus moves away. The palette or a dialog on top, or another app in front, leaves
     every pane inactive. No ring goes round a whole pane.

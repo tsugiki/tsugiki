@@ -1263,18 +1263,16 @@ it("follows the tab with the focus in the rail, which the Detail pane holds", as
   });
 });
 
-it("follows the tab when a click on the open PR's row switches it, with the focus in the pane", async () => {
+it("leaves the focus on the row when a click on the open PR's row switches the tab", async () => {
   const { prRow } = await listing();
   await fireEvent.click(prRow);
-  const view = screen.getByRole("region", { name: "PR view" });
-  (await within(view).findByRole("button", { name: "Mark Seen" })).focus();
+  // A browser focuses the row on the press, before the click opens it.
+  prRow.focus();
 
   await fireEvent.click(prRow);
 
   expect(screen.getByRole("tab", { name: "Files" }).getAttribute("aria-selected")).toBe("true");
-  await vi.waitFor(() => {
-    expect(document.activeElement).toBe(view);
-  });
+  expect(document.activeElement).toBe(prRow);
 });
 
 it("switches the Files tab between unified and side by side with Ctrl+Alt+U, for each PR after", async () => {
@@ -5325,21 +5323,13 @@ it("pages the file view with PgDn and PgUp, and goes to its start and end, while
   expect(onScroll.mock.calls).toEqual(PAGE_CALLS);
 });
 
-/** Opens the file view of a PR's Files tab with a Definition peek inside its code, showing two hits in an
- * overflow. Returns the file view's code, and the peek's code and hits. */
+/** Opens the file view of a PR's Files tab with a Definition peek inside its code, whose lookup found two
+ * hits. Returns the file view, its code, and the peek's code and hits. */
 const onPeek = async () => {
-  const view = eggsView();
-  vi.spyOn(PrFilesState.prototype, "goToDefinition").mockImplementation(function (this: PrFilesState) {
-    this.openFileView(view);
-    return Promise.resolve();
-  });
   core.definitions.mockResolvedValue(
     ok({ state: "found", hits: [hitIn("Lib/eggs.py", 5), hitIn("Lib/spam.py", 7)] }),
   );
-  await fireEvent.click(await onFiles());
-  await screen.findByRole("region", { name: "Diff" });
-  await press("F12");
-  await screen.findByRole("region", { name: "File view" });
+  const { view } = await goIntoFileView();
   view.code.pick = { line: 4, word: "x", start: 0, end: 1, caret: 0 };
   await press("F12", { altKey: true });
   const file = screen.getByRole("region", { name: "File view" });
@@ -5378,6 +5368,20 @@ it("pages the Definition peek's hits with PgDn and PgUp, and not the code or the
 
   expect(onHits.mock.calls).toEqual(PAGE_CALLS);
   expect([onCode.mock.calls, onFile.mock.calls]).toEqual([[], []]);
+});
+
+it("pages the file view's code from a hits list that holds the focus and doesn't scroll", async () => {
+  const { file, code, hits } = await onPeek();
+  const onHits = vi.fn();
+  Object.defineProperty(hits, "scrollBy", { value: onHits });
+  const onCode = scrollsBy(code);
+  const onFile = scrollsBy(file);
+  hits.focus();
+
+  for (const key of pageKeys) await fireEvent.keyDown(hits, { key });
+
+  expect(onCode.mock.calls).toEqual(PAGE_CALLS);
+  expect([onHits.mock.calls, onFile.mock.calls]).toEqual([[], []]);
 });
 
 it("leaves PgDn, PgUp, Home and End to the list while it holds the focus", async () => {

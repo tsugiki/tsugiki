@@ -167,7 +167,7 @@ test("a title that wraps keeps the state icon on its first line", async ({ page 
     home,
     workbench: workbenchPage([{ ...own, title }]),
     openPullRequest: done,
-    pullRequest: ok({ ...view, title }),
+    pullRequest: ok({ ...view, issues: [], title }),
   });
   await page.goto("/");
 
@@ -185,7 +185,7 @@ test("a title that fits on one line leaves the rest of its heading to no link", 
     home,
     workbench: workbenchPage([{ ...own, title }]),
     openPullRequest: done,
-    pullRequest: ok({ ...view, number: own.number, title }),
+    pullRequest: ok({ ...view, number: own.number, issues: [], title }),
     openOnGithub: done,
   });
   await page.goto("/");

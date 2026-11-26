@@ -5,6 +5,7 @@ import { remapKeys } from "$lib/state/keymap.svelte";
 import { PanesState } from "$lib/state/panes.svelte";
 import { PrViewState, type PrView } from "$lib/state/pr-view.svelte";
 import { done, ok, readyFiles, refused, workbenchRow } from "$lib/testing/fixtures";
+import { headerButtons } from "$lib/testing/helpers";
 import { stampOf } from "./time";
 import PrDetail from "./PrDetail.svelte";
 
@@ -110,6 +111,12 @@ it("says the time since with a clock a day on", async () => {
 /** The PR on show, which stops after each test, as its Files tab loads once it shows. */
 let onShow: PrViewState | undefined;
 
+/** The view the core answers: the Issue `issue` a PR opened from one is under holds it. */
+const held = (answer: PrView | null, issue: number | undefined): PrView | null =>
+  answer && issue !== undefined && answer.issues.length === 0
+    ? { ...answer, issues: [{ number: issue, pinned: false }] }
+    : answer;
+
 /** Shows the PR as opened from Issue `issue`, in the panes laid out as `panes` says. */
 const shown = async (
   answer: PrView | null,
@@ -124,7 +131,7 @@ const shown = async (
     marks?: boolean;
   } = {},
 ) => {
-  core.pullRequest.mockResolvedValue(ok(answer));
+  core.pullRequest.mockResolvedValue(ok(held(answer, issue)));
   const state = new PrViewState("python/cpython", 11, issue, panes);
   onShow = state;
   await state.load();
@@ -470,10 +477,6 @@ it("offers Mark Seen in its header while the PR has New activity, and Mark Unsee
   expect(screen.getByRole("button", { name: "Mark Unseen" })).toBeTruthy();
 });
 
-/** The header's buttons, by their words: the view's own and Mark Seen. */
-const headerButtons = () =>
-  screen.getAllByRole("button", { name: /^(un)?(archive|mute|mark)/i }).map((button) => button.textContent);
-
 it("offers Archive, Mute and Mute author beside Mark Seen on a Standalone PR, and each acts on the PR", async () => {
   const onarchive = vi.fn();
   const onmute = vi.fn();
@@ -530,6 +533,12 @@ it("leaves Mute author off on the user's own Standalone PR", async () => {
 
 it("shows only Mark Seen on a PR in an Issue's tree, whose actions act on its Issue", async () => {
   await shown(view, 10);
+
+  expect(headerButtons()).toEqual(["Mark Seen"]);
+});
+
+it("shows only Mark Seen on a tree PR the view wasn't opened from, as its view says", async () => {
+  await shown({ ...view, issues: [{ number: 10, pinned: false }] }, undefined);
 
   expect(headerButtons()).toEqual(["Mark Seen"]);
 });

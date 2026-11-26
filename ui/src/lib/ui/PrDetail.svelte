@@ -204,11 +204,11 @@
       </button>
     </h2>
     <p class="byline"><b>{view.author ?? "deleted user"}</b> <StateWords row={view} /></p>
-    <!-- A Standalone PR offers the actions of the item it shows: Archive, Mute and Mute author (#1077). A PR
-         in an Issue's tree shows only Mark Seen, as its `gh-N` crumb opens the Issue view, where the Issue's
-         buttons are. -->
+    <!-- A PR no Issue's tree holds offers the actions of the item it shows: its own, or the Standalone PR's
+         over its Backport (#1077). A PR in an Issue's tree shows only Mark Seen, as its `gh-N` crumb opens
+         the Issue view, where the Issue's buttons are. -->
     <MarkButton seen={view.seen} {onmark} {marks}>
-      {#if pr.issue === undefined}
+      {#if view.issues.length === 0}
         <HideButtons {view} {onarchive} {onmute} {onmuteauthor} />
       {/if}
     </MarkButton>

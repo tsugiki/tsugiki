@@ -12,6 +12,7 @@ import type {
   LanguageServerSettings_Serialize as LanguageServerSettings,
   ListedItem_Serialize as ListedItem,
   LoadedSettings_Serialize as LoadedSettings,
+  NewsEntry_Serialize as NewsEntry,
   Opened_Serialize as Opened,
   PrFiles_Serialize as PrFiles,
   RepositoryCheck_Serialize as RepositoryCheck,
@@ -204,6 +205,33 @@ export const readyFiles = (rows: number, more: Partial<Omit<ReadyFiles, "state">
   rows,
   news: [],
   threads: { kind: "shown", threads: [] },
+  ...more,
+});
+
+/** A NEWS entry for the Library section, which names gh-1 and links PEP 8, with each piece in it, unless
+ * `more` says otherwise. */
+export const newsEntry = (more: Partial<NewsEntry> = {}): NewsEntry => ({
+  path: "Misc/NEWS.d/next/Library/2026-11-07.gh-issue-1.abc.rst",
+  section: "Library",
+  issue: { text: "gh-1", to: { site: "gh_issue", number: 1 } },
+  blocks: [
+    {
+      kind: "paragraph",
+      pieces: [
+        { kind: "text", text: "Fix " },
+        { kind: "code", text: "ast.parse()" },
+        { kind: "text", text: " with " },
+        { kind: "emphasis", text: "care" },
+        { kind: "text", text: " and " },
+        { kind: "strong", text: "force" },
+        { kind: "text", text: "; see " },
+        { kind: "link", text: "PEP 8", to: { site: "pep", number: 8 } },
+        { kind: "text", text: "." },
+      ],
+    },
+    { kind: "list", items: [[{ kind: "paragraph", pieces: [{ kind: "text", text: "One" }] }]] },
+    { kind: "code", text: "x = 1" },
+  ],
   ...more,
 });
 

@@ -3,6 +3,7 @@
      "Show file" goes to its file in the diff (#605). -->
 <script lang="ts">
   import type { NewsBlock, NewsEntry, NewsPiece } from "$lib/state/pr-files.svelte";
+  import { followLink, linkTitle } from "./link-tooltip";
   import { address } from "./news-links";
 
   let {
@@ -10,23 +11,13 @@
     onlink,
     onfile,
   }: { news: NewsEntry[]; onlink: (address: string) => void; onfile: (path: string) => void } = $props();
-
-  /** Follows a link in the system browser, as a link in a description does. Enter on a link arrives as a
-   * click, and a middle click as an auxclick, which would otherwise ask the webview for a window. */
-  function followLink(e: MouseEvent) {
-    // Only an element takes a click.
-    const link = (e.target as Element).closest("a");
-    if (!link) return;
-    e.preventDefault();
-    onlink(link.href);
-  }
 </script>
 
 <!-- eslint-disable svelte/no-navigation-without-resolve -- Each link opens in the system browser through
      onlink, and none moves the window. -->
 
 <!-- prettier-ignore -->
-{#snippet pieces(runs: NewsPiece[])}{#each runs as piece, at (at)}{#if piece.kind === "emphasis"}<em>{piece.text}</em>{:else if piece.kind === "strong"}<strong>{piece.text}</strong>{:else if piece.kind === "code"}<code>{piece.text}</code>{:else if piece.kind === "link"}<a href={address(piece.to)}>{piece.text}</a>{:else}{piece.text}{/if}{/each}{/snippet}
+{#snippet pieces(runs: NewsPiece[])}{#each runs as piece, at (at)}{#if piece.kind === "emphasis"}<em>{piece.text}</em>{:else if piece.kind === "strong"}<strong>{piece.text}</strong>{:else if piece.kind === "code"}<code>{piece.text}</code>{:else if piece.kind === "link"}<a href={address(piece.to)} title={linkTitle(address(piece.to))}>{piece.text}</a>{:else}{piece.text}{/if}{/each}{/snippet}
 
 {#snippet blocks(list: NewsBlock[])}
   {#each list as block, at (at)}
@@ -49,10 +40,12 @@
   <section
     class="news sans reading"
     aria-label="NEWS entries"
-    onclick={followLink}
+    onclick={(e) => {
+      followLink(e, onlink);
+    }}
     onauxclick={(e) => {
       // A right click opens a menu, and the side buttons go back and forward.
-      if (e.button === 1) followLink(e);
+      if (e.button === 1) followLink(e, onlink);
     }}
   >
     {#each news as entry (entry.path)}
@@ -60,7 +53,8 @@
         <p class="about">
           <span class="section">{entry.section}</span>
           {#if entry.issue}
-            <a href={address(entry.issue.to)}>{entry.issue.text}</a>
+            <a href={address(entry.issue.to)} title={linkTitle(address(entry.issue.to))}>{entry.issue.text}</a
+            >
           {/if}
           <button
             type="button"

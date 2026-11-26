@@ -3,6 +3,7 @@
      "Show file" goes to its file in the diff (#605). -->
 <script lang="ts">
   import type { NewsBlock, NewsEntry, NewsPiece } from "$lib/state/pr-files.svelte";
+  import { linkTooltip } from "./link-tooltip";
   import { address } from "./news-links";
 
   let {
@@ -26,7 +27,7 @@
      onlink, and none moves the window. -->
 
 <!-- prettier-ignore -->
-{#snippet pieces(runs: NewsPiece[])}{#each runs as piece, at (at)}{#if piece.kind === "emphasis"}<em>{piece.text}</em>{:else if piece.kind === "strong"}<strong>{piece.text}</strong>{:else if piece.kind === "code"}<code>{piece.text}</code>{:else if piece.kind === "link"}<a href={address(piece.to)}>{piece.text}</a>{:else}{piece.text}{/if}{/each}{/snippet}
+{#snippet pieces(runs: NewsPiece[])}{#each runs as piece, at (at)}{#if piece.kind === "emphasis"}<em>{piece.text}</em>{:else if piece.kind === "strong"}<strong>{piece.text}</strong>{:else if piece.kind === "code"}<code>{piece.text}</code>{:else if piece.kind === "link"}<a href={address(piece.to)} title={linkTooltip(address(piece.to))}>{piece.text}</a>{:else}{piece.text}{/if}{/each}{/snippet}
 
 {#snippet blocks(list: NewsBlock[])}
   {#each list as block, at (at)}
@@ -60,7 +61,9 @@
         <p class="about">
           <span class="section">{entry.section}</span>
           {#if entry.issue}
-            <a href={address(entry.issue.to)}>{entry.issue.text}</a>
+            <a href={address(entry.issue.to)} title={linkTooltip(address(entry.issue.to))}
+              >{entry.issue.text}</a
+            >
           {/if}
           <button
             type="button"

@@ -5,6 +5,7 @@
   import { AccountState, signedIn, tokenReadme } from "$lib/state/account.svelte";
   import { LinkOpener } from "$lib/state/link-opener.svelte";
   import type { Status } from "$lib/state/status.svelte";
+  import { linkTooltip } from "./link-tooltip";
   import { TOKEN_SOURCE_WORDS } from "./token-words";
 
   let { status, about }: { status: Status | undefined; about: About | undefined } = $props();
@@ -60,8 +61,9 @@
 </ul>
 <p>
   The code that holds and sends the token is a crate of its own, small enough to check, and its
-  <a href={readme} onclick={followReadme} onauxclick={followReadmeByWheel}>README</a> says what it does in plain
-  words.
+  <a href={readme} title={linkTooltip(readme)} onclick={followReadme} onauxclick={followReadmeByWheel}
+    >README</a
+  > says what it does in plain words.
 </p>
 {#if readmePage.problem !== undefined}
   <p role="alert">{readmePage.problem}</p>

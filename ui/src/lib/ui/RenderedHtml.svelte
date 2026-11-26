@@ -3,6 +3,7 @@
   // running, and from loading anything but images from GitHub's image hosts (ADR 0005, #761). A `<picture>`
   // picks its source by `prefers-color-scheme`, which follows the window as it turns to the theme's side.
   // This keeps the HTML from taking the window away from Tsugiki.
+  import { linkTooltip } from "./link-tooltip";
   import { resign, sameButSignatures } from "./signed-addresses";
 
   let { html, onlink }: { html: string; onlink: (address: string) => void } = $props();
@@ -24,7 +25,19 @@
     for (const tag of template.content.querySelectorAll("meta, base")) tag.remove();
     const kept = drawn !== undefined && sameButSignatures(drawn, html) && resign(node, template.content);
     if (!kept) node.replaceChildren(template.content);
+    titleLinks(node);
     drawn = html;
+  }
+
+  /** Gives each link that a click follows its tooltip, from the address it has now. `resign` gives a kept
+   * node a fresh address, so this runs after it, and a link within the text, or one with nowhere to go, has
+   * no tooltip to say where it goes. */
+  function titleLinks(node: ParentNode) {
+    for (const link of node.querySelectorAll("a[href]")) {
+      const address = link.getAttribute("href") ?? "";
+      if (address === "" || address.startsWith("#")) link.removeAttribute("title");
+      else link.setAttribute("title", linkTooltip(address));
+    }
   }
 
   /** Follows a link in the system browser. Enter on a link arrives as a click, so keys need nothing more. */

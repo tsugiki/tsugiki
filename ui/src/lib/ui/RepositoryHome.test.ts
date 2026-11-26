@@ -51,6 +51,7 @@ const core = vi.hoisted(() => ({
   putFilterOnWorkbench: vi.fn(),
   switchShowMuted: vi.fn(),
   openOnGithub: vi.fn(),
+  fetchItem: vi.fn(),
   pullRequestFiles: vi.fn(),
   pullRequestFind: vi.fn(),
   definitions: vi.fn(),
@@ -99,6 +100,7 @@ vi.mock("$lib/data/bindings", async () => {
       putFilterOnWorkbench: core.putFilterOnWorkbench,
       switchShowMuted: core.switchShowMuted,
       openOnGithub: core.openOnGithub,
+      fetchItem: core.fetchItem,
       pullRequestFiles: core.pullRequestFiles,
       pullRequestFind: core.pullRequestFind,
       definitions: core.definitions,
@@ -5248,6 +5250,50 @@ it("skips a hidden Sidebar on F6, and goes from nothing to the Detail pane when 
   await vi.waitFor(() => {
     expect(document.activeElement).toBe(view);
   });
+});
+
+it("takes the focus to the Detail pane on F6 while it fetches an item", async () => {
+  core.fetchItem.mockReturnValue(new Promise(() => {}));
+  const { component } = await listing();
+  component.fetchUnstored(99);
+  await screen.findByText(/Fetching python\/cpython #99/);
+
+  await press("F6");
+  const pane = issueList() as HTMLElement;
+  await vi.waitFor(() => {
+    expect(document.activeElement).toBe(pane);
+  });
+  await press("F6");
+
+  const detail = screen.getByRole("region", { name: "Detail pane" });
+  await vi.waitFor(() => {
+    expect(document.activeElement).toBe(detail);
+  });
+});
+
+it("goes from nothing to the Sidebar on F6 with the list hidden and nothing open, either way", async () => {
+  await listing();
+  await toggleList();
+  (document.activeElement as HTMLElement).blur();
+  const entry = currentSidebarEntry();
+
+  await press("F6");
+  expect(document.activeElement).toBe(entry);
+
+  (document.activeElement as HTMLElement).blur();
+  await press("F6", { shiftKey: true });
+  expect(document.activeElement).toBe(entry);
+});
+
+it("does nothing on F6 with no pane on show", async () => {
+  await listing();
+  await toggleList();
+  await press("b", { ctrlKey: true });
+  (document.activeElement as HTMLElement).blur();
+
+  await press("F6");
+
+  expect(document.activeElement).toBe(document.body);
 });
 
 it("gives the focus back to the list on the item's row on Esc in the Detail pane", async () => {

@@ -1224,18 +1224,24 @@
     if (stops.length === 0) return;
     const current = focusedPane();
     const at = current === undefined ? -1 : stops.indexOf(current);
-    const next =
+    const to =
       at === -1
-        ? stops[step === 1 ? paneStart(stops) : (paneStart(stops) - 1 + stops.length) % stops.length]
-        : stops[(at + step + stops.length) % stops.length];
-    if (next === undefined) return;
-    if (next === "sidebar") {
-      sidebarPane()?.querySelector<HTMLElement>('[aria-current="true"]')?.focus();
-    } else if (next === "list") {
-      focusList();
-    } else {
-      focusDetail();
-    }
+        ? step === 1
+          ? paneStart(stops)
+          : (paneStart(stops) - 1 + stops.length) % stops.length
+        : (at + step + stops.length) % stops.length;
+    // As far as TypeScript knows, the pane at `to` may be past the end, and a check for that would leave a
+    // branch no test reaches, which the coverage gate fails. So this looks for the pane at `to` among them.
+    stops.forEach((pane, index) => {
+      if (index !== to) return;
+      if (pane === "sidebar") {
+        sidebarPane()?.querySelector<HTMLElement>('[aria-current="true"]')?.focus();
+      } else if (pane === "list") {
+        focusList();
+      } else {
+        focusDetail();
+      }
+    });
   }
 
   /** Gives the list the focus, on the row under the cursor, which scrolls into view, or on the list itself

@@ -132,7 +132,8 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
   right-click menu lands ([#927](https://github.com/tsugiki/tsugiki/issues/927)), a right-click. A second
   action replaces the words and starts the five seconds again; the panel goes after five, and the pointer
   on it holds the countdown. A failed action shows the window's alert and no panel. The panel takes no
-  focus and holds no focusable element, and it offers no Undo, which
+  focus, no click and no wheel, and holds no focusable element, so keys, clicks and the wheel still reach
+  what it floats over. It offers no Undo, which
   [#1071](https://github.com/tsugiki/tsugiki/issues/1071) adds to it.
 - A PR that fixes no Issue is a **Standalone PR**: its own item in the Issue list.
 - A row's age, as "3h ago", measures GitHub's `updatedAt`: a PR's own update on a PR's row, and on an

@@ -2,6 +2,7 @@ import { fireEvent, render, screen } from "@testing-library/svelte";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { openLink } from "$lib/state/browser";
 import { HOUR_POINTS, OCTOCAT_ONLINE, statusOf } from "$lib/testing/fixtures";
+import { measureHeight } from "$lib/testing/helpers";
 import { stampOf } from "./time";
 import StatusBar from "./StatusBar.svelte";
 
@@ -822,12 +823,8 @@ describe("StatusBar's request in flight", () => {
 });
 
 describe("its drawn height", () => {
-  afterEach(() => {
-    vi.restoreAllMocks();
-  });
-
   it("tells the window the height it draws at, so the action panel sits above it (#1072)", () => {
-    vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockReturnValue(24);
+    measureHeight(24, { dimension: "client" });
     const onheight = vi.fn();
     render(StatusBar, { status: OCTOCAT_ONLINE, onheight });
 

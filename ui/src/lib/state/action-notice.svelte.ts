@@ -23,8 +23,20 @@ export function authorWords(login: string, did: "muted" | "unmuted"): string {
   return `${did === "muted" ? "Muted" : "Unmuted"} ${login}`;
 }
 
-/** The room the panel leaves between itself and the bar or the window's edge, in pixels. */
+/** The gap between the panel and the HUD or status bar under it, in pixels. */
 export const PANEL_GAP = 8;
+
+/** The panel's distance from the window's right edge, in pixels. */
+export const PANEL_EDGE = 8;
+
+/** Where the panel paints, in the window's CSS pixels. Its pointer events pass through, so the countdown
+ * tests the pointer against this box instead (#1072). */
+export type PanelBox = { left: number; right: number; top: number; bottom: number };
+
+/** Whether the point `x`, `y` lies on `box`. */
+export function overBox(box: PanelBox, x: number, y: number): boolean {
+  return x >= box.left && x <= box.right && y >= box.top && y <= box.bottom;
+}
 
 /**
  * The action panel's text and its countdown (#1072). It says what the last action did and goes after five

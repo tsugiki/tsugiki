@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { ActionNotice, authorWords, didWords, itemName, NOTICE_MS } from "./action-notice.svelte";
+import { ActionNotice, authorWords, didWords, itemName, NOTICE_MS, overBox } from "./action-notice.svelte";
 
 afterEach(() => {
   vi.useRealTimers();
@@ -104,5 +104,19 @@ describe("the countdown", () => {
     notice.release();
     notice.clear();
     expect(notice.text).toBeUndefined();
+  });
+});
+
+describe("whether the pointer is on the panel", () => {
+  const box = { left: 10, right: 20, top: 10, bottom: 20 };
+
+  it("is on the box at its edges, and off it just outside each", () => {
+    expect(overBox(box, 15, 15)).toBe(true);
+    expect(overBox(box, 10, 10)).toBe(true);
+    expect(overBox(box, 20, 20)).toBe(true);
+    expect(overBox(box, 9, 15)).toBe(false);
+    expect(overBox(box, 21, 15)).toBe(false);
+    expect(overBox(box, 15, 9)).toBe(false);
+    expect(overBox(box, 15, 21)).toBe(false);
   });
 });

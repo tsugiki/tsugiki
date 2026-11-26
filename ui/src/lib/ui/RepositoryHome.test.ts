@@ -23,7 +23,7 @@ import {
 } from "$lib/testing/fixtures";
 import { hitIn } from "$lib/testing/state";
 import { stampOf } from "./time";
-import { keydown, nextTask, pressed } from "$lib/testing/helpers";
+import { keydown, measureHeight, nextTask, pressed } from "$lib/testing/helpers";
 import RepositoryHome from "./RepositoryHome.svelte";
 
 /** What the page asks the screen for the palette's rows, from the screen's own exports. */
@@ -6283,11 +6283,8 @@ it("keeps the action panel in the page empty as a polite live region before any 
   expect(actionPanel().textContent).toBe("");
 });
 
-it("leaves the action panel's height out of a list that fills the window, until a Detail pane shows", async () => {
-  vi.spyOn(HTMLElement.prototype, "offsetHeight", "get").mockReturnValue(28);
-  onTestFinished(() => {
-    vi.restoreAllMocks();
-  });
+it("leaves the action panel's room out of a list that fills the window, until a Detail pane shows", async () => {
+  measureHeight(28);
   const { component, treeRow } = await listing();
   const list = () => screen.getByRole("region", { name: "Issue list" });
 

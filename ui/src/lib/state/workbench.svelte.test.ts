@@ -1735,6 +1735,11 @@ describe("WorkbenchState's Inbox", () => {
     expect(state.olderToRead).toBe(false);
     expect(state.needsGitHub).toBe(false);
 
+    // The box says the same text again without asking: a keystroke that changes nothing reads nothing.
+    const asked = vi.mocked(commands.inbox).mock.calls.length;
+    await state.setSearch("Issue 3");
+    expect(vi.mocked(commands.inbox).mock.calls.length).toBe(asked);
+
     paging({ latest: page([3, 2], at(2, 9)) });
     await state.setSearch("");
     expect(commands.inbox).toHaveBeenLastCalledWith("python/cpython", { kind: "latest" }, "");

@@ -5353,6 +5353,27 @@ it("lists the Inbox from the Sidebar, each Issue with its PRs, in its own order"
   expect(screen.getByRole("button", { name: "#160662 gh-112564: Fix UAF for gc debug print" })).toBeTruthy();
 });
 
+it("narrows the Inbox from its search box, and says why a search lists nothing", async () => {
+  core.workbench.mockResolvedValue(workbenchPage([]));
+  core.inbox.mockResolvedValue(pageOf([{ ...issue, attention: null }]));
+  render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onsettings: () => {} });
+  await fireEvent.click(await screen.findByRole("button", { name: "Inbox" }));
+  await screen.findByRole("heading", { name: "Inbox" });
+  const box = screen.getByRole("searchbox", { name: "Search the Inbox" }) as HTMLInputElement;
+
+  core.inbox.mockResolvedValue(pageOf([]));
+  await fireEvent.input(box, { target: { value: "Issue 112564" } });
+  await waitFor(() => {
+    expect(core.inbox).toHaveBeenLastCalledWith("python/cpython", { kind: "latest" }, "Issue 112564");
+  });
+  expect(await screen.findByText(/Nothing in the cache matches this search/)).toBeTruthy();
+
+  // A form the cache doesn't read is GitHub's to answer, and the list says so instead of "nothing".
+  core.inbox.mockResolvedValue(inboxPage([], null, "off", true));
+  await fireEvent.input(box, { target: { value: "review:approved" } });
+  expect(await screen.findByText(/This search needs GitHub/)).toBeTruthy();
+});
+
 it("switches Show muted atop the Inbox, which greys each row a Muted author wrote", async () => {
   const muted: MuteAuthor = { kind: "unmute", login: "some-author" };
   const items = [

@@ -55,17 +55,20 @@ impl Page {
                 workbench: Workbench::read(reader, repository, view, order)?,
             },
             Listing::Inbox { page, search } => Self::Inbox {
-                inbox: Inbox::read_now(
-                    reader,
-                    repository,
-                    InboxAsk {
-                        page: *page,
-                        search,
-                    },
-                )?,
+                inbox: read_inbox(reader, repository, *page, search)?,
             },
         })
     }
+}
+
+/// Reads `page` of `repository`'s Inbox, as `search` narrows it (#464).
+fn read_inbox(
+    reader: &StoreReader,
+    repository: &RepositorySettings,
+    page: InboxPage,
+    search: &str,
+) -> Result<Inbox, Error> {
+    Inbox::read_now(reader, repository, InboxAsk { page, search })
 }
 
 /// The core's answer to an action it kept (#1052): the number the window gave the action, the Repository it

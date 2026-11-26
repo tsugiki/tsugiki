@@ -1316,6 +1316,41 @@ fn a_search_keeps_an_orphan_backport_under_its_issue_and_a_standalone_backport_o
 }
 
 #[test]
+fn a_search_keeps_a_pr_on_its_matching_backport_and_drops_a_backport_it_does_not_find() {
+    let world = ViewWorld::new("inbox-search-backports-beneath-a-pr");
+    let mut top = pr_at(10, Some(1), ago(6));
+    top.title = "gh-1: docs for it".to_owned();
+    let kept = PullRequestFacts {
+        title: "[3.14] docs for it (GH-10)".to_owned(),
+        ..backport_at(11, 10, ago(4))
+    };
+    let dropped = PullRequestFacts {
+        title: "[3.13] notes (GH-10)".to_owned(),
+        ..backport_at(12, 10, ago(3))
+    };
+    // PR 20's own title doesn't say "docs"; only its Backport does, which keeps the tree.
+    let quiet = pr_at(20, Some(1), ago(7));
+    let beneath_quiet = PullRequestFacts {
+        title: "[3.14] docs again (GH-20)".to_owned(),
+        ..backport_at(21, 20, ago(5))
+    };
+    world.has(
+        vec![top, kept, dropped, quiet, beneath_quiet],
+        vec![issue_at(1, ago(8))],
+    );
+
+    let found = searched(&world, "docs");
+    world.finish();
+
+    assert_eq!(
+        outline(&found),
+        [("issue", 1, vec![10, 11, 20, 21])],
+        "a matching top keeps its matching Backport and drops the other, and a matching Backport \
+         keeps a top that doesn't match"
+    );
+}
+
+#[test]
 fn a_brought_back_closed_issue_is_open_to_a_search_as_it_is_to_the_inbox() {
     let world = ViewWorld::new("inbox-search-brought-back");
     let mut closed = issue_at(1, ago(60));

@@ -5324,6 +5324,7 @@ it("opens the cursor's item on Enter when the list itself holds the focus", asyn
   expect(document.activeElement).toBe(issueRow);
   const pane = issueList() as HTMLElement;
   pane.focus();
+  expect(document.activeElement).toBe(pane);
 
   await fireEvent.keyDown(pane, { key: "Enter" });
 

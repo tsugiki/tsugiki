@@ -57,7 +57,8 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
   Issue list, on the row under the cursor, or on the list itself when it has no row; and in the Detail pane,
   on the pane itself, where ↑ ↓ scroll it. The rail inside the Detail pane is not a stop; its tabs have
   their own keys ([layout.md](layout.md)). In the Detail pane, Esc with nothing on top gives the focus back
-  to the Issue list, on the row of the item on show, when the list shows.
+  to the Issue list, on the row of the item on show, or on the list itself when that item has no row, when
+  the list shows.
 - `Ctrl+K O`, "one", switches the Files tab between all files and one file at a time. It is a `Ctrl+K`
   chord, as `Ctrl+K Z` is for the panes, because a free `Ctrl+Alt` letter would clash with AltGr, which
   Windows sends as `Ctrl+Alt` to type characters such as Polish ó on `AltGr+O`. VS Code's own `Ctrl+K O`

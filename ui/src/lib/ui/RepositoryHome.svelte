@@ -336,8 +336,8 @@
     focusCursor();
     void view.load((kind) => {
       // The answer can come long after the pick, as it waits for the sync's step under way. It takes the
-      // focus as a pick does only from a row, the Detail pane or nowhere, and leaves it anywhere else the
-      // user went meanwhile, such as a text box or the Sidebar.
+      // focus as a pick does only from the list (a row or the list itself), the Detail pane or nowhere, and
+      // leaves it anywhere else the user went meanwhile, such as a text box or the Sidebar.
       const focused = document.activeElement;
       const pick = inDetailPane(focused) || followsCursor(focused);
       open(workbench.stopFor(number, kind), pick ? "pick" : "open");
@@ -1253,8 +1253,9 @@
     return target instanceof Node && detailPane()?.contains(target) === true;
   }
 
-  /** Whether `focused` is a row of the list, the list itself, which holds the focus when no row does, or the
-   * page's body, which holds it once nothing else does. The focus then follows the cursor. */
+  /** Whether `focused` is a row of the list, the list itself, which holds the focus whenever nothing else in
+   * the list does, or the page's body, which holds it once nothing else does. The focus then follows the
+   * cursor. */
   function followsCursor(focused: Element | null): boolean {
     const onRow =
       focused instanceof HTMLElement && focused.matches("[data-item]") && list?.contains(focused) === true;
@@ -1998,6 +1999,11 @@
     display: block;
     flex: none;
     height: 2px;
+  }
+
+  /* The pane's focus shows as that line, as VS Code has it, so no ring goes round the whole pane. */
+  .home :global([data-pane]:focus) {
+    outline: none;
   }
 
   /* With the focus on no element, as at launch, the list takes the keys, so it shows the line too. */

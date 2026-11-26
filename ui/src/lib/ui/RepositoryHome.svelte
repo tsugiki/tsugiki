@@ -1206,8 +1206,8 @@
     return undefined;
   }
 
-  /** Where F6 starts when no pane holds the focus: the Issue list, or the Detail pane when the list is
-   * hidden, and the Sidebar once those are hidden too. */
+  /** The index in `stops` where F6 starts when no pane holds the focus: the Issue list, or the Detail pane
+   * when the list is hidden, and the Sidebar once those are hidden too. */
   function paneStart(stops: PaneStop[]): number {
     const listAt = stops.indexOf("list");
     if (listAt !== -1) return listAt;

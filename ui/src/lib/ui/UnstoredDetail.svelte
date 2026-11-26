@@ -10,7 +10,8 @@
     focusable = false,
   }: {
     view: UnstoredViewState;
-    /** Whether the pane takes the focus, as it does while the Issue list is hidden. */
+    /** Whether the pane takes the focus itself: while the Issue list is hidden, and while the list shows
+     * after a press of F6. */
     focusable?: boolean;
   } = $props();
 

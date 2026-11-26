@@ -1197,6 +1197,7 @@ describe("the palette's order", () => {
     expect(titles()).toEqual([
       "Reset Layout",
       "Reload Themes",
+      "Previous Pane",
       "Switch Repository",
       "View: Stale Reviews",
       "Repository: python/peps",
@@ -1298,6 +1299,8 @@ describe("every action in the palette", () => {
     expect(rows()).toEqual([
       ["Hide Sidebar", "Ctrl+B"],
       ["Hide Issue List", "Ctrl+Alt+B"],
+      ["Next Pane", "F6"],
+      ["Previous Pane", "Shift+F6"],
       ["Unfold an Issue's PRs", "→"],
       ["Fold an Issue's PRs", "←"],
       ["Show Only the Detail Pane", "Ctrl+K Z"],
@@ -1347,6 +1350,8 @@ describe("every action in the palette", () => {
       ["Find in Diff", "Ctrl+F"],
       ["Hide Sidebar", "Ctrl+B"],
       ["Hide Issue List", "Ctrl+Alt+B"],
+      ["Next Pane", "F6"],
+      ["Previous Pane", "Shift+F6"],
       ["Show Only the Detail Pane", "Ctrl+K Z"],
       ["Unified or Side by Side", "Ctrl+Alt+U"],
       ["View: One File at a Time", "Ctrl+K O"],
@@ -2380,7 +2385,9 @@ describe("the key list", () => {
     fireEvent.keyDown(target, { key: "?", code: "Slash", shiftKey: true });
   const keyList = () => screen.queryByRole("dialog", { name: "Keys" });
   const sections = () =>
-    screen.getAllByRole("region").flatMap((section) => section.getAttribute("aria-label") ?? []);
+    within(keyList() as HTMLElement)
+      .getAllByRole("region")
+      .flatMap((section) => section.getAttribute("aria-label") ?? []);
 
   beforeEach(() => {
     vi.spyOn(navigator, "platform", "get").mockReturnValue("Win32");
@@ -2402,7 +2409,7 @@ describe("the key list", () => {
     expect(list).toBeTruthy();
     expect(document.activeElement).toBe(list);
     expect(sections()).toEqual(["Issue list", "Anywhere"]);
-    const issueList = within(screen.getByRole("region", { name: "Issue list" }));
+    const issueList = within(within(list as HTMLElement).getByRole("region", { name: "Issue list" }));
     expect(issueList.getByText("Unfold an Issue's PRs").previousElementSibling?.textContent).toBe("→");
     // Archive and Mute act on the Detail pane's item too, as Q does.
     const anywhere = within(screen.getByRole("region", { name: "Anywhere" }));

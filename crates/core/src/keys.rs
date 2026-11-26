@@ -527,6 +527,8 @@ table! {
     FindInDiff: "Find in Diff", (Ctrl 'f'), Diff;
     ToggleSidebar: "Hide or Show the Sidebar", (Ctrl 'b'), Anywhere;
     ToggleIssueList: "Hide or Show the Issue List", (CtrlAlt 'b'), Anywhere;
+    NextPane: "Next Pane", (Plain F6), Anywhere;
+    PreviousPane: "Previous Pane", (Shift F6), Anywhere;
     Unfold: "Unfold an Issue's PRs", (Plain ArrowRight), IssueList;
     Fold: "Fold an Issue's PRs", (Plain ArrowLeft), IssueList;
     ToggleDetailOnly: "Show Only the Detail Pane, or the Panes", (Ctrl 'k', Plain 'z'), Anywhere;

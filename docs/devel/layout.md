@@ -198,19 +198,24 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
     Esc closes what is on top, wherever the focus is: a dialog, the palette or a Peek first, then the wait
     for a chord's second key, a Definition peek, in the diff or the file view, or the diff's search, then the
     file view, which goes back to the PR's diff, and last a PR, which goes back to the Issue it was opened
-    under. With nothing on top, Esc
-    does nothing. A PR opened from a row of its own (a Standalone PR, one of its Backports, a Dependency
-    update) has nothing under it, so Esc leaves it on show, as it leaves an Issue. A text box keeps Esc,
+    under. With nothing on top, Esc in the Detail pane gives the focus back to the Issue list, on the row of
+    the item on show, or on the list itself when that item has no row, when the list shows; with the list
+    hidden, Esc does nothing. A PR opened from a row of
+    its own (a Standalone PR, one of its Backports, a Dependency update) has nothing under it, so Esc leaves
+    it on show, as it leaves an Issue, and moves only the focus. A text box keeps Esc,
     unless it belongs to what Esc closes, like the search box. Esc gives the focus to whatever lay under the
     thing it closed: going back from the file view moves it to the diff, and going back from a PR moves the
     cursor and the focus to the Issue's row, or to the Detail pane while the Issue list is hidden. Esc leaves
     the panes as they are. Esc in the PR view's rail closes nothing: it gives the focus to the diff or the
     Conversation beside the rail ([review.md](review.md)).
 
-    The pane that holds the keyboard focus, the Issue list or the Detail pane, shows a 2 px line in the
-    Theme's focus colour along its top edge, as VS Code does, so the user can tell where ↑ ↓ go. With the
-    focus in the Detail pane, as after a click on one of its buttons, ↑ ↓ scroll it even while the list
-    shows. With the focus on no control, as at launch, the list takes the keys and shows the line. While the
+    `F6` and `Shift+F6` move the focus through the panes on show, in the order Sidebar, Issue list, Detail
+    pane, and back, skipping a pane that isn't shown and the Detail pane with nothing open
+    ([keyboard.md](keyboard.md)). The pane that holds the keyboard focus, the Issue list or the Detail pane,
+    shows a 2 px line in the Theme's focus colour along its top edge, as VS Code does, so the user can tell
+    where ↑ ↓ go. With the focus in the Detail pane, as after a click on one of its buttons or a press of
+    `F6`, ↑ ↓ scroll it even while the list shows. With the focus on no control, as at launch, the list takes
+    the keys and shows the line. While the
     list holds the focus, its row under the cursor takes the active selection colour, and the inactive one,
     a dim tint, once the focus moves away. The palette or a dialog on top, or another app in front, leaves
     every pane inactive. No ring goes round a whole pane.

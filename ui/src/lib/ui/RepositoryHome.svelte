@@ -17,7 +17,7 @@
     SIDEBAR_MOST,
     SIDEBAR_WIDTH,
   } from "$lib/state/panes.svelte";
-  import type { PeekLayout } from "$lib/state/peek";
+  import { type PeekLayout, ROW } from "$lib/state/peek";
   import { DiffViewChoice, type FilesMode, type PrFilesState } from "$lib/state/pr-files.svelte";
   import { PrViewState } from "$lib/state/pr-view.svelte";
   import type { ChangedFiles } from "$lib/state/quick-open.svelte";
@@ -258,6 +258,10 @@
    * cursor, so the row the user left doesn't look selected too, and Enter doesn't open it again. A pick
    * from the history's list can land on the item on show, which then only takes the cursor.
    *
+   * The tab a PR on show switches to as Enter or a click on its row opens it leaves the focus where it was:
+   * in the Issue list it stays there, and in the Detail pane it moves to the new tab's content, as a tab
+   * switch does (#1075).
+   *
    * The history can go through to a file view too (#456): it shows its PR, on the Files tab, with the view
    * over it, which takes the focus, and the cursor goes to the PR's row. Any other place shows its PR with no
    * file view, and so does a click on the row of the PR on show, which the history records as the PR's line.
@@ -273,9 +277,7 @@
     if (how !== "open" && fileView === undefined) focusCursor();
     if (stop.kind === "pull_request" && detail instanceof PrViewState && sameStop(detail.line, stop)) {
       if (how === "open") {
-        // Enter on the open PR's row switches its tab, and leaves the focus in the list: only focus in the
-        // Detail pane follows it (#1075).
-        const follows = inDetailPane(document.activeElement);
+        const follows = focusInDetail();
         detail.switchTab();
         if (follows) focusTabContent();
       }
@@ -472,8 +474,8 @@
     return inList ? "list" : inDetail ? "detail" : null;
   }
 
-  /** Whether a press `at` goes to the Detail pane: the pane holds the focus, or the list is hidden. ↑ ↓ then
-   * scroll it, and `Q` marks its item. */
+  /** Whether a press `at` goes to the Detail pane: the pane holds the focus, or the list is hidden. ↑ ↓,
+   * PgDn, PgUp, Home and End then scroll it, and `Q` marks its item. */
   const forDetail = (at: KeyTarget) => panes.hidden("list") || at.pane === "detail";
 
   /** The item `Q` and `Shift+Q` act on for a press `at`: the Detail pane's item while it holds the focus or
@@ -1022,13 +1024,14 @@
   type ScreenAction = (at: KeyTarget) => Run | undefined;
 
   /** Switches the tabs of the PR view on show, while one shows. The focus stays in the Issue list when it was
-   * there, which keeps its keys, and follows the tab when it was in the Detail pane (#1075). */
-  const tabSwitch: ScreenAction = (at) => {
+   * there, which keeps its keys, and follows the tab when it was in the Detail pane, the rail inside it too
+   * (#1075). */
+  const tabSwitch: ScreenAction = () => {
     const view = detail instanceof PrViewState ? detail : undefined;
     return (
       view &&
       (() => {
-        const follows = at.pane === "detail";
+        const follows = focusInDetail();
         view.switchTab();
         if (follows) focusTabContent();
       })
@@ -1279,6 +1282,11 @@
     return target instanceof Node && detailPane()?.contains(target) === true;
   }
 
+  /** Whether the focus is in the Detail pane, the rail inside it too: a tab switch, as Enter or a click on
+   * the open PR's row makes, then moves the focus to the new tab's content, and leaves it in the Issue list
+   * when it was there (#1075). */
+  const focusInDetail = () => inDetailPane(document.activeElement);
+
   /** Whether `focused` is a row of the list, the list itself, which holds the focus whenever nothing else in
    * the list does, or the page's body, which holds it once nothing else does. The focus then follows the
    * cursor. */
@@ -1296,24 +1304,28 @@
     scroller?.scrollBy({ top: step * LINE });
   }
 
-  /** Pages the Detail pane by a screen, as PgDn and PgUp do, on the region `scrollDetail` scrolls. */
+  /** Pages the region PgDn and PgUp move by a screen, less a row, so a line stays in view to read on from. */
   function pageDetail(step: 1 | -1) {
-    const pane = detailPane();
-    const scroller = scrollerIn(pane) ?? pane;
-    scroller?.scrollBy({ top: step * scroller.clientHeight });
+    const region = pagedRegion();
+    region?.scrollBy({ top: step * Math.max(0, region.clientHeight - ROW) });
   }
 
-  /** Goes to the start or the end of the Detail pane, as Home and End do, on the region `scrollDetail`
-   * scrolls. */
+  /** Goes to the start or the end of the region PgDn and PgUp move, as Home and End do. */
   function scrollDetailTo(where: "start" | "end") {
-    const pane = detailPane();
-    const scroller = scrollerIn(pane) ?? pane;
-    scroller?.scrollBy({
+    const region = pagedRegion();
+    region?.scrollBy({
       top:
-        where === "start"
-          ? -scroller.scrollTop
-          : scroller.scrollHeight - scroller.clientHeight - scroller.scrollTop,
+        where === "start" ? -region.scrollTop : region.scrollHeight - region.clientHeight - region.scrollTop,
     });
+  }
+
+  /** The region PgDn, PgUp, Home and End move: the one that holds the focus when it scrolls by itself, as
+   * the Definition peek's code and its hits do, and else the one the tab's keys scroll (#1075). */
+  function pagedRegion(): HTMLElement | null | undefined {
+    const focused = document.activeElement;
+    if (focused instanceof HTMLElement && focused.hasAttribute("data-scrolls")) return focused;
+    const pane = detailPane();
+    return scrollerIn(pane) ?? pane;
   }
 
   /**

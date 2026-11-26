@@ -216,7 +216,7 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
     ([keyboard.md](keyboard.md)). The pane that holds the keyboard focus, the Issue list or the Detail pane,
     shows a 2 px line in the Theme's focus colour along its top edge, as VS Code does, so the user can tell
     where ↑ ↓ go. With the focus in the Detail pane, as after a click on one of its buttons or a press of
-    `F6`, ↑ ↓ scroll it a line at a time, `PgDn` and `PgUp` page it, and `Home` and `End` go to its start and
+    `F6`, ↑ ↓ scroll it a step at a time, `PgDn` and `PgUp` page it, and `Home` and `End` go to its start and
     end, even while the list shows: the diff on Files, the file view over it, or the Conversation. With the
     focus on no control, as at launch, the list takes the keys and shows the line. While the
     list holds the focus, its row under the cursor takes the active selection colour, and the inactive one,

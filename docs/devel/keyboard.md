@@ -59,7 +59,7 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
   their own keys ([layout.md](layout.md)). In the Detail pane, Esc with nothing on top gives the focus back
   to the Issue list, on the row of the item on show, or on the list itself when that item has no row, when
   the list shows.
-- With the focus in the Detail pane, outside a text box, ↑ ↓ scroll its content a line at a time, `PgDn` and
+- With the focus in the Detail pane, outside a text box, ↑ ↓ scroll its content a step at a time, `PgDn` and
   `PgUp` page it, and `Home` and `End` go to its start and end: the diff on a PR's Files tab, the file view
   over it, or the Conversation. The Issue list keeps `PgDn` and `PgUp` while it holds the focus, where they
   scroll it a page at a time. `Ctrl+PageDown`, `Ctrl+PageUp` and `Enter` on the open PR's row switch the PR

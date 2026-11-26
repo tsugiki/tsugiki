@@ -9,7 +9,18 @@ import type { Peek, PeekLayout } from "$lib/state/peek";
 import { PrFilesState, type FilesMode } from "$lib/state/pr-files.svelte";
 import { PrViewState } from "$lib/state/pr-view.svelte";
 import type { MuteAuthor } from "$lib/state/workbench.svelte";
-import { done, inboxPage, ok, readyFiles, refused, workbenchPage, workbenchRow } from "$lib/testing/fixtures";
+import {
+  diffFile,
+  done,
+  fileRow,
+  inboxPage,
+  ok,
+  readyFiles,
+  refused,
+  workbenchPage,
+  workbenchRow,
+} from "$lib/testing/fixtures";
+import { hitIn } from "$lib/testing/state";
 import { stampOf } from "./time";
 import { keydown, nextTask, pressed } from "$lib/testing/helpers";
 import RepositoryHome from "./RepositoryHome.svelte";
@@ -55,6 +66,9 @@ const core = vi.hoisted(() => ({
   pullRequestFiles: vi.fn(),
   pullRequestFind: vi.fn(),
   definitions: vi.fn(),
+  // The Definition peek's code waits for the core, which these tests leave looking.
+  definitionCode: vi.fn(),
+  definitionSpans: vi.fn(),
   // A PR that leaves the Detail pane cancels the lookup it may still run.
   cancelDefinitions: vi.fn(() => Promise.resolve()),
   cloning: vi.fn(),
@@ -104,6 +118,8 @@ vi.mock("$lib/data/bindings", async () => {
       pullRequestFiles: core.pullRequestFiles,
       pullRequestFind: core.pullRequestFind,
       definitions: core.definitions,
+      definitionCode: core.definitionCode,
+      definitionSpans: core.definitionSpans,
       cancelDefinitions: core.cancelDefinitions,
       cloning: core.cloning,
       mirrorStates: core.mirrorStates,
@@ -182,6 +198,8 @@ beforeEach(() => {
   for (const move of [core.hideItem, core.showItem, core.closeItem]) move.mockResolvedValue(done);
   core.pullRequestFiles.mockResolvedValue({ status: "ok", data: { state: "fetching" } });
   core.pullRequestFind.mockResolvedValue({ status: "ok", data: { matches: [], more: false } });
+  core.definitionCode.mockReturnValue(new Promise(() => {}));
+  core.definitionSpans.mockReturnValue(new Promise(() => {}));
   core.cloning.mockResolvedValue(null);
   core.mirrorStates.mockResolvedValue([]);
   core.mirrorsHeld.mockResolvedValue(false);
@@ -1217,6 +1235,32 @@ it("follows the tab with the focus in the Detail pane, so the keys keep acting o
   });
 
   expect(left).toBe("false");
+});
+
+it("follows the tab with the focus in the rail, which the Detail pane holds", async () => {
+  core.pullRequestFiles.mockResolvedValue(
+    ok(
+      readyFiles(0, {
+        files: [diffFile("Lib/eggs.py", 0)],
+        tree: { rows: [fileRow(0, "eggs.py", 0)], folded: false },
+      }),
+    ),
+  );
+  const { component, treeRow } = await listing();
+  await fireEvent.click(treeRow);
+  await screen.findByRole("tab", { name: "Conversation" });
+  component.runChord("toggle_rail_files", chordEnd());
+  await tick();
+  const tree = await screen.findByRole("tree", { name: "Changed files" });
+  tree.focus();
+
+  await fireEvent(tree, keydown({ key: "PageDown", ctrlKey: true }));
+
+  expect(document.getElementById("pr-tab-files")?.getAttribute("aria-selected")).toBe("true");
+  const diff = await screen.findByRole("region", { name: "Diff" });
+  await vi.waitFor(() => {
+    expect(document.activeElement).toBe(diff);
+  });
 });
 
 it("follows the tab when a click on the open PR's row switches it, with the focus in the pane", async () => {
@@ -5236,9 +5280,9 @@ const scrollsBy = (scroller: HTMLElement) => {
   return scrollBy;
 };
 
-/** The scrolls PgDn, PgUp, Home and End ask of a scroller: a screen down, a screen up, back to the top, and
- * on to the end. */
-const PAGE_CALLS = [[{ top: 600 }], [{ top: -600 }], [{ top: -150 }], [{ top: 4250 }]];
+/** The scrolls PgDn, PgUp, Home and End ask of a 600 px scroller on 5,000 px of content, scrolled 150 px
+ * down: a screen less a row down, the same up, back to the top, and on to the end. */
+const PAGE_CALLS = [[{ top: 580 }], [{ top: -580 }], [{ top: -150 }], [{ top: 4250 }]];
 
 const pageKeys = ["PageDown", "PageUp", "Home", "End"];
 
@@ -5279,6 +5323,61 @@ it("pages the file view with PgDn and PgUp, and goes to its start and end, while
   for (const key of pageKeys) await fireEvent.keyDown(code, { key });
 
   expect(onScroll.mock.calls).toEqual(PAGE_CALLS);
+});
+
+/** Opens the file view of a PR's Files tab with a Definition peek inside its code, showing two hits in an
+ * overflow. Returns the file view's code, and the peek's code and hits. */
+const onPeek = async () => {
+  const view = eggsView();
+  vi.spyOn(PrFilesState.prototype, "goToDefinition").mockImplementation(function (this: PrFilesState) {
+    this.openFileView(view);
+    return Promise.resolve();
+  });
+  core.definitions.mockResolvedValue(
+    ok({ state: "found", hits: [hitIn("Lib/eggs.py", 5), hitIn("Lib/spam.py", 7)] }),
+  );
+  await fireEvent.click(await onFiles());
+  await screen.findByRole("region", { name: "Diff" });
+  await press("F12");
+  await screen.findByRole("region", { name: "File view" });
+  view.code.pick = { line: 4, word: "x", start: 0, end: 1, caret: 0 };
+  await press("F12", { altKey: true });
+  const file = screen.getByRole("region", { name: "File view" });
+  await vi.waitFor(() => {
+    expect(within(file).getAllByRole("region", { name: "Definition's code" })).toHaveLength(2);
+  });
+  const [code, peekCode] = within(file).getAllByRole("region", { name: "Definition's code" }) as [
+    HTMLElement,
+    HTMLElement,
+  ];
+  const hits = within(file).getByRole("listbox", { name: "Definitions" });
+  return { file, code, peekCode, hits };
+};
+
+it("pages the Definition peek's code with PgDn and PgUp, and not the file view's code behind it", async () => {
+  const { file, code, peekCode } = await onPeek();
+  const onCode = scrollsBy(code);
+  const onPeekCode = scrollsBy(peekCode);
+  const onFile = scrollsBy(file);
+  peekCode.focus();
+
+  for (const key of pageKeys) await fireEvent.keyDown(peekCode, { key });
+
+  expect(onPeekCode.mock.calls).toEqual(PAGE_CALLS);
+  expect([onCode.mock.calls, onFile.mock.calls]).toEqual([[], []]);
+});
+
+it("pages the Definition peek's hits with PgDn and PgUp, and not the code or the view behind them", async () => {
+  const { file, code, hits } = await onPeek();
+  const onHits = scrollsBy(hits);
+  const onCode = scrollsBy(code);
+  const onFile = scrollsBy(file);
+  hits.focus();
+
+  for (const key of pageKeys) await fireEvent.keyDown(hits, { key });
+
+  expect(onHits.mock.calls).toEqual(PAGE_CALLS);
+  expect([onCode.mock.calls, onFile.mock.calls]).toEqual([[], []]);
 });
 
 it("leaves PgDn, PgUp, Home and End to the list while it holds the focus", async () => {

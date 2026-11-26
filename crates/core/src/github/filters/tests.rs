@@ -164,3 +164,81 @@ fn two_days_halve_into_one_each_and_one_day_doesnt_halve() {
     );
     assert_eq!(range(first, first).halves(), None);
 }
+
+#[test]
+fn a_typed_search_brackets_its_repository_and_adds_open_and_a_sort() {
+    assert_eq!(
+        typed_text(&cpython(), "  fix parser  "),
+        "repo:python/cpython (fix parser) is:open sort:updated-desc"
+    );
+}
+
+#[test]
+fn a_typed_search_keeps_its_own_state_and_sort() {
+    assert_eq!(
+        typed_text(&cpython(), "is:closed fix"),
+        "repo:python/cpython (is:closed fix) sort:updated-desc"
+    );
+    assert_eq!(
+        typed_text(&cpython(), "state:merged fix"),
+        "repo:python/cpython (state:merged fix) sort:updated-desc"
+    );
+    assert_eq!(
+        typed_text(&cpython(), "fix sort:created-asc"),
+        "repo:python/cpython (fix sort:created-asc) is:open"
+    );
+}
+
+#[test]
+fn a_typed_search_reads_every_page_github_lists_in_its_order() {
+    let first = json!([issue(7, "python/cpython"), pr(8, "pr-8")]);
+    let second = json!([pr(9, "pr-9")]);
+    let (script, asked) = Scripted::new(vec![
+        page_of(&first, Some("page-2")),
+        page_of(&second, None),
+    ]);
+
+    let found = github(script).search_inbox(&cpython(), "fix parser").unwrap();
+
+    let read: Vec<(u32, RowKind)> = found
+        .hits
+        .iter()
+        .map(|hit| (hit.number, hit.kind))
+        .collect();
+    assert_eq!(
+        read,
+        [
+            (7, RowKind::Issue),
+            (8, RowKind::PullRequest),
+            (9, RowKind::PullRequest)
+        ]
+    );
+    assert_eq!(found.total, 3214);
+    assert!(!found.cut_off);
+
+    let asked: Vec<(String, Value)> = asked.try_iter().collect();
+    assert_eq!(asked.len(), 2);
+    let (operation, sent) = &asked[0];
+    assert_eq!(operation, "SearchFilter");
+    assert_eq!(
+        sent["query"],
+        "repo:python/cpython (fix parser) is:open sort:updated-desc"
+    );
+    assert_eq!(sent["first"], json!(TYPED_PAGE));
+    assert_eq!(asked[1].1["after"], "page-2");
+}
+
+#[test]
+fn a_typed_search_stops_at_github_s_thousand_results() {
+    let pages: Vec<_> = (0..10)
+        .map(|_| page_of(&json!([issue(1, "python/cpython")]), Some("more")))
+        .collect();
+    let (script, asked) = Scripted::new(pages);
+
+    let found = github(script).search_inbox(&cpython(), "fix").unwrap();
+
+    assert_eq!(asked.try_iter().count(), 10, "ten light pages, no more");
+    assert_eq!(found.hits.len(), 10);
+    assert!(found.cut_off);
+    assert_eq!(found.total, 3214);
+}

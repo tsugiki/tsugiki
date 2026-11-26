@@ -283,7 +283,7 @@ fn mark_seen_on_a_muted_item_acknowledges_no_stale_review_the_check_found_during
 
     let read = world.view(&filter(involved()));
     let muted = read.muted.iter().find(|listed| number_of(listed) == 1);
-    let mark = seen_of(&muted.unwrap().item).mark;
+    let mark = seen_of(&muted.unwrap().item).unwrap().mark;
     assert_eq!(mark.findings, []);
     world.marks(Marked::Seen {
         repository: cpython(),

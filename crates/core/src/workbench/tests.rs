@@ -269,6 +269,7 @@ fn an_items_marks_are_its_own_and_each_of_its_rows_backports_included() {
             WorkbenchItem::Issue(_) => "",
             WorkbenchItem::StandalonePr(_) => "pr",
             WorkbenchItem::StandaloneBackport(_) => "backport",
+            WorkbenchItem::Placeholder(_) => "",
         };
         let mut shapes: Vec<_> = items.iter().map(shape).filter(|s| !s.is_empty()).collect();
         shapes.sort_unstable();
@@ -282,11 +283,13 @@ fn an_items_marks_are_its_own_and_each_of_its_rows_backports_included() {
     );
 
     for mut item in items {
-        let own = item.seen().mark.numbers.clone();
+        let own = item.seen().unwrap().mark.numbers.clone();
         let rows = item.rows().into_iter().map(|row| vec![row.number]);
         let expected: Vec<Vec<u32>> = match &item {
             WorkbenchItem::Issue(_) => std::iter::once(own).chain(rows).collect(),
-            WorkbenchItem::StandalonePr(_) | WorkbenchItem::StandaloneBackport(_) => rows.collect(),
+            WorkbenchItem::StandalonePr(_)
+            | WorkbenchItem::StandaloneBackport(_)
+            | WorkbenchItem::Placeholder(_) => rows.collect(),
         };
         let marks: Vec<Vec<u32>> = (item.marks_mut().into_iter())
             .map(|mark| mark.numbers.clone())

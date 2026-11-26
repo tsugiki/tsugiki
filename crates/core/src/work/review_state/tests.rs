@@ -70,7 +70,9 @@ fn state_of(pull_request: PullRequestFacts, reviews: ReviewFacts) -> YourReview 
         .iter()
         .flat_map(|listed| match &listed.item {
             WorkbenchItem::StandalonePr(tree) => Some(tree.row.clone()),
-            WorkbenchItem::Issue(_) | WorkbenchItem::StandaloneBackport(_) => None,
+            WorkbenchItem::Issue(_)
+            | WorkbenchItem::StandaloneBackport(_)
+            | WorkbenchItem::Placeholder(_) => None,
         });
     rows.into_iter().next().unwrap().your_review
 }

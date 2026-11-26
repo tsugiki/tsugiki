@@ -64,6 +64,11 @@ pub(super) enum GitHubMessage {
         item: Item,
         reply: Sender<ItemFetch>,
     },
+    /// The user typed `text` in the Inbox's search box, which GitHub answers (#465).
+    Search {
+        repository: RepositoryName,
+        text: String,
+    },
     /// The size of a Repository on GitHub, which the Mirror worker asks before a clone.
     Size {
         repository: RepositoryName,
@@ -230,6 +235,8 @@ pub(super) enum Turn {
     Fetch(Fetched),
     /// The user asked for an Issue or a PR the database lacks, and waits for what the fetch found.
     FetchUnstored(Item, Sender<ItemFetch>),
+    /// The user typed a search in the Inbox's box, which GitHub answers (#465).
+    Search { repository: RepositoryName, text: String },
     /// The session couldn't keep what it saved.
     Problem(Error),
     /// Time to see whether the hour's points have reset, so the window stops showing the old hour's count.
@@ -301,6 +308,23 @@ impl Refreshes {
             .retain(|message| !matches!(message, GitHubMessage::Fetch(other) if other.is(fetched)));
     }
 
+    /// Whether a search for `repository` that isn't `text` waits to run, so the answer to `text` is out of
+    /// date and changes nothing (#465).
+    pub(super) fn newer_search(&self, repository: &RepositoryName, text: &str) -> bool {
+        let mut backlog = self.backlog.borrow_mut();
+        backlog.extend(self.incoming.try_iter());
+        backlog.iter().any(|message| {
+            let GitHubMessage::Search {
+                repository: waiting,
+                text: asked,
+            } = message
+            else {
+                return false;
+            };
+            waiting.is_same(repository) && asked != text
+        })
+    }
+
     /// Tells the window that the read of `fetched` failed for `why`. For a PR, it first tells the Files tab,
     /// which asks again once the window hears and finds why, and ends the Mirror worker's await of the head,
     /// which no read answers until the next.
@@ -362,11 +386,13 @@ impl Refreshes {
                 Ok(GitHubMessage::Screen(moved)) => {
                     self.on_screen.borrow_mut().moved(moved, Instant::now());
                 }
-                // Each dropped reply answers its caller that GitHub can't be asked.
+                // Each dropped reply answers its caller that GitHub can't be asked. A search while there is
+                // no token waits for the next one the user types: the list keeps the rows it showed (#465).
                 Ok(
                     GitHubMessage::Check { .. }
                     | GitHubMessage::FetchUnstored { .. }
-                    | GitHubMessage::Size { .. },
+                    | GitHubMessage::Size { .. }
+                    | GitHubMessage::Search { .. },
                 ) => {}
             }
         }
@@ -392,6 +418,9 @@ impl Refreshes {
                 Ok(GitHubMessage::Fetch(fetched)) => return Turn::Fetch(fetched),
                 Ok(GitHubMessage::FetchUnstored { item, reply }) => {
                     return Turn::FetchUnstored(item, reply);
+                }
+                Ok(GitHubMessage::Search { repository, text }) => {
+                    return Turn::Search { repository, text };
                 }
                 Ok(GitHubMessage::Problem(problem)) => return Turn::Problem(problem),
                 Ok(GitHubMessage::Screen(moved)) => {
@@ -628,6 +657,16 @@ pub(super) fn watch(
                 )]
                 let _ = reply.send(answer);
             }
+            // GitHub's answer to a search typed in the Inbox (#465).
+            Turn::Search { repository, text } => searched(Searching {
+                board: &mut *board,
+                store,
+                github: &github,
+                queue: refreshes,
+                syncs: &mut syncs,
+                due: &due,
+                request: SearchRequest { repository, text },
+            }),
             // A Workbench lists nothing until Tsugiki knows who the user is, and no event tells the window
             // when it learns that. So a sync waits for it, and its first save then shows the rows.
             Turn::SyncStep if !matches!(store.last_login(), Ok(Some(_))) => {
@@ -656,6 +695,73 @@ pub(super) fn watch(
             &refreshes.listed(),
         );
     }
+}
+
+/// A search typed in the Inbox's box, and the Repository it runs in (#465).
+struct SearchRequest {
+    repository: RepositoryName,
+    text: String,
+}
+
+/// What an answer to a typed Inbox search needs (#465).
+struct Searching<'a> {
+    board: &'a mut StatusBoard,
+    store: &'a Store,
+    github: &'a GitHub,
+    queue: &'a Refreshes,
+    syncs: &'a mut Syncs,
+    due: &'a Due,
+    request: SearchRequest,
+}
+
+/// Runs the typed Inbox search `text` in `repository`, and tells the window of its answer or its problem. An
+/// answer to a query the user has typed past changes nothing, and the newer query ran before it is saved.
+fn searched(parts: Searching<'_>) {
+    let Searching {
+        board,
+        store,
+        github,
+        queue,
+        syncs,
+        due,
+        request,
+    } = parts;
+    match keep_search(github, store, queue, &request) {
+        Ok(Some(change)) => board.changed(&change),
+        Ok(None) => {}
+        Err(problem) if problem.kind.speaks_for_all_of_github() => {
+            syncs.after_fetch_failure(&problem, due.status);
+            tell_problem(board, problem, store);
+        }
+        Err(problem) => log::warn!(
+            "GitHub wouldn't answer the Inbox search in {}: {}",
+            request.repository,
+            problem.message
+        ),
+    }
+}
+
+/// GitHub's answer to the Inbox search `search` kept for the Inbox, and the change the window hears so it
+/// reads the rows again (#465). Nothing when a newer query waits, whose answer alone counts.
+fn keep_search(
+    github: &GitHub,
+    store: &Store,
+    queue: &Refreshes,
+    search: &SearchRequest,
+) -> Result<Option<Change>, Error> {
+    let asked = Asking::Search {
+        repository: search.repository.clone(),
+    };
+    let answer =
+        github.asking(asked, || github.search_inbox(&search.repository, &search.text))?;
+    if queue.newer_search(&search.repository, &search.text) {
+        return Ok(None);
+    }
+    store.save_inbox_search(&search.repository, &search.text, answer)?;
+    Ok(Some(Change {
+        repository: search.repository.clone(),
+        items: Vec::new(),
+    }))
 }
 
 /// Tells the window and the Mirror worker what the sync queue's `progress` says, if anything. A step's news

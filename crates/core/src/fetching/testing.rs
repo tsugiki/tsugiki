@@ -14,6 +14,7 @@ pub(crate) fn named(message: SessionMessage) -> String {
         SessionMessage::Fetch(Fetched::PullRequest(item)) => format!("PR #{}", item.number),
         SessionMessage::Refresh => "refresh".to_owned(),
         SessionMessage::FetchUnstored { item, .. } => format!("fetch #{}", item.number),
+        SessionMessage::Search { text, .. } => format!("search {text}"),
         SessionMessage::SettingsChanged(save) => match save.by() {
             SavedBy::HandEdit => format!("settings of {}", save.saved().name),
             SavedBy::Window => "switch".to_owned(),

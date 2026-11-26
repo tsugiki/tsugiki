@@ -397,6 +397,9 @@ impl Keeper {
                 (self.links.borrow_mut()).put_first(&item.repository);
                 self.fetch_unstored(item, reply);
             }
+            SessionMessage::Search { repository, text } => {
+                telling.to_github(GitHubMessage::Search { repository, text });
+            }
             SessionMessage::Refresh => self.refresh(),
             SessionMessage::Check { name, reply } => {
                 telling.to_github(GitHubMessage::Check { name, reply });

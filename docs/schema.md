@@ -272,6 +272,20 @@ erDiagram
         TEXT query PK
         INTEGER cut_off
     }
+    inbox_search_hits {
+        TEXT repository PK
+        TEXT query PK
+        INTEGER position PK
+        INTEGER number
+        TEXT kind
+        INTEGER updated_at
+    }
+    inbox_searches {
+        TEXT repository PK
+        TEXT query PK
+        INTEGER total
+        INTEGER cut_off
+    }
 ```
 
 ### Last seen, Marked unseen and the sync's place

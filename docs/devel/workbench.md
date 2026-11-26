@@ -49,12 +49,18 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
   **Reach**. A search box sits atop the list, and while the user types it narrows the list on the cache, on
   the forms the cache reads and no more: bare words against a title, `#123`, `author:<login>`,
   `label:<name>`, `is:issue`, `is:pr`, `is:open` and `is:closed`. Tsugiki adds `is:open` unless the query
-  names a state, `is:open`, `is:closed`, `is:merged`, `is:unmerged` or `state:`. A query with any other
-  qualifier, such as `review:approved`, lists nothing and says it needs GitHub, which a later ticket asks
-  ([#465](https://github.com/tsugiki/tsugiki/issues/465)). A matching PR stays in its Issue's fold, whose
-  header stays even when the Issue doesn't match, and a matching Issue with no matching PR shows alone.
-  Pinned, Archived and Muted items never appear in its results. Save turns a search into a Filter. From it
-  the user reads, comments on and pins Issues and opens PRs. "View: Inbox" in the command palette opens it.
+  names a state, `is:open`, `is:closed`, `is:merged`, `is:unmerged` or `state:`. Enter, or a pause of about a
+  second in typing, sends the whole query to GitHub, which decides the rows
+  ([#465](https://github.com/tsugiki/tsugiki/issues/465)): Tsugiki asks `repo:<repository> (<query>)`, adds
+  `is:open` unless the query names a state and `sort:updated-desc` unless it sorts itself, and reads at most
+  ten pages of a hundred, GitHub's 1,000 results. Cached rows GitHub returns show at once in its order,
+  cached rows it leaves out drop, and a result the cache lacks shows as a placeholder until a later ticket
+  fills it ([#466](https://github.com/tsugiki/tsugiki/issues/466)). Past 1,000 results, the list ends with
+  "1,000 of 1,712 shown. Narrow the search, or save it as a Filter." Until GitHub answers, a query the cache
+  can't read lists nothing and says it needs GitHub. A matching PR stays in its Issue's fold, whose header
+  stays even when the Issue doesn't match, and a matching Issue with no matching PR shows alone. Pinned,
+  Archived and Muted items never appear in its results. Save turns a search into a Filter. From it the user
+  reads, comments on and pins Issues and opens PRs. "View: Inbox" in the command palette opens it.
   - **Show muted** ([#825](https://github.com/tsugiki/tsugiki/issues/825)), a switch atop the list, starts
     off and leaves out each row a **Muted author** wrote. It hides rows, not groups: a row stays while a
     row under it does, so a Muted author's Issue stays as the header of a PR someone else wrote and goes

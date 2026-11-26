@@ -62,6 +62,8 @@ export const mockCore = (page: Page, answers: CoreAnswers, unanswered: (keyof Co
       windowHidden: null,
       windowShown: null,
       paneLayout: panes,
+      // A search typed in the Inbox goes to GitHub, and the test answers what its rows become (#465).
+      searchInbox: null,
       themes: {
         status: "ok",
         data: {

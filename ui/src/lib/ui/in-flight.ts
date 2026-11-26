@@ -23,6 +23,8 @@ function askingWords(asked: AskingGitHub): string {
       return `read of ${asked.repository}#${String(asked.number)}`;
     case "fetch":
       return `fetch of ${asked.repository}#${String(asked.number)}`;
+    case "search":
+      return `search of ${asked.repository}`;
     case "check":
       return `check of ${asked.repository}`;
     case "size":

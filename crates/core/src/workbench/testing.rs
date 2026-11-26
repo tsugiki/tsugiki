@@ -134,6 +134,7 @@ pub(crate) fn outline_of(items: &[ListedItem]) -> Vec<(&'static str, u32, Vec<u3
             WorkbenchItem::StandaloneBackport(backport) => {
                 ("standalone backport", backport.row.number, vec![])
             }
+            WorkbenchItem::Placeholder(placeholder) => ("placeholder", placeholder.number, vec![]),
         })
         .collect()
 }
@@ -144,7 +145,9 @@ pub(crate) fn first_issue(workbench: &Workbench) -> &IssueItem {
         .iter()
         .filter_map(|listed| match &listed.item {
             WorkbenchItem::Issue(issue) => Some(issue),
-            WorkbenchItem::StandalonePr(_) | WorkbenchItem::StandaloneBackport(_) => None,
+            WorkbenchItem::StandalonePr(_)
+            | WorkbenchItem::StandaloneBackport(_)
+            | WorkbenchItem::Placeholder(_) => None,
         });
     issues.next().unwrap()
 }

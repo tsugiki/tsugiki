@@ -3,10 +3,11 @@
 //! The cache understands five forms and nothing more: bare words, matched against the title; `#123`;
 //! `author:<login>`; `label:<name>`; and `is:issue` or `is:pr`. Tsugiki adds `is:open` unless the query names
 //! a state: `is:open`, `is:closed`, `is:merged`, `is:unmerged` or `state:`. A query with anything outside
-//! those forms is left to GitHub, which a later ticket asks (#465), and lists no local rows until then.
+//! those forms is left to GitHub (#465), and lists no local rows until its answer comes.
 
 use std::collections::BTreeSet;
 
+use crate::facts::inbox_search::RowKind;
 use crate::facts::issues::IssueFacts;
 use crate::facts::labels::Label;
 use crate::facts::pull_requests::{PrState, PullRequestFacts};
@@ -15,6 +16,8 @@ use crate::login::Login;
 /// The text from the Inbox's search box, read for the cache.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub(super) struct Search {
+    /// The box's text without the spaces around it, which names GitHub's answer to it (#465).
+    text: String,
     /// The forms a row has to meet, all of them.
     matches: Vec<Match>,
     /// Whether the text holds a form the cache doesn't read, so only GitHub can answer it.
@@ -36,12 +39,6 @@ enum Match {
     Kind(RowKind),
     /// Whether the row is open, or closed and merged.
     State(State),
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum RowKind {
-    Issue,
-    PullRequest,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -91,6 +88,7 @@ impl Search {
     /// Reads `text` into the forms the cache matches.
     pub(super) fn parse(text: &str) -> Self {
         let mut search = Self {
+            text: text.trim().to_owned(),
             matches: Vec::new(),
             needs_github: false,
         };
@@ -104,6 +102,7 @@ impl Search {
                 search.needs_github = true;
                 continue;
             }
+            names_state |= crate::filters::names_a_state(token);
             let Some((qualifier, value)) = token.split_once(':') else {
                 match token.strip_prefix('#') {
                     Some(digits) => match digits.parse() {
@@ -125,26 +124,14 @@ impl Search {
                 ("is", value) => match value.to_ascii_lowercase().as_str() {
                     "issue" => search.matches.push(Match::Kind(RowKind::Issue)),
                     "pr" => search.matches.push(Match::Kind(RowKind::PullRequest)),
-                    "open" => {
-                        names_state = true;
-                        search.matches.push(Match::State(State::Open));
-                    }
-                    "closed" => {
-                        names_state = true;
-                        search.matches.push(Match::State(State::Closed));
-                    }
+                    "open" => search.matches.push(Match::State(State::Open)),
+                    "closed" => search.matches.push(Match::State(State::Closed)),
                     // The states GitHub knows and the cache doesn't: they keep Tsugiki from adding
                     // `is:open`, and the answer waits on GitHub.
-                    "merged" | "unmerged" => {
-                        names_state = true;
-                        search.needs_github = true;
-                    }
+                    "merged" | "unmerged" => search.needs_github = true,
                     _ => search.needs_github = true,
                 },
-                ("state", _) => {
-                    names_state = true;
-                    search.needs_github = true;
-                }
+                ("state", _) => search.needs_github = true,
                 // Anything else names a form the cache doesn't read, or holds no value at all.
                 _ => search.needs_github = true,
             }
@@ -153,6 +140,11 @@ impl Search {
             search.matches.push(Match::State(State::Open));
         }
         search
+    }
+
+    /// The box's text, without the spaces around it: what GitHub is asked, and what keys its answer (#465).
+    pub(super) fn text(&self) -> &str {
+        &self.text
     }
 
     /// Whether the box held nothing, so the Inbox reads its pages as it does without a search.

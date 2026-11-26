@@ -567,6 +567,36 @@ fn unheard_refreshes() -> Refreshes {
 }
 
 #[test]
+fn a_query_typed_after_a_search_makes_the_older_answers_out_of_date() {
+    let (to_github, incoming) = mpsc::channel();
+    let (refreshes, _done) = Refreshes::new(
+        HOURLY,
+        incoming,
+        unheard(),
+        listed(vec![plain_gcmon()]),
+    );
+    to_github
+        .send(GitHubMessage::Search {
+            repository: cpython(),
+            text: "newer".to_owned(),
+        })
+        .unwrap();
+
+    assert!(
+        refreshes.newer_search(&cpython(), "older"),
+        "a search for another text waits, so the older answer changes nothing"
+    );
+    assert!(
+        !refreshes.newer_search(&cpython(), "newer"),
+        "the answer to the text that waits is the one that counts"
+    );
+    assert!(
+        !refreshes.newer_search(&RepositoryName::parse("a/b").unwrap(), "older"),
+        "a search in another Repository says nothing of this one"
+    );
+}
+
+#[test]
 fn watching_follows_github_until_told_to_stop() {
     // `Replies` panics if it is asked a fourth time, so the third status has to stop the watching.
     let access = replying(vec![signed_in(), Err(Unreachable::Offline), signed_in()]);
@@ -1697,6 +1727,7 @@ fn named_for_github(message: GitHubMessage) -> String {
         GitHubMessage::FetchUnstored { item, reply } => {
             SessionMessage::FetchUnstored { item, reply }
         }
+        GitHubMessage::Search { repository, text } => SessionMessage::Search { repository, text },
         GitHubMessage::Size { .. } | GitHubMessage::Problem(_) | GitHubMessage::Stopped(_) => {
             return "other".to_owned();
         }

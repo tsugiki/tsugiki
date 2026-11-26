@@ -2,6 +2,7 @@ use time::Duration;
 
 use super::*;
 use crate::facts::activity::{Activity, ActivityKind, ItemActivity, ItemKey, PutAway};
+use crate::facts::inbox_search::{InboxSearch, RowKind, SearchHit};
 use crate::facts::issues::IssueFacts;
 use crate::facts::labels::Label;
 use crate::facts::pull_requests::{PrState, PullRequestFacts};
@@ -1167,6 +1168,7 @@ fn the_window_sends_a_page_and_gets_the_next_one_s_start_as_text() {
         older: Some(InboxCursor::at(now())),
         show_muted: ShowMuted::On,
         needs_github: false,
+        truncated: None,
     };
 
     let sent = serde_json::to_value(&inbox).unwrap();
@@ -1602,4 +1604,165 @@ fn an_empty_box_reads_the_pages_as_the_inbox_does() {
     assert_eq!(outline(&found), outline(&normal));
     assert!(!found.needs_github);
     assert_eq!(found.older, normal.older);
+}
+
+/// A result GitHub returned.
+fn found(number: u32, kind: RowKind, updated_at: OffsetDateTime) -> SearchHit {
+    SearchHit {
+        number,
+        kind,
+        updated_at,
+    }
+}
+
+/// Keeps GitHub's `answer` to the box's `text` for the world's Repository.
+fn keep_answer(world: &ViewWorld, text: &str, answer: InboxSearch) {
+    world
+        .db
+        .store
+        .save_inbox_search(&cpython(), text, answer)
+        .unwrap();
+}
+
+#[test]
+fn an_answer_lists_the_cached_rows_it_returned_in_github_s_order_and_drops_the_others() {
+    let world = ViewWorld::new("inbox-answer-order");
+    world.has(vec![pr_at(10, Some(1), ago(2))], vec![
+        issue_at(1, ago(5)),
+        issue_at(2, ago(4)),
+        issue_at(3, ago(3)),
+    ]);
+    // GitHub put Issue 3 first, then Issue 1 with PR 10 in its tree, and left Issue 2 out.
+    keep_answer(
+        &world,
+        "review:approved",
+        InboxSearch {
+            hits: vec![
+                found(3, RowKind::Issue, ago(3)),
+                found(1, RowKind::Issue, ago(5)),
+                found(10, RowKind::PullRequest, ago(2)),
+            ],
+            total: 3,
+            cut_off: false,
+        },
+    );
+
+    let listed = searched(&world, "review:approved");
+    world.finish();
+
+    assert_eq!(
+        outline(&listed),
+        [("issue", 3, vec![]), ("issue", 1, vec![10])],
+        "GitHub's order decides, a matching PR stays under its Issue, and a cached row GitHub left \
+         out is dropped"
+    );
+    assert!(!listed.needs_github);
+    assert_eq!(listed.truncated, None);
+}
+
+#[test]
+fn an_answer_puts_a_placeholder_where_the_cache_lacks_a_result() {
+    let world = ViewWorld::new("inbox-answer-placeholder");
+    world.has(vec![], vec![issue_at(1, ago(5))]);
+    keep_answer(
+        &world,
+        "review:approved",
+        InboxSearch {
+            hits: vec![
+                found(99, RowKind::PullRequest, ago(2)),
+                found(1, RowKind::Issue, ago(5)),
+            ],
+            total: 2,
+            cut_off: false,
+        },
+    );
+
+    let listed = searched(&world, "review:approved");
+    world.finish();
+
+    assert_eq!(
+        outline(&listed),
+        [("placeholder", 99, vec![]), ("issue", 1, vec![])]
+    );
+    let WorkbenchItem::Placeholder(placeholder) = &listed.items[0].item else {
+        panic!("the result the cache lacks shows as a placeholder");
+    };
+    assert_eq!(placeholder.item_kind, RowKind::PullRequest);
+    assert_eq!(placeholder.updated_at, ago(2));
+}
+
+#[test]
+fn an_answer_past_github_s_cap_says_how_many_it_showed_of_how_many() {
+    let world = ViewWorld::new("inbox-answer-cut-off");
+    world.has(vec![], vec![issue_at(1, ago(5))]);
+    keep_answer(
+        &world,
+        "review:approved",
+        InboxSearch {
+            hits: vec![found(1, RowKind::Issue, ago(5))],
+            total: 1712,
+            cut_off: true,
+        },
+    );
+
+    let listed = searched(&world, "review:approved");
+    world.finish();
+
+    assert_eq!(
+        listed.truncated,
+        Some(Truncated {
+            shown: 1,
+            total: 1712,
+        })
+    );
+}
+
+#[test]
+fn a_query_github_has_answered_lists_its_rows_even_when_the_cache_cant_read_it() {
+    let world = ViewWorld::new("inbox-answer-github-only");
+    world.has(vec![], vec![issue_at(1, ago(5)), issue_at(2, ago(1))]);
+    keep_answer(
+        &world,
+        "review:approved",
+        InboxSearch {
+            hits: vec![found(1, RowKind::Issue, ago(5))],
+            total: 1,
+            cut_off: false,
+        },
+    );
+
+    let listed = searched(&world, "review:approved");
+    world.finish();
+
+    assert_eq!(outline(&listed), [("issue", 1, vec![])]);
+    assert!(!listed.needs_github);
+}
+
+#[test]
+fn the_answer_to_another_query_lists_nothing_of_it() {
+    let world = ViewWorld::new("inbox-answer-stale");
+    let mut fixes = issue_at(1, ago(5));
+    fixes.title = "Fix the parser".to_owned();
+    let mut other = issue_at(2, ago(1));
+    other.title = "Something else".to_owned();
+    world.has(vec![], vec![fixes, other]);
+    keep_answer(
+        &world,
+        "review:approved",
+        InboxSearch {
+            hits: vec![found(2, RowKind::Issue, ago(1))],
+            total: 1,
+            cut_off: false,
+        },
+    );
+
+    let listed = searched(&world, "fix");
+    world.finish();
+
+    assert_eq!(
+        outline(&listed),
+        [("issue", 1, vec![])],
+        "the answer kept for another query is not the answer to this one, so the cache matches it"
+    );
+    assert!(!listed.needs_github);
 }

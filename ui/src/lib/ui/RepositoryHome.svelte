@@ -1430,7 +1430,23 @@
 <!-- An item's three lines: the people, its headline with the size of its tree and its age, then why it Needs
      attention, or else a summary. -->
 {#snippet listed(item: ListedItem)}
-  {@const unfolded = item.kind === "issue" && workbench.unfolded(item.number)}
+  {#if item.kind === "placeholder"}
+    <!-- A result GitHub found that the cache lacks, which a later ticket fills as the user scrolls to it
+         (#465). It takes its place in GitHub's order, and nothing acts on it yet. -->
+    <li class="item placeholder">
+      <div class="row">
+        <span class="people"></span>
+        <span class="headline">
+          <span class="fold"></span>
+          <code>#{String(item.number)}</code>
+          <span class="title"
+            >{item.item_kind === "pull_request" ? "PR" : "Issue"} not in the cache yet</span
+          >
+        </span>
+      </div>
+    </li>
+  {:else}
+    {@const unfolded = item.kind === "issue" && workbench.unfolded(item.number)}
   {@const inArchived = workbench.shown.kind === "archived"}
   {@const stop: Stop = {
     number: item.number,
@@ -1505,6 +1521,7 @@
       {@render backports(item.backports, undefined)}
     {/if}
   </li>
+  {/if}
 {/snippet}
 
 {#snippet problems()}
@@ -1654,6 +1671,12 @@
             spellcheck="false"
             value={workbench.search}
             oninput={(event) => void workbench.setSearch(event.currentTarget.value)}
+            onkeydown={(event) => {
+              if (event.key === "Enter") {
+                event.preventDefault();
+                void workbench.sendSearch();
+              }
+            }}
           />
           <label class="switch" title="Lists the items of the authors you muted, greyed">
             <input
@@ -1683,8 +1706,8 @@
         {#if workbench.selected.kind === "inbox" && workbench.search.trim() !== ""}
           <p role="status">
             {workbench.needsGitHub
-              ? "This search needs GitHub, which Tsugiki can't ask yet. Clearing the box brings the whole list back."
-              : "Nothing in the cache matches this search. Clearing the box brings the whole list back."}
+              ? "This search needs GitHub, so Tsugiki is asking it. Clearing the box brings the whole list back."
+              : "Nothing matches this search. Clearing the box brings the whole list back."}
           </p>
         {:else}
           <p>{EMPTY[workbench.selected.kind]}</p>
@@ -1713,6 +1736,13 @@
             </ul>
           {/if}
         {/if}
+      {/if}
+      {#if workbench.shown.kind === "inbox" && workbench.truncated}
+        <!-- GitHub lists 1,000 results for one search, so a search past that says how many it reaches
+             (#465). -->
+        <p class="truncated" role="status">
+          {`${workbench.truncated.shown.toLocaleString("en-US")} of ${workbench.truncated.total.toLocaleString("en-US")} shown. Narrow the search, or save it as a Filter.`}
+        </p>
       {/if}
     </section>
     {#if detail || unstored}
@@ -1821,6 +1851,25 @@
     flex: 1;
     margin: 4px 0;
     font-size: 13px;
+  }
+
+  /* A result a search found that the cache lacks, which takes its place until a later ticket fills it
+     (#465). */
+  .item.placeholder {
+    opacity: 0.6;
+  }
+  .item.placeholder .title {
+    margin-left: 4px;
+    font-size: 12px;
+  }
+
+  /* The line a search past GitHub's 1,000 results ends with (#465). */
+  .truncated {
+    margin: 0;
+    padding: 8px 10px;
+    border-top: 1px solid var(--border);
+    opacity: 0.7;
+    font-size: 12px;
   }
 
   /* The Inbox's search box, atop the list, which narrows it on the cache as the user types (#464). */

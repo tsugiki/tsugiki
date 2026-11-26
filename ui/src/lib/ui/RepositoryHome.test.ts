@@ -30,6 +30,7 @@ function paletteRow(screen: PaletteScreen, action: Action, target: EventTarget |
 const core = vi.hoisted(() => ({
   workbench: vi.fn(),
   inbox: vi.fn(),
+  searchInbox: vi.fn(),
   issue: vi.fn(),
   openIssue: vi.fn(),
   pullRequest: vi.fn(),
@@ -79,6 +80,7 @@ vi.mock("$lib/data/bindings", async () => {
     commands: {
       workbench: core.workbench,
       inbox: core.inbox,
+      searchInbox: core.searchInbox,
       issue: core.issue,
       openIssue: core.openIssue,
       pullRequest: core.pullRequest,
@@ -5587,12 +5589,63 @@ it("narrows the Inbox from its search box, and says why a search lists nothing",
   await waitFor(() => {
     expect(core.inbox).toHaveBeenLastCalledWith("python/cpython", { kind: "latest" }, "Issue 112564");
   });
-  expect(await screen.findByText(/Nothing in the cache matches this search/)).toBeTruthy();
+  expect(await screen.findByText(/Nothing matches this search/)).toBeTruthy();
 
   // A form the cache doesn't read is GitHub's to answer, and the list says so instead of "nothing".
   core.inbox.mockResolvedValue(inboxPage([], null, "off", true));
   await fireEvent.input(box, { target: { value: "review:approved" } });
   expect(await screen.findByText(/This search needs GitHub/)).toBeTruthy();
+});
+
+it("sends the Inbox search to GitHub on Enter", async () => {
+  core.workbench.mockResolvedValue(workbenchPage([]));
+  core.inbox.mockResolvedValue(pageOf([]));
+  render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onsettings: () => {} });
+  await fireEvent.click(await screen.findByRole("button", { name: "Inbox" }));
+  await screen.findByRole("heading", { name: "Inbox" });
+  const box = screen.getByRole("searchbox", { name: "Search the Inbox" });
+
+  await fireEvent.input(box, { target: { value: "review:approved" } });
+  await fireEvent.keyDown(box, { key: "Enter" });
+
+  await waitFor(() => {
+    expect(core.searchInbox).toHaveBeenCalledExactlyOnceWith("python/cpython", "review:approved");
+  });
+});
+
+it("shows a search result the cache lacks as a placeholder in GitHub's order", async () => {
+  const placeholder = {
+    attention: null,
+    key: { kind: "pull_request" as const, number: 4242 },
+    hidden: null,
+    unpin: "stays" as const,
+    kind: "placeholder" as const,
+    number: 4242,
+    item_kind: "pull_request" as const,
+    updated_at: "2026-11-04T10:00:00Z",
+  };
+  core.workbench.mockResolvedValue(workbenchPage([]));
+  core.inbox.mockResolvedValue(inboxPage([placeholder, { ...issue, attention: null }]));
+  render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onsettings: () => {} });
+  await fireEvent.click(await screen.findByRole("button", { name: "Inbox" }));
+  await screen.findByRole("heading", { name: "Inbox" });
+
+  expect(await screen.findByText("PR not in the cache yet")).toBeTruthy();
+  expect(screen.getByText("#4242")).toBeTruthy();
+});
+
+it("says how many of GitHub's results a search past 1,000 showed", async () => {
+  core.workbench.mockResolvedValue(workbenchPage([]));
+  core.inbox.mockResolvedValue(
+    inboxPage([{ ...issue, attention: null }], null, "off", false, { shown: 1000, total: 1712 }),
+  );
+  render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onsettings: () => {} });
+  await fireEvent.click(await screen.findByRole("button", { name: "Inbox" }));
+  await screen.findByRole("heading", { name: "Inbox" });
+
+  expect(
+    await screen.findByText("1,000 of 1,712 shown. Narrow the search, or save it as a Filter."),
+  ).toBeTruthy();
 });
 
 it("switches Show muted atop the Inbox, which greys each row a Muted author wrote", async () => {

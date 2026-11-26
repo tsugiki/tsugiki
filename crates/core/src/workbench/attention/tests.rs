@@ -134,13 +134,13 @@ impl World {
 
     /// The mark that Mark Seen on item `number`'s line of the Workbench sends, as the window drew it.
     fn seen(&self, number: u32) -> Seen {
-        seen_of(&listed_at(&self.workbench(), number).item)
+        seen_of(&listed_at(&self.workbench(), number).item).unwrap()
     }
 
     /// The key of item `number`'s line of `view`, and the mark Mark Seen on it sends, as the window drew it.
     fn drawn_in(&self, view: &WorkbenchView, number: u32) -> (ItemKey, SeenMark) {
         let listed = self.listed_in(view, number);
-        (listed.key, seen_of(&listed.item).mark)
+        (listed.key, seen_of(&listed.item).unwrap().mark)
     }
 
     /// The Filter that searches `query` found `numbers`.
@@ -270,12 +270,13 @@ impl World {
     }
 }
 
-/// The part in Mark Seen of `item`'s own line.
-fn seen_of(item: &WorkbenchItem) -> Seen {
+/// The part in Mark Seen of `item`'s own line, which a placeholder lacks.
+fn seen_of(item: &WorkbenchItem) -> Option<Seen> {
     match item {
-        WorkbenchItem::Issue(issue) => issue.seen.clone(),
-        WorkbenchItem::StandalonePr(tree) => tree.row.seen.clone(),
-        WorkbenchItem::StandaloneBackport(backport) => backport.row.seen.clone(),
+        WorkbenchItem::Issue(issue) => Some(issue.seen.clone()),
+        WorkbenchItem::StandalonePr(tree) => Some(tree.row.seen.clone()),
+        WorkbenchItem::StandaloneBackport(backport) => Some(backport.row.seen.clone()),
+        WorkbenchItem::Placeholder(_) => None,
     }
 }
 
@@ -785,7 +786,11 @@ fn an_issue_the_user_was_unassigned_from_is_no_longer_their_conversation() {
 
     let view = filter(involved());
     assert_eq!(world.why_in(&view, 1), []);
-    let state = |number| seen_of(&world.listed_in(&view, number).item).state;
+    let state = |number| {
+        seen_of(&world.listed_in(&view, number).item)
+            .unwrap()
+            .state
+    };
     assert_eq!(
         state(1),
         state(2),

@@ -75,7 +75,9 @@ impl PrView {
                     number: issue.number,
                     pinned: issue.pinned,
                 }),
-                WorkbenchItem::StandalonePr(_) | WorkbenchItem::StandaloneBackport(_) => None,
+                WorkbenchItem::StandalonePr(_)
+                | WorkbenchItem::StandaloneBackport(_)
+                | WorkbenchItem::Placeholder(_) => None,
             })
             .collect();
         let found = items.iter().find_map(|item| {

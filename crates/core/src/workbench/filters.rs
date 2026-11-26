@@ -106,7 +106,7 @@ impl WorkbenchItem {
     pub(super) fn is_reached_by(&self, numbers: &BTreeSet<u32>) -> bool {
         let issue = match self {
             Self::Issue(issue) => numbers.contains(&issue.number),
-            Self::StandalonePr(_) | Self::StandaloneBackport(_) => false,
+            Self::StandalonePr(_) | Self::StandaloneBackport(_) | Self::Placeholder(_) => false,
         };
         issue || self.rows().iter().any(|row| numbers.contains(&row.number))
     }

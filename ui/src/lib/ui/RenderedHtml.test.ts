@@ -57,6 +57,34 @@ it("keeps a link within the text and one with nowhere to go from leaving", () =>
   expect(onlink).not.toHaveBeenCalled();
 });
 
+it("says where a link goes in its tooltip, from its address rather than its words", () => {
+  shown('<p><a href="https://discuss.python.org/t/original-3-13-patch/123">original 3.13 patch</a></p>');
+
+  expect(screen.getByText("original 3.13 patch").getAttribute("title")).toBe(
+    "Open in the browser: https://discuss.python.org/t/original-3-13-patch/123",
+  );
+});
+
+it("shows the whole address, even a long GitHub path", () => {
+  const address = "https://github.com/python/cpython/blob/main/Doc/whatsnew/3.13.rst#notes";
+  shown(`<a href="${address}">the notes</a>`);
+
+  expect(screen.getByText("the notes").getAttribute("title")).toBe(`Open in the browser: ${address}`);
+});
+
+it("gives no tooltip to a link within the text or one with nowhere to go", () => {
+  shown('<a href="#a-heading">Near</a><a>Nowhere</a>');
+
+  expect(screen.getByText("Near").hasAttribute("title")).toBe(false);
+  expect(screen.getByText("Nowhere").hasAttribute("title")).toBe(false);
+});
+
+it("leaves a link with nowhere to go the tooltip the HTML itself gave it", () => {
+  shown('<a title="GitHub wrote this">Nowhere</a>');
+
+  expect(screen.getByText("Nowhere").getAttribute("title")).toBe("GitHub wrote this");
+});
+
 it("leaves other clicks to the browser, so a folded section still unfolds", () => {
   const onlink = shown("<details><summary>More</summary>Inside</details>");
 
@@ -125,6 +153,18 @@ it("keeps what it drew when a refresh signs its uploads' addresses afresh", asyn
   expect(image.getAttribute("src")).toBe(upload("one"));
   expect(section.querySelector("source")?.getAttribute("srcset")).toBe(upload("one"));
   expect(image.closest("a")?.getAttribute("href")).toBe(upload("two"));
+});
+
+it("gives a kept link the fresh address in its tooltip", async () => {
+  const { rerender } = render(RenderedHtml, { html: screenshot("one"), onlink: vi.fn() });
+  loaded(screen.getByAltText("upload"), 20);
+  loaded(screen.getByAltText("variant"), 20);
+
+  await rerender({ html: screenshot("two") });
+
+  expect(screen.getByAltText("upload").closest("a")?.getAttribute("title")).toBe(
+    `Open in the browser: ${upload("two")}`,
+  );
 });
 
 it("gives an image that failed its fresh address", async () => {

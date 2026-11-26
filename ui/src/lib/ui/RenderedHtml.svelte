@@ -3,6 +3,7 @@
   // running, and from loading anything but images from GitHub's image hosts (ADR 0005, #761). A `<picture>`
   // picks its source by `prefers-color-scheme`, which follows the window as it turns to the theme's side.
   // This keeps the HTML from taking the window away from Tsugiki.
+  import { followLink, LINK_SELECTOR, linkTitle } from "./link-tooltip";
   import { resign, sameButSignatures } from "./signed-addresses";
 
   let { html, onlink }: { html: string; onlink: (address: string) => void } = $props();
@@ -24,18 +25,21 @@
     for (const tag of template.content.querySelectorAll("meta, base")) tag.remove();
     const kept = drawn !== undefined && sameButSignatures(drawn, html) && resign(node, template.content);
     if (!kept) node.replaceChildren(template.content);
+    titleLinks(node);
     drawn = html;
   }
 
-  /** Follows a link in the system browser. Enter on a link arrives as a click, so keys need nothing more. */
-  function followLink(e: MouseEvent) {
-    // Only an element takes a click.
-    const link = (e.target as Element).closest("a, area");
-    if (!link) return;
-    e.preventDefault();
-    const address = link.getAttribute("href");
-    // A link within the text moves to a heading in a page Tsugiki doesn't show whole.
-    if (address && !address.startsWith("#")) onlink(address);
+  /** Gives each link that a click follows its tooltip, from the address it has now. `resign` gives a kept
+   * node a fresh address, so this runs after it, and a link within the text, or one with nowhere to go, has
+   * no tooltip to say where it goes. A link with no address keeps any tooltip the HTML itself gave it. */
+  function titleLinks(node: ParentNode) {
+    for (const link of node.querySelectorAll(LINK_SELECTOR)) {
+      const address = link.getAttribute("href");
+      if (address === null) continue;
+      const title = linkTitle(address);
+      if (title === undefined) link.removeAttribute("title");
+      else link.setAttribute("title", title);
+    }
   }
 </script>
 
@@ -43,10 +47,12 @@
 <div
   class="rendered reading"
   {@attach show}
-  onclick={followLink}
+  onclick={(e) => {
+    followLink(e, onlink);
+  }}
   onauxclick={(e) => {
     // A right click opens a menu, and the side buttons go back and forward.
-    if (e.button === 1) followLink(e);
+    if (e.button === 1) followLink(e, onlink);
   }}
   onsubmit={(e) => {
     e.preventDefault();

@@ -116,14 +116,18 @@ it("says the time since with a clock a day on", async () => {
 let onShow: PrViewState | undefined;
 
 /** The view the core answers: the Issue `issue` a PR opened from one is under holds it. */
-const held = (answer: PrView | null, issue: number | undefined): PrView | null =>
-  answer && issue !== undefined && answer.issues.length === 0
-    ? {
-        ...answer,
-        issues: [{ number: issue, pinned: false }],
-        holding: { key: { kind: "issue", number: issue }, mark: answer.holding.mark },
-      }
-    : answer;
+const held = (answer: PrView | null, issue: number | undefined): PrView | null => {
+  if (!answer || issue === undefined) return answer;
+  const issues = answer.issues.length > 0 ? answer.issues : [{ number: issue, pinned: false }];
+  const [first] = issues;
+  if (first === undefined) return answer;
+  const from = issues.find((one) => one.number === issue) ?? first;
+  return {
+    ...answer,
+    issues,
+    holding: { key: { kind: "issue", number: from.number }, mark: answer.holding.mark },
+  };
+};
 
 /** Shows the PR as opened from Issue `issue`, in the panes laid out as `panes` says. */
 const shown = async (
@@ -547,7 +551,12 @@ it("shows only Mark Seen on a PR in an Issue's tree, whose actions act on its Is
 
 it("shows only Mark Seen and the gh-N crumb on a tree PR the view wasn't opened from", async () => {
   const onback = vi.fn();
-  await shown({ ...view, issues: [{ number: 10, pinned: false }] }, undefined, onback);
+  const tree: PrView = {
+    ...view,
+    issues: [{ number: 10, pinned: false }],
+    holding: { key: { kind: "issue", number: 10 }, mark: view.holding.mark },
+  };
+  await shown(tree, undefined, onback);
 
   expect(headerButtons()).toEqual(["Mark Seen"]);
   await fireEvent.click(screen.getByRole("button", { name: "gh-10" }));

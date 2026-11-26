@@ -66,12 +66,32 @@ describe("PrViewState", () => {
 
   it("goes back to the first Issue its view names when the user didn't open it from one", async () => {
     vi.mocked(commands.pullRequest).mockResolvedValue(
-      ok({ ...view, issues: [{ number: 7, pinned: false }] }),
+      ok({
+        ...view,
+        issues: [{ number: 7, pinned: false }],
+        holding: { key: { kind: "issue", number: 7 }, mark: view.holding.mark },
+      }),
     );
     const state = new PrViewState("python/cpython", 11, undefined, new PanesState());
     await state.load();
 
     expect(state.returnIssue).toBe(7);
+    state.stop();
+  });
+
+  it("goes back to the Issue its view names once a read drops the one it was opened from", async () => {
+    vi.mocked(commands.pullRequest).mockResolvedValue(
+      ok({
+        ...view,
+        issues: [{ number: 7, pinned: false }],
+        holding: { key: { kind: "issue", number: 7 }, mark: view.holding.mark },
+      }),
+    );
+    const state = new PrViewState("python/cpython", 11, 12, new PanesState());
+    await state.load();
+
+    expect(state.returnIssue).toBe(7);
+    expect(state.holdingIssue).toEqual({ number: 7, pinned: false });
     state.stop();
   });
 

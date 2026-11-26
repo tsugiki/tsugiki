@@ -115,16 +115,32 @@ fn a_pr_names_the_item_that_holds_it_and_its_part_in_mark_seen() {
 
     world.finish();
     assert_eq!(in_issue.holding.key, ItemKey::Issue { number: 1 });
+    assert_eq!(
+        in_issue.holding.mark.numbers,
+        [1, 5],
+        "the Issue's whole tree"
+    );
     assert_eq!(own.holding.key, ItemKey::PullRequest { number: 6 });
+    assert_eq!(own.holding.mark.numbers, [6]);
     assert_eq!(
         under.holding.key,
         ItemKey::PullRequest { number: 6 },
         "a Bot backport acts on the Standalone PR above it"
     );
     assert_eq!(
+        under.holding.mark.numbers,
+        [6],
+        "the mark is the Standalone PR's, not the backport's"
+    );
+    assert_eq!(
         manual.holding.key,
         ItemKey::PullRequest { number: 6 },
         "a Manual backport acts on the Standalone PR above it"
+    );
+    assert_eq!(
+        manual.holding.mark.numbers,
+        [6],
+        "the mark is the Standalone PR's, not the backport's"
     );
 }
 

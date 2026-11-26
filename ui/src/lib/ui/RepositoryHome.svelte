@@ -685,9 +685,8 @@
       : () => void sayMarkProblem((opened) => opened.unmuteAuthor(login));
   }
 
-  /** The Issue the Detail pane shows, or the Issue that holds the PR on show: of those its view names, the
-   * one the PR opened from, or else the first. Before the view arrives, the Issue that holds its line in the
-   * list (#488). Nothing on a Standalone PR. */
+  /** The Issue the Detail pane shows, or the Issue `PrViewState.holdingIssue` names for the PR on show.
+   * Before the view arrives, the Issue that holds its line in the list (#488). Nothing on a Standalone PR. */
   function detailPin(): Pin | undefined {
     const line = detailLine();
     const listed = line && workbench.pinOf(line);
@@ -695,9 +694,8 @@
       const view = detail.view;
       return view ? { number: view.number, pinned: view.pinned } : listed;
     }
-    const issues = detail?.view?.issues ?? [];
-    const from = detail?.issue;
-    return issues.find((issue) => issue.number === from) ?? issues[0] ?? listed;
+    const holding = detail instanceof PrViewState ? detail.holdingIssue : undefined;
+    return holding ?? listed;
   }
 
   /** What `Ctrl+K P` does for a press `at` (#488): it pins the Issue that holds the line under the cursor,

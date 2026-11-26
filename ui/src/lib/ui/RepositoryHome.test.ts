@@ -953,6 +953,15 @@ it("keeps the merged PRs unfolded after one of them opens and Esc comes back", a
       mute_author: issue.mute_author,
     },
   });
+  core.pullRequest.mockResolvedValue(
+    ok({
+      ...row,
+      number: merged.number,
+      content: null,
+      issues: [{ number: issue.number, pinned: false }],
+      holding: { key: { kind: "issue", number: issue.number }, mark: issue.seen.mark },
+    }),
+  );
   const { issueRow } = await listing();
   await fireEvent.click(issueRow);
   await fireEvent.click(await screen.findByRole("button", { name: "Show 1 merged PR" }));
@@ -967,6 +976,17 @@ it("keeps the merged PRs unfolded after one of them opens and Esc comes back", a
 
 it("opens a PR that fixes two Issues again from its line under the other one", async () => {
   answering(issue, { ...issue, number: 112565, title: "Another crash" });
+  core.pullRequest.mockResolvedValue(
+    ok({
+      ...row,
+      content: null,
+      issues: [
+        { number: issue.number, pinned: false },
+        { number: 112565, pinned: false },
+      ],
+      holding: { key: { kind: "issue", number: 112565 }, mark: issue.seen.mark },
+    }),
+  );
   render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onsettings: () => {} });
   await unfoldAll();
   const [first, second] = await screen.findAllByRole("button", { name: /^#160662 / });
@@ -1109,6 +1129,15 @@ it("stops the Issue view it keeps when it goes, and tells the core the user left
 
 it("opens a Backport in the list in the PR view, with its Issue to go back to", async () => {
   answering({ ...issue, pull_requests: [{ kind: "pr", ...row, backports: [backportRow] }] });
+  core.pullRequest.mockResolvedValue(
+    ok({
+      ...row,
+      number: backportRow.number,
+      content: null,
+      issues: [{ number: issue.number, pinned: false }],
+      holding: { key: { kind: "issue", number: issue.number }, mark: issue.seen.mark },
+    }),
+  );
   render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onsettings: () => {} });
   await unfoldAll();
 

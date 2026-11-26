@@ -157,10 +157,9 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
       Standalone PR's tree, shows Archive, Mute and "Mute <author>" beside Mark Seen, with the rules the Issue
       view's buttons follow: Archive reads Unarchive on an Archived item, a Muted item shows only Unmute and
       "Mute <author>", a Muted author's item only "Unmute <author>", and "Mute <author>" is off on the user's
-      own PR (#1077). Its `gh-N` crumb, where it has one, goes to the Issue that holds it. A PR in an Issue's
-      tree shows only Mark Seen:
-      its `gh-N` crumb opens the Issue view, where the Issue's buttons are, and `E`, `M` and the palette still
-      act on the Issue from the PR view. No ★ shows, as only Issues take a pin
+      own PR (#1077). A PR in an Issue's tree shows only Mark Seen: its `gh-N` crumb opens the Issue its view
+      names, where the Issue's buttons are, and `E`, `M` and the palette still act on the Issue from the PR
+      view. No ★ shows, as only Issues take a pin
       ([#488](https://github.com/tsugiki/tsugiki/issues/488)). The PR view shows Conversation and Files as
       tabs, and opens on Conversation. `Ctrl+PageDown` and `Ctrl+PageUp` switch tabs, and so does `Enter` on
       the PR's row once the PR is open.
@@ -207,8 +206,9 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
     Esc closes what is on top, wherever the focus is: a dialog, the palette or a Peek first, then the wait
     for a chord's second key, a Definition peek, in the diff or the file view, or the diff's search, then the
     file view, which goes back to the PR's diff, and last a PR, which goes back to the Issue it was opened
-    under. With nothing on top, Esc in the Detail pane gives the focus back to the Issue list, on the row of
-    the item on show, or on the list itself when that item has no row, when the list shows; with the list
+    under, or else the first its view names. With nothing on top, Esc in the Detail pane gives the focus back
+    to the Issue list, on the row of the item on show, or on the list itself when that item has no row, when
+    the list shows; with the list
     hidden, Esc does nothing. A PR opened from a row of
     its own (a Standalone PR, one of its Backports, a Dependency update) has nothing under it, so Esc leaves
     it on show, as it leaves an Issue, and moves only the focus. A text box keeps Esc,

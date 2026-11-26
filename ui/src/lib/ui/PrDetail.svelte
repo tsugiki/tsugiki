@@ -172,7 +172,7 @@
   {#if links.problem}
     <p role="alert">{links.problem}</p>
   {/if}
-  <!-- The line over the title: the Issue the PR was opened under, where it goes and when it changed. -->
+  <!-- The line over the title: the Issue the PR goes back to, where it goes and when it changed. -->
   {#if backIssue !== undefined || pr.view}
     <p class="crumb">
       {#if backIssue !== undefined}

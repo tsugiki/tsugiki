@@ -153,10 +153,12 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
       and count, "Open, 1" or "Needs attention, 1", and skips the icons, the dots and "Bold". Each PR's line
       starts with its branch and ends with its author, and a PR that Needs attention shows in bold. The
       worklist's line for an Issue still says "2 open of 3 PRs", as it has no room for five counts.
-    - The PR view of a Standalone PR, or of a Standalone Backport, shows Archive, Mute and "Mute <author>"
-      beside Mark Seen, with the rules the Issue view's buttons follow: Archive reads Unarchive on an Archived
-      item, a Muted item shows only Unmute and "Mute <author>", a Muted author's item only "Unmute <author>",
-      and "Mute <author>" is off on the user's own PR (#1077). A PR in an Issue's tree shows only Mark Seen:
+    - The PR view of a PR no Issue's tree holds, a Standalone PR, a Standalone Backport or a Backport in a
+      Standalone PR's tree, shows Archive, Mute and "Mute <author>" beside Mark Seen, with the rules the Issue
+      view's buttons follow: Archive reads Unarchive on an Archived item, a Muted item shows only Unmute and
+      "Mute <author>", a Muted author's item only "Unmute <author>", and "Mute <author>" is off on the user's
+      own PR (#1077). Its `gh-N` crumb, where it has one, goes to the Issue that holds it. A PR in an Issue's
+      tree shows only Mark Seen:
       its `gh-N` crumb opens the Issue view, where the Issue's buttons are, and `E`, `M` and the palette still
       act on the Issue from the PR view. No ★ shows, as only Issues take a pin
       ([#488](https://github.com/tsugiki/tsugiki/issues/488)). The PR view shows Conversation and Files as

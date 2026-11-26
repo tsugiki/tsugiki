@@ -2996,6 +2996,12 @@ export type PrView_Deserialize = {
 	 *  (#488), and on none for a Standalone PR.
 	 */
 	issues: HoldingIssue[],
+	/**
+	 *  The item that holds the PR, with its part in Mark Seen: the Issue whose tree holds it, or the
+	 *  Standalone PR or Standalone Backport that is its own item (#1077). Archive, Mute and Mute author act
+	 *  on it, whether or not the list on show holds it.
+	 */
+	holding: Hiding_Deserialize,
 } & WorkbenchRow_Deserialize;
 
 /**  A PR as the Detail pane shows it. */
@@ -3017,6 +3023,12 @@ export type PrView_Serialize = {
 	 *  (#488), and on none for a Standalone PR.
 	 */
 	issues: HoldingIssue[],
+	/**
+	 *  The item that holds the PR, with its part in Mark Seen: the Issue whose tree holds it, or the
+	 *  Standalone PR or Standalone Backport that is its own item (#1077). Archive, Mute and Mute author act
+	 *  on it, whether or not the list on show holds it.
+	 */
+	holding: Hiding_Serialize,
 } & WorkbenchRow_Serialize;
 
 /**  A PR's description, its recent comments, and its Reviews. */

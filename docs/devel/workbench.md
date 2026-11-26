@@ -205,7 +205,8 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
     under the cursor, or of the Detail pane's item while it holds the focus, in the current Repository
     only: a PR's author on a PR's row, an Issue's on an Issue's. The command palette offers it, as
     "Unmute Author" on a Muted author's row, and so do the Issue view's button and the PR view's button on a
-    Standalone PR or a Standalone Backport; it has no key, and it is off on the user's own items. A Muted
+    PR no Issue's tree holds: a Standalone PR, a Standalone Backport or a Backport in a Standalone PR's tree.
+    It has no key, and it is off on the user's own items. A Muted
     author's Issues, Standalone PRs and Standalone Backports count as Muted, those they open later too: they
     leave the Workbench, the Archived view and the counts, each Filter lists them in its fold of Muted items,
     and their trees leave Reach as a Muted item's do. Muting marks their open items seen in the background,

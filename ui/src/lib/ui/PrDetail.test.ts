@@ -76,6 +76,10 @@ const view: PrView = {
   shares_review_of: null,
   issues: [],
   hidden: null,
+  holding: {
+    key: { kind: "pull_request", number: 11 },
+    mark: { numbers: [11], up_to: "2026-11-04T10:00:00Z", findings: [] },
+  },
 };
 
 const NOW = new Date("2026-11-04T11:00:00Z");
@@ -114,7 +118,11 @@ let onShow: PrViewState | undefined;
 /** The view the core answers: the Issue `issue` a PR opened from one is under holds it. */
 const held = (answer: PrView | null, issue: number | undefined): PrView | null =>
   answer && issue !== undefined && answer.issues.length === 0
-    ? { ...answer, issues: [{ number: issue, pinned: false }] }
+    ? {
+        ...answer,
+        issues: [{ number: issue, pinned: false }],
+        holding: { key: { kind: "issue", number: issue }, mark: answer.holding.mark },
+      }
     : answer;
 
 /** Shows the PR as opened from Issue `issue`, in the panes laid out as `panes` says. */
@@ -537,10 +545,13 @@ it("shows only Mark Seen on a PR in an Issue's tree, whose actions act on its Is
   expect(headerButtons()).toEqual(["Mark Seen"]);
 });
 
-it("shows only Mark Seen on a tree PR the view wasn't opened from, as its view says", async () => {
-  await shown({ ...view, issues: [{ number: 10, pinned: false }] }, undefined);
+it("shows only Mark Seen and the gh-N crumb on a tree PR the view wasn't opened from", async () => {
+  const onback = vi.fn();
+  await shown({ ...view, issues: [{ number: 10, pinned: false }] }, undefined, onback);
 
   expect(headerButtons()).toEqual(["Mark Seen"]);
+  await fireEvent.click(screen.getByRole("button", { name: "gh-10" }));
+  expect(onback).toHaveBeenCalledExactlyOnceWith(10);
 });
 
 const rail = () => screen.queryByRole("complementary", { name: "Rail" });

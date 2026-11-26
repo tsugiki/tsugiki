@@ -89,6 +89,9 @@
   });
   /** Whether the rail shows: it opens beside the tabs, which come with the PR's view. */
   const railed = $derived(panes.railState.open && Boolean(pr.view));
+  /** The Issue the crumb goes back to: the one the user opened the PR from, or else the first whose tree its
+   * view names (#1077). */
+  const backIssue = $derived(pr.returnIssue);
   /** Whether the Conversation scrolls by itself, as it does beside the rail. Without the rail the whole pane
    * scrolls it, under the header. */
   const conversationScrolls = $derived(railed && pr.tab === "conversation");
@@ -170,10 +173,10 @@
     <p role="alert">{links.problem}</p>
   {/if}
   <!-- The line over the title: the Issue the PR was opened under, where it goes and when it changed. -->
-  {#if pr.issue !== undefined || pr.view}
+  {#if backIssue !== undefined || pr.view}
     <p class="crumb">
-      {#if pr.issue !== undefined}
-        {@const issue = pr.issue}
+      {#if backIssue !== undefined}
+        {@const issue = backIssue}
         <button
           class="link back"
           onclick={() => {

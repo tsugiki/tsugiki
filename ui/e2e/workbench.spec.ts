@@ -122,7 +122,15 @@ test("an item that Needs attention shows an accent bar and title, and a long tit
 test("an item with nothing waiting sits in the one list below what does, and Alt+← goes back to it", async ({
   page,
 }) => {
-  const ownView = { ...reviewRow, ...own, content: null, shares_review_of: null, hidden: null, issues: [] };
+  const ownView = {
+    ...reviewRow,
+    ...own,
+    content: null,
+    shares_review_of: null,
+    hidden: null,
+    issues: [],
+    holding: { key: own.key, mark: own.seen.mark },
+  };
   await mockCore(page, {
     home,
     workbench: workbenchPage([review, own]),
@@ -343,6 +351,7 @@ async function openFarDown(page: Page) {
       shares_review_of: null,
       issues: [],
       hidden: null,
+      holding: { key: { kind: "pull_request", number: 1020 }, mark: reviewRow.seen.mark },
     }),
   });
   await page.goto("/");

@@ -32,6 +32,10 @@ const view: PrView = {
   shares_review_of: null,
   issues: [],
   hidden: null,
+  holding: {
+    key: { kind: "pull_request", number: 11 },
+    mark: { numbers: [11], up_to: null, findings: [] },
+  },
 };
 
 describe("PrViewState", () => {
@@ -57,6 +61,17 @@ describe("PrViewState", () => {
     expect(commands.pullRequest).toHaveBeenCalledWith("python/cpython", 11);
     expect(state.view?.title).toBe("gh-10: Fix the crash");
     expect(state.issue).toBe(10);
+    state.stop();
+  });
+
+  it("goes back to the first Issue its view names when the user didn't open it from one", async () => {
+    vi.mocked(commands.pullRequest).mockResolvedValue(
+      ok({ ...view, issues: [{ number: 7, pinned: false }] }),
+    );
+    const state = new PrViewState("python/cpython", 11, undefined, new PanesState());
+    await state.load();
+
+    expect(state.returnIssue).toBe(7);
     state.stop();
   });
 

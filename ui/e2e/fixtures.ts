@@ -91,6 +91,10 @@ export const prView = (reviews: Review[] = []): PrView => ({
   shares_review_of: null,
   issues: [{ number: issue.number, pinned: false }],
   hidden: null,
+  holding: {
+    key: { kind: "issue", number: issue.number },
+    mark: issue.seen.mark,
+  },
 });
 
 /** Runs palette command `title`, as the user picks it from the palette's commands. */

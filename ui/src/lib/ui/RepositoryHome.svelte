@@ -756,28 +756,32 @@
     muteAuthorRun(view.mute_author, { number: view.number, kind: "issue", issue: undefined })?.();
   }
 
+  /** The line a PR view's holding item has in a list, which an action that finishes it moves the cursor
+   * from (#1077). */
+  const stopOf = (key: ItemKey): Stop =>
+    key.kind === "issue"
+      ? { number: key.number, kind: "issue", issue: undefined }
+      : { number: key.number, kind: "pull_request", issue: undefined };
+
   /** The PR view's Archive button: Archive on the item that holds the PR on show, as its keys act, or
-   * Unarchive on an Archived one (#1077). */
+   * Unarchive on an Archived one (#1077). The view names the item, so the click works while the list shows
+   * another view. */
   function archivePrByButton(view: PrView) {
-    const hiding = detailHiding();
-    if (!hiding) return;
-    if (view.hidden === "archived") void unarchive(hiding.key);
-    else void archive(hiding);
+    if (view.hidden === "archived") void unarchive(view.holding.key);
+    else void archive(view.holding);
   }
 
   /** The PR view's Mute button: Mute on the item that holds the PR on show, as its keys act, or Unmute on a
    * Muted one (#1077). */
   function mutePrByButton(view: PrView) {
-    const hiding = detailHiding();
-    if (!hiding) return;
-    if (view.hidden === "muted") void unmute(hiding.key);
-    else void mute(hiding);
+    if (view.hidden === "muted") void unmute(view.holding.key);
+    else void mute(view.holding);
   }
 
   /** The PR view's Mute author button: Mute author on the author of the PR on show, or Unmute author on a
    * Muted author (#1077). */
   function muteAuthorPrByButton(view: PrView) {
-    muteAuthorRun(view.mute_author, detailLine())?.();
+    muteAuthorRun(view.mute_author, stopOf(view.holding.key))?.();
   }
 
   /** The line of the list the Detail pane shows, if it shows one. */
@@ -1363,10 +1367,10 @@
       // The file view goes back to the diff under it, and the next Escape goes on to the Issue (#456).
       e.preventDefault();
       tab.closeFileView();
-    } else if (key === "escape" && detail instanceof PrViewState && detail.issue !== undefined) {
+    } else if (key === "escape" && detail instanceof PrViewState && detail.returnIssue !== undefined) {
       // A PR opened from a row of its own has nothing under it, so it stays on show.
       e.preventDefault();
-      back(detail.issue);
+      back(detail.returnIssue);
     } else if (key === "escape" && at.pane === "detail" && !panes.hidden("list")) {
       // Nothing on top: the focus goes back to the list, on the row of the item on show.
       e.preventDefault();

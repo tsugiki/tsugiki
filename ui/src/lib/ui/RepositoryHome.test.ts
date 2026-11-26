@@ -187,11 +187,27 @@ beforeEach(() => {
   core.mirrorsHeld.mockResolvedValue(false);
   core.paneLayout.mockResolvedValue(DEFAULT_LAYOUT);
   core.savePaneLayout.mockResolvedValue({ status: "ok", data: DEFAULT_LAYOUT });
+  // PR `row` is in the Issue's tree, and every other PR these tests open is a Standalone one.
   core.pullRequest.mockImplementation((_repository: string, number: number) =>
-    Promise.resolve({
-      status: "ok",
-      data: { ...row, number, title: `PR ${String(number)}`, content: null, issues: [] },
-    }),
+    Promise.resolve(
+      ok({
+        ...row,
+        number,
+        title: `PR ${String(number)}`,
+        content: null,
+        issues: number === row.number ? [{ number: issue.number, pinned: false }] : [],
+        holding:
+          number === row.number
+            ? {
+                key: { kind: "issue" as const, number: issue.number },
+                mark: issue.seen.mark,
+              }
+            : {
+                key: { kind: "pull_request" as const, number },
+                mark: row.seen.mark,
+              },
+      }),
+    ),
   );
   core.openOnGithub.mockResolvedValue(done);
   core.markSeen.mockResolvedValue(done);
@@ -3613,11 +3629,48 @@ it("archives the Standalone PR on show from its button, and the list follows", a
 it("archives the Standalone PR that holds the Backport on show from its button", async () => {
   const item = { ...standalone, backports: [backportRow] };
   answering(item);
+  core.pullRequest.mockResolvedValue({
+    status: "ok",
+    data: {
+      ...row,
+      number: backportRow.number,
+      content: null,
+      issues: [],
+      holding: { key: standalone.key, mark: standalone.seen.mark },
+    },
+  });
   render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onsettings: () => {} });
 
   await fireEvent.click(await screen.findByRole("button", { name: /^#160700 / }));
   await screen.findByRole("region", { name: "PR view" });
   await fireEvent.click(await screen.findByRole("button", { name: "Archive" }));
+
+  expect(core.archive).toHaveBeenCalledExactlyOnceWith(
+    "python/cpython",
+    { key: standalone.key, mark: standalone.seen.mark },
+    expect.anything(),
+  );
+});
+
+it("shows only Mark Seen on a PR in an Issue's tree, whose actions act on its Issue", async () => {
+  const { treeRow } = await listing();
+  await fireEvent.click(treeRow);
+  const pane = await screen.findByRole("region", { name: "PR view" });
+
+  expect(within(pane).queryByRole("button", { name: /^(un)?(archive|mute)/i })).toBeNull();
+  expect(within(pane).getByRole("button", { name: "Mark Seen" })).toBeTruthy();
+});
+
+it("archives the Standalone PR on show from its button while the list shows another view", async () => {
+  const { prRow } = await listing();
+  await fireEvent.click(prRow);
+  await screen.findByRole("region", { name: "PR view" });
+
+  core.workbench.mockResolvedValue(workbenchPage([]));
+  await fireEvent.click(await screen.findByRole("button", { name: "Archived" }));
+  await screen.findByRole("heading", { name: "Archived" });
+
+  await fireEvent.click(screen.getByRole("button", { name: "Archive" }));
 
   expect(core.archive).toHaveBeenCalledExactlyOnceWith(
     "python/cpython",
@@ -3641,7 +3694,14 @@ it("mutes the Standalone PR on show from its button, and offers Unmute once it i
   cleanup();
   core.pullRequest.mockResolvedValue({
     status: "ok",
-    data: { ...row, number: 5, content: null, hidden: "muted", issues: [] },
+    data: {
+      ...row,
+      number: 5,
+      content: null,
+      hidden: "muted",
+      issues: [],
+      holding: { key: standalone.key, mark: standalone.seen.mark },
+    },
   });
   const next = await listing();
   await fireEvent.click(next.prRow);

@@ -119,6 +119,12 @@ export class PrViewState extends DetailState<PrView> {
     return { number: this.number, kind: "pull_request", issue: this.issue };
   }
 
+  /** The Issue the PR goes back to: the one the user opened it from, or else the first whose tree its view
+   * names (#1077). Nothing for a Standalone PR. */
+  get returnIssue(): number | undefined {
+    return this.issue ?? this.view?.issues[0]?.number;
+  }
+
   /** Opens review thread `id` in the Files tab, unfolded (#184). */
   openThread(id: string) {
     this.tab = "files";

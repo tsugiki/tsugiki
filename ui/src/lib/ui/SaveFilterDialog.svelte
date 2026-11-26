@@ -22,7 +22,8 @@
   } = $props();
 
   // The dialog's own fields: it opens with the draft's name and query, and edits them on their own. A
-  // refusal speaks of what the fields held, so an edit drops it.
+  // refusal speaks of what the fields held, so an edit drops it. They stay still while the save is in
+  // flight, as the button does, so an answer lands on the values it speaks of.
   let name = $state(untrack(() => defaultName));
   let query = $state(untrack(() => defaultQuery));
   let problem = $state<string>();
@@ -47,11 +48,18 @@
   <form onsubmit={submit}>
     <label>
       Name
-      <input {@attach takeFocus} bind:value={name} autocomplete="off" spellcheck="false" oninput={edited} />
+      <input
+        {@attach takeFocus}
+        bind:value={name}
+        autocomplete="off"
+        spellcheck="false"
+        disabled={saving}
+        oninput={edited}
+      />
     </label>
     <label>
       Query
-      <input bind:value={query} autocomplete="off" spellcheck="false" oninput={edited} />
+      <input bind:value={query} autocomplete="off" spellcheck="false" disabled={saving} oninput={edited} />
     </label>
     {#if problem}
       <p role="alert">{problem}</p>

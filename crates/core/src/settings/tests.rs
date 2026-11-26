@@ -1369,7 +1369,8 @@ on_workbench = true
 
     files
         .append_filter(
-            &repository("a/b"),
+            // The settings take a name in any case as one Repository, and the file writes the one it holds.
+            &repository("A/B"),
             &filter("Needs review", "review-requested:@me is:open"),
         )
         .unwrap();

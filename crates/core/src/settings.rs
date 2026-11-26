@@ -2033,12 +2033,45 @@ impl TomlEdit<'_, Settings> {
         repository.ok_or_else(|| not_held(name))
     }
 
+    /// The table of `name` in the file, and the name and search of each of its Filters, once it has refused
+    /// a file the settings show only partly: one that names `name` twice, and one whose Filters two of them
+    /// search alike, as the settings read only the first. `subject` is what shows the first, `Settings` or
+    /// `Tsugiki`, and `then` what the user does next.
+    fn repository_with_all_filters(
+        &mut self,
+        name: &RepositoryName,
+        subject: &str,
+        then: &str,
+    ) -> Result<(&mut dyn TableLike, NamedSearches), Error> {
+        // The settings take a name in any case as one Repository, and the file the first that names it.
+        let mut named = (self.values.repositories.iter()).filter(|one| one.name.is_same(name));
+        if let (Some(first), Some(_)) = (named.next(), named.next()) {
+            let message = format!(
+                "settings.toml names {name} twice, first as {}, and {subject} saves only the Filters of the \
+                 first. Take one out of the file, then {then}.",
+                first.name
+            );
+            return Err(Error::new(ErrorKind::Conflict, &message));
+        }
+        let repository = self.repository_with_filters(name)?;
+        let held = names_and_searches(repository.get_mut(FILTERS));
+        // The settings show only the first, so writing its Filters would take out one it never showed.
+        if let Some(query) = repeated_search(&held) {
+            let message = format!(
+                "settings.toml holds two Filters of {name} that search {query}, and {subject} shows only the \
+                 first. Take one out of the file, then {then}."
+            );
+            return Err(Error::new(ErrorKind::Conflict, &message));
+        }
+        Ok((repository, held))
+    }
+
     /// Makes the Filters of the Repository `change` names the ones it lists, as `put_filters` says. It
     /// refuses two Filters with one search, in the change or in the file, as the settings read only the
-    /// first, a Repository the file names twice in two cases, and a Repository the file doesn't hold. It
-    /// refuses Filters whose names and searches, table by table, are neither those the page read nor those
-    /// it leaves: a hand edit made while the dialog was open changed them. Filters that say what the page
-    /// leaves already, as after an Apply whose answer the window missed, it leaves be.
+    /// first, a Repository the file names twice, and a Repository the file doesn't hold. It refuses Filters
+    /// whose names and searches, table by table, are neither those the page read nor those it leaves: a hand
+    /// edit made while the dialog was open changed them. Filters that say what the page leaves already, as
+    /// after an Apply whose answer the window missed, it leaves be.
     fn put_filters(&mut self, change: &RepositoryFilters) -> Result<(), Error> {
         let filters = &change.filters;
         let name = &change.repository;
@@ -2053,28 +2086,8 @@ impl TomlEdit<'_, Settings> {
                 format!("Two Filters of {name} search {query}: give each a search of its own.");
             return Err(Error::new(ErrorKind::Conflict, &message));
         }
-        // The settings take a name in any case as one Repository, and the file the first that names it.
-        let first = (self.values.repositories.iter()).find(|one| one.name.is_same(name));
-        if let Some(first) = first
-            && first.name.to_string() != name.to_string()
-        {
-            let message = format!(
-                "settings.toml names {name} twice, first as {}, and Settings saves only the Filters of \
-                 the first. Take one out of the file, then open Settings again.",
-                first.name
-            );
-            return Err(Error::new(ErrorKind::Conflict, &message));
-        }
-        let repository = self.repository_with_filters(name)?;
-        let in_file = names_and_searches(repository.get_mut(FILTERS));
-        // The page shows only the first, so writing its Filters would take out one it never showed.
-        if let Some(query) = repeated_search(&in_file) {
-            let message = format!(
-                "settings.toml holds two Filters of {name} that search {query}, and Settings shows only \
-                 the first. Take one out of the file, then open Settings again."
-            );
-            return Err(Error::new(ErrorKind::Conflict, &message));
-        }
+        let (repository, in_file) =
+            self.repository_with_all_filters(name, "Settings", "open Settings again")?;
         if in_file == left {
             return Ok(());
         }
@@ -2099,27 +2112,8 @@ impl TomlEdit<'_, Settings> {
     /// does. A Repository without `filters` gets the Filters it reads as written out first, as `put_filters`
     /// says.
     fn append_filter(&mut self, name: &RepositoryName, filter: &Filter) -> Result<(), Error> {
-        // The settings take a name in any case as one Repository, and the file the first that names it.
-        let first = (self.values.repositories.iter()).find(|one| one.name.is_same(name));
-        if let Some(first) = first
-            && first.name.to_string() != name.to_string()
-        {
-            let message = format!(
-                "settings.toml names {name} twice, first as {}, and Tsugiki saves only the Filters of the \
-                 first. Take one out of the file, then save the Filter again.",
-                first.name
-            );
-            return Err(Error::new(ErrorKind::Conflict, &message));
-        }
-        let repository = self.repository_with_filters(name)?;
-        let held = names_and_searches(repository.get_mut(FILTERS));
-        if let Some(query) = repeated_search(&held) {
-            let message = format!(
-                "settings.toml holds two Filters of {name} that search {query}, and Tsugiki shows only the \
-                 first. Take one out of the file, then save the Filter again."
-            );
-            return Err(Error::new(ErrorKind::Conflict, &message));
-        }
+        let (repository, held) =
+            self.repository_with_all_filters(name, "Tsugiki", "save the Filter again")?;
         if held.iter().any(|(held, _)| held == filter.name.as_str()) {
             let message = format!(
                 "{name} already has a Filter named {}. Choose another name.",
@@ -2365,8 +2359,11 @@ fn repeated_search(filters: &[(String, String)]) -> Option<&str> {
     })
 }
 
+/// The name and the search of each Filter of a Repository, in their order, as the file writes them.
+type NamedSearches = Vec<(String, String)>;
+
 /// The name and the search of each Filter of `filters`, in their order, as the file writes them.
-fn names_and_searches(filters: Option<&mut Item>) -> Vec<(String, String)> {
+fn names_and_searches(filters: Option<&mut Item>) -> NamedSearches {
     let text = |filter: &dyn TableLike, key: &str| {
         let text = filter.get(key).and_then(Item::as_str).unwrap_or_default();
         text.trim().to_owned()

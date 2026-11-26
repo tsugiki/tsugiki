@@ -194,6 +194,9 @@ impl Syncs {
         if !self.is_open(&repository) {
             self.opened.clear();
             self.trees.clear();
+            // A saved Filter's search belongs to the Repository that was open, which the status bar can't
+            // show once another is, so the next sync of that one searches it instead.
+            self.searches.clear();
         }
         if !self.was_opened(&repository) {
             self.repositories_opened.push(repository.clone());
@@ -571,7 +574,24 @@ impl Syncs {
         };
         let repository = search.sync.repository.clone();
         let Some(stepped) = unfinished(step) else {
-            return Ok(None);
+            // The queue drops a search once its steps end, so no `finish` marks read the pin trees it read.
+            return match search.sync.mark_pin_trees_read(store) {
+                Ok(()) => Ok(None),
+                Err(problem) if !problem.kind.speaks_for_all_of_github() => {
+                    log::warn!(
+                        "Tsugiki couldn't save the trees the saved Filter's search read: {}",
+                        problem.message
+                    );
+                    Ok(None)
+                }
+                Err(problem) => {
+                    self.searches.push_front(search);
+                    Err(StepFailure {
+                        problem,
+                        turn: Turn::Filter,
+                    })
+                }
+            };
         };
         self.searches.push_front(search);
         Ok(self.after_step(repository, stepped, github))
@@ -715,6 +735,7 @@ fn fill_step(fill: &mut StateFill, github: &GitHub, store: &Store) -> Result<Ste
         store,
         repository: &fill.repository,
         filters: &[],
+        keep_filters: Vec::new(),
         window_since: None,
     };
     let asked = Asking::Sync {

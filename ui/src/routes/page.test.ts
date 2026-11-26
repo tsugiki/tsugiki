@@ -413,6 +413,32 @@ it("keeps the Save dialog open and says why the core refused the Filter's name",
   expect(within(dialog).queryByRole("alert")).toBeNull();
 });
 
+it("keeps the Save dialog's fields still while the save is in flight", async () => {
+  core.home.mockResolvedValue(gcmonHome);
+  core.inbox.mockResolvedValue(inboxPage([]));
+  core.saveFilter.mockReturnValue(new Promise(() => {}));
+  render(Page);
+  await fireEvent.click(await screen.findByRole("button", { name: "Inbox" }));
+  await screen.findByRole("heading", { name: "Inbox" });
+  core.inbox.mockResolvedValue(
+    inboxPage([listedIssue(7, { title: "It crashes" })], null, "off", false, null, "label:bug is:open"),
+  );
+  await fireEvent.input(screen.getByRole("searchbox", { name: "Search the Inbox" }), {
+    target: { value: "label:bug" },
+  });
+  await screen.findByRole("button", { name: "#7 It crashes" });
+  await fireEvent.click(screen.getByRole("button", { name: "Save" }));
+  const dialog = await screen.findByRole("dialog", { name: "Save as Filter" });
+
+  await fireEvent.click(within(dialog).getByRole("button", { name: "Save" }));
+
+  // The fields stay as the save left them, so an answer lands on the values it speaks of.
+  const name = within(dialog).getByRole("textbox", { name: "Name" }) as HTMLInputElement;
+  const query = within(dialog).getByRole("textbox", { name: "Query" }) as HTMLInputElement;
+  expect(name.disabled).toBe(true);
+  expect(query.disabled).toBe(true);
+});
+
 it("says a Read-only Repository is so in the status bar and atop its Issue view, until the core says otherwise", async () => {
   const state = (read_only: "token"[]) => ({ status: "ok", data: { read_only, connection: "online" } });
   core.home.mockResolvedValue(gcmonHome);

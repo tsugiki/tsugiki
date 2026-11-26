@@ -1,14 +1,15 @@
 use super::*;
 use crate::facts::issues::{IssueFacts, IssueState};
-use crate::filters::FilterQuery;
+use crate::filters::{Filter, FilterQuery, OnWorkbench};
 use crate::github::in_flight::Asking;
-use crate::github::testing::{dated, filter_page, in_flight_heard, reply_ok, signed_in_as};
+use crate::github::testing::{answer, dated, filter_page, in_flight_heard, reply_ok, signed_in_as};
 use crate::github::{Reply, Unreachable};
 use crate::repository::RepositoryName;
+use crate::store::testing::pins_to_read;
 use crate::sync::testing::{
     Harness, RATE_LIMIT, a_tree_over_two_pages, cpython, cross_references, fetched, fetched_nodes,
-    hours_ago_text, issues, merged_node, nothing, plain, pr_node, run_to_the_end, search_page,
-    searches_finding, soon, window_issue, window_page,
+    fetched_titled, hours_ago_text, issue_references, issues, merged_node, nothing, plain, pr_node,
+    run_to_the_end, search_page, searches_finding, soon, window_issue, window_page,
 };
 use serde_json::{Value, json};
 
@@ -102,6 +103,78 @@ fn a_filter_saved_while_a_sync_is_queued_searches_ahead_of_the_syncs_next_step()
             .unwrap()
             .contains_key(&query)
     );
+    harness.finish();
+}
+
+#[test]
+fn a_saved_filter_s_results_stay_when_the_refresh_queued_before_it_keeps_its_filters() {
+    let (mut syncs, harness) = after_a_first_sync(
+        "filter-kept",
+        vec![filter_page(0, &[], None, RATE_LIMIT), polled_nothing()],
+    );
+    let query: FilterQuery = "label:bug".to_owned().try_into().unwrap();
+    // The refresh is queued with no Filters, as one is before the user saves this one.
+    syncs.add(cpython());
+    let saved = RepositorySettings {
+        filters: vec![Filter {
+            name: "Bugs".to_owned().try_into().unwrap(),
+            query: query.clone(),
+            on_workbench: OnWorkbench::Off,
+        }],
+        ..plain(cpython())
+    };
+    syncs.list(saved);
+    syncs.search_filter(&cpython(), query.clone());
+    let kept = || (harness.db.store.filter_results(&cpython()).unwrap()).contains_key(&query);
+
+    while !syncs.searches.is_empty() {
+        drop(syncs.step(&harness.github, &harness.db.store).unwrap());
+    }
+    assert!(kept(), "the saved Filter's search saved its results");
+
+    // The refresh now reaches its first phase, which keeps only the Filters the settings list now.
+    drop(syncs.step(&harness.github, &harness.db.store).unwrap());
+
+    assert!(kept(), "the queued refresh kept the saved Filter's results");
+    harness.finish();
+}
+
+#[test]
+fn a_saved_filter_s_search_marks_read_the_pin_trees_it_read() {
+    let harness = Harness::new(
+        "filter-search-pins",
+        vec![
+            filter_page(0, &[], None, RATE_LIMIT),
+            issue_references(&[(7, &[30])], RATE_LIMIT),
+            fetched_titled(&[30], RATE_LIMIT, |_| "gh-7: Fix it".to_owned()),
+        ],
+    );
+    let store = &harness.db.store;
+    store.save_issues(&cpython(), facts_of_issue(7)).unwrap();
+    store.pin(&cpython(), 7).unwrap();
+    let mut syncs = Syncs::default();
+    syncs.add_listed(plain(cpython()));
+    syncs.search_filter(&cpython(), "label:bug".to_owned().try_into().unwrap());
+
+    while !syncs.searches.is_empty() {
+        drop(syncs.step(&harness.github, store).unwrap());
+    }
+
+    let left = pins_to_read(store, &cpython());
+    assert!(left.is_empty(), "the search read the tree: {left:?}");
+    harness.finish();
+}
+
+#[test]
+fn opening_another_repository_drops_the_previous_one_s_saved_filter_search() {
+    let harness = Harness::new("filter-switch", Vec::new());
+    let mut syncs = Syncs::default();
+    syncs.add_listed(plain(cpython()));
+    syncs.search_filter(&cpython(), "label:bug".to_owned().try_into().unwrap());
+
+    syncs.add_listed(plain(peps()));
+
+    assert_eq!(syncs.activity().unwrap().open.unwrap().repository, peps());
     harness.finish();
 }
 
@@ -1052,6 +1125,20 @@ fn facts_of_issue(number: u32) -> Vec<IssueFacts> {
 
 fn refused() -> Result<Reply, Unreachable> {
     reply_ok(r#"{"data":null,"errors":[{"type":"FORBIDDEN","message":"No."}]}"#)
+}
+
+/// GitHub's answer to a refresh's first look, with nothing changed.
+fn polled_nothing() -> Result<Reply, Unreachable> {
+    let page = json!({ "pageInfo": { "hasNextPage": false, "endCursor": null }, "nodes": [] });
+    answer(
+        json!({ "repository": {
+            "openIssues": { "totalCount": 0 },
+            "openPrs": { "totalCount": 0 },
+            "issues": page.clone(),
+            "pullRequests": page,
+        }}),
+        RATE_LIMIT,
+    )
 }
 
 #[test]

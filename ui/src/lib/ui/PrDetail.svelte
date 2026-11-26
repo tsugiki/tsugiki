@@ -264,8 +264,8 @@
       </p>
     {/if}
     <!-- Beside the rail the Conversation scrolls by itself, as the diff does, and takes the focus for its
-         keys (axe's scrollable-region-focusable). The Detail pane's ↑ and ↓ scroll it, which `data-scrolls`
-         marks it for. -->
+         keys (axe's scrollable-region-focusable). The Detail pane's scroll keys move it, which
+         `data-scrolls` marks it for. -->
     <div
       class="body"
       style:--rail-width={`${String(panes.rail ?? RAIL_WIDTH)}px`}

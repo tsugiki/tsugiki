@@ -59,6 +59,13 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
   their own keys ([layout.md](layout.md)). In the Detail pane, Esc with nothing on top gives the focus back
   to the Issue list, on the row of the item on show, or on the list itself when that item has no row, when
   the list shows.
+- With the focus in the Detail pane, outside a text box, ↑ ↓ scroll its content a step at a time, `PgDn` and
+  `PgUp` page it, and `Home` and `End` go to its start and end: the diff on a PR's Files tab, the file view
+  over it, the Conversation, or the code and hits of a Definition peek. The Issue list keeps `PgDn` and
+  `PgUp` while it holds the focus, where they scroll it a page at a time. `Ctrl+PageDown`, `Ctrl+PageUp` and
+  `Enter` on the open PR's row switch the PR view's tabs and leave the focus where it was: in the Issue list
+  it stays there, and in the Detail pane it follows to the new tab's content. The focus reaches the pane by a
+  click in it, by hiding the list, or with `F6`.
 - `Ctrl+K O`, "one", switches the Files tab between all files and one file at a time. It is a `Ctrl+K`
   chord, as `Ctrl+K Z` is for the panes, because a free `Ctrl+Alt` letter would clash with AltGr, which
   Windows sends as `Ctrl+Alt` to type characters such as Polish ó on `AltGr+O`. VS Code's own `Ctrl+K O`

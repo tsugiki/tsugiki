@@ -283,9 +283,8 @@ impl Store {
     ) -> Result<(), Error> {
         let repository = repository.clone();
         let query = query.to_owned();
-        let saved = self.call(move |connection| {
-            inbox_search::save(connection, &repository, &query, &search)
-        })?;
+        let saved = self
+            .call(move |connection| inbox_search::save(connection, &repository, &query, &search))?;
         saved.map_err(saying(CANT_WRITE))
     }
 

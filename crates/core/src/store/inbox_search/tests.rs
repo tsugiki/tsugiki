@@ -62,7 +62,11 @@ fn an_answer_reads_back_in_github_s_order_with_its_total() {
 fn a_new_query_drops_the_answer_to_the_old_one() {
     let db = OpenStore::new("inbox-search-replace");
     db.store
-        .save_inbox_search(&cpython(), "old", answer(vec![hit(1, RowKind::Issue, 1)], 1))
+        .save_inbox_search(
+            &cpython(),
+            "old",
+            answer(vec![hit(1, RowKind::Issue, 1)], 1),
+        )
         .unwrap();
     let newer = answer(vec![hit(2, RowKind::PullRequest, 2)], 1);
     db.store

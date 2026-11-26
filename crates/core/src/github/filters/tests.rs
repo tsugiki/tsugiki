@@ -206,7 +206,9 @@ fn a_typed_search_reads_every_page_github_lists_in_its_order() {
         page_of(&second, None),
     ]);
 
-    let found = github(script).search_inbox(&cpython(), "fix parser").unwrap();
+    let found = github(script)
+        .search_inbox(&cpython(), "fix parser")
+        .unwrap();
 
     let read: Vec<(u32, RowKind)> = found
         .hits

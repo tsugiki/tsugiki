@@ -1828,6 +1828,33 @@ describe("WorkbenchState's Inbox", () => {
     }
   });
 
+  it("sends the search it dropped when the user returns to the Inbox", async () => {
+    vi.useFakeTimers();
+    try {
+      catchChanged();
+      vi.mocked(commands.workbench).mockResolvedValue(answer(9));
+      paging({ latest: page([3]) });
+      const state = await showingInbox();
+
+      await state.setSearch("review:approved");
+      await state.select(whole);
+      await vi.advanceTimersByTimeAsync(SEARCH_PAUSE_MS);
+      expect(commands.searchInbox).not.toHaveBeenCalled();
+
+      // The box still holds the query, so returning sends it, and keeps the box's text and list together.
+      await state.select(inbox);
+      expect(commands.searchInbox).toHaveBeenCalledExactlyOnceWith("python/cpython", "review:approved");
+
+      // A search already sent isn't sent again by another look at the Inbox.
+      await state.select(whole);
+      await state.select(inbox);
+      expect(commands.searchInbox).toHaveBeenCalledOnce();
+      state.stop();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("reads the older pages onto the end, each item once, until the cache holds nothing older", async () => {
     catchChanged();
     vi.mocked(commands.workbench).mockResolvedValue(answer());

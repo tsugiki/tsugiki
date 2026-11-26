@@ -1439,88 +1439,86 @@
         <span class="headline">
           <span class="fold"></span>
           <code>#{String(item.number)}</code>
-          <span class="title"
-            >{item.item_kind === "pull_request" ? "PR" : "Issue"} not in the cache yet</span
-          >
+          <span class="title">{item.item_kind === "pull_request" ? "PR" : "Issue"} not in the cache yet</span>
         </span>
       </div>
     </li>
   {:else}
     {@const unfolded = item.kind === "issue" && workbench.unfolded(item.number)}
-  {@const inArchived = workbench.shown.kind === "archived"}
-  {@const stop: Stop = {
+    {@const inArchived = workbench.shown.kind === "archived"}
+    {@const stop: Stop = {
     number: item.number,
     kind: item.kind === "issue" ? "issue" : "pull_request",
     issue: undefined,
   }}
-  <li class={["item", { attention: item.attention !== null }]}>
-    <div class={["row", { greyed: greyed(item) }]} data-row={lineName(stop)}>
-      <span class="people">{peopleOf(item)}</span>
-      <span class="headline">
-        {#if item.kind === "issue" && item.pull_requests.length > 0}
-          <button
-            class="fold"
-            aria-label={`PRs of #${String(item.number)}`}
-            aria-expanded={unfolded}
-            onclick={() => {
-              if (unfolded) workbench.fold(item.number);
-              else workbench.unfold(item.number);
-            }}>{unfolded ? "⌄" : "›"}</button
-          >
-        {:else}
-          <!-- Keeps the icons and headlines of rows with nothing to fold in line with those that have. -->
-          <span class="fold"></span>
-        {/if}
-        {@render line(
-          stop,
-          item,
-          item.attention !== null,
-          item.kind === "issue" ? issueIcon(item.state) : prIcon(item),
-        )}
-        {#if item.kind === "issue" && item.pull_requests.length > 0}
-          <small class="count">{treeCount(item)}</small>
-        {/if}
-        <!-- Every row of the Archived view is Archived, so there it offers Unarchive instead (#491). -->
-        {#if item.hidden === "archived" && !inArchived}
-          <small class="archived">Archived</small>
-        {:else if isMuted(item.hidden)}
-          <small class="archived">Muted</small>
-        {/if}
-        <small class="age" title={ageTip(item)}>{ago(item.updated_at, clock.now)}</small>
-        <!-- Only Issues take a pin (#488). -->
-        {#if item.kind === "issue"}
-          {@render star({ number: item.number, pinned: item.pinned })}
-        {/if}
-        {#if inArchived}
-          <button
-            class="link unarchive"
-            onclick={() => {
-              void unarchive(item.key);
-            }}>Unarchive</button
-          >
-        {/if}
-      </span>
-      <small class="facts"
-        >{#if item.attention}{preview(item.attention)}{:else if item.kind !== "issue"}{@render facts(
+    <li class={["item", { attention: item.attention !== null }]}>
+      <div class={["row", { greyed: greyed(item) }]} data-row={lineName(stop)}>
+        <span class="people">{peopleOf(item)}</span>
+        <span class="headline">
+          {#if item.kind === "issue" && item.pull_requests.length > 0}
+            <button
+              class="fold"
+              aria-label={`PRs of #${String(item.number)}`}
+              aria-expanded={unfolded}
+              onclick={() => {
+                if (unfolded) workbench.fold(item.number);
+                else workbench.unfold(item.number);
+              }}>{unfolded ? "⌄" : "›"}</button
+            >
+          {:else}
+            <!-- Keeps the icons and headlines of rows with nothing to fold in line with those that have. -->
+            <span class="fold"></span>
+          {/if}
+          {@render line(
+            stop,
             item,
-          )}{:else}{summary(item)}{/if}</small
-      >
-    </div>
-    {#if unfolded}
-      <ul class="pull-requests">
-        {#each item.pull_requests as entry (entry.number)}
-          <li>
-            {@render pullRequest(entry, item.number)}
-            {#if entry.kind === "pr"}
-              {@render backports(entry.backports, item.number)}
-            {/if}
-          </li>
-        {/each}
-      </ul>
-    {:else if item.kind === "standalone_pr"}
-      {@render backports(item.backports, undefined)}
-    {/if}
-  </li>
+            item.attention !== null,
+            item.kind === "issue" ? issueIcon(item.state) : prIcon(item),
+          )}
+          {#if item.kind === "issue" && item.pull_requests.length > 0}
+            <small class="count">{treeCount(item)}</small>
+          {/if}
+          <!-- Every row of the Archived view is Archived, so there it offers Unarchive instead (#491). -->
+          {#if item.hidden === "archived" && !inArchived}
+            <small class="archived">Archived</small>
+          {:else if isMuted(item.hidden)}
+            <small class="archived">Muted</small>
+          {/if}
+          <small class="age" title={ageTip(item)}>{ago(item.updated_at, clock.now)}</small>
+          <!-- Only Issues take a pin (#488). -->
+          {#if item.kind === "issue"}
+            {@render star({ number: item.number, pinned: item.pinned })}
+          {/if}
+          {#if inArchived}
+            <button
+              class="link unarchive"
+              onclick={() => {
+                void unarchive(item.key);
+              }}>Unarchive</button
+            >
+          {/if}
+        </span>
+        <small class="facts"
+          >{#if item.attention}{preview(item.attention)}{:else if item.kind !== "issue"}{@render facts(
+              item,
+            )}{:else}{summary(item)}{/if}</small
+        >
+      </div>
+      {#if unfolded}
+        <ul class="pull-requests">
+          {#each item.pull_requests as entry (entry.number)}
+            <li>
+              {@render pullRequest(entry, item.number)}
+              {#if entry.kind === "pr"}
+                {@render backports(entry.backports, item.number)}
+              {/if}
+            </li>
+          {/each}
+        </ul>
+      {:else if item.kind === "standalone_pr"}
+        {@render backports(item.backports, undefined)}
+      {/if}
+    </li>
   {/if}
 {/snippet}
 

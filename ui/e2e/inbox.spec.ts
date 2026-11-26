@@ -146,6 +146,10 @@ test("Enter sends the whole search to GitHub, and its rows show with a placehold
   // the pause's timer so only this one search goes.
   await search.press("Enter");
   await expect.poll(() => callsOf(page, "searchInbox")).toBe(1);
+  // The pause the fill scheduled would have fired by now, had Enter not cleared it, and a second search
+  // would show. Waiting past it proves the timer is gone.
+  await page.waitForTimeout(1200);
+  await expect.poll(() => callsOf(page, "searchInbox")).toBe(1);
 
   // A result the cache lacks holds its place, and a search past 1,000 says how many it showed.
   await expect(page.getByText("PR not in the cache yet")).toBeVisible();

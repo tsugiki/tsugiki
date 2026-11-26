@@ -236,7 +236,10 @@ pub(super) enum Turn {
     /// The user asked for an Issue or a PR the database lacks, and waits for what the fetch found.
     FetchUnstored(Item, Sender<ItemFetch>),
     /// The user typed a search in the Inbox's box, which GitHub answers (#465).
-    Search { repository: RepositoryName, text: String },
+    Search {
+        repository: RepositoryName,
+        text: String,
+    },
     /// The session couldn't keep what it saved.
     Problem(Error),
     /// Time to see whether the hour's points have reset, so the window stops showing the old hour's count.
@@ -752,8 +755,9 @@ fn keep_search(
     let asked = Asking::Search {
         repository: search.repository.clone(),
     };
-    let answer =
-        github.asking(asked, || github.search_inbox(&search.repository, &search.text))?;
+    let answer = github.asking(asked, || {
+        github.search_inbox(&search.repository, &search.text)
+    })?;
     if queue.newer_search(&search.repository, &search.text) {
         return Ok(None);
     }

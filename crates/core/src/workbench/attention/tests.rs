@@ -786,11 +786,7 @@ fn an_issue_the_user_was_unassigned_from_is_no_longer_their_conversation() {
 
     let view = filter(involved());
     assert_eq!(world.why_in(&view, 1), []);
-    let state = |number| {
-        seen_of(&world.listed_in(&view, number).item)
-            .unwrap()
-            .state
-    };
+    let state = |number| seen_of(&world.listed_in(&view, number).item).unwrap().state;
     assert_eq!(
         state(1),
         state(2),

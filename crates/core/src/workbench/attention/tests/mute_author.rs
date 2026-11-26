@@ -284,9 +284,8 @@ fn each_line_offers_mute_author_for_its_author_but_the_users_own_and_a_gone_acco
     world.has(vec![fixing_too(reviewed_by_me(6), 5)]);
     world.happened(6, vec![comment(&colleague(), hours_ago(2))]);
     let mute = |login: Login| MuteAuthor::Mute { login };
-    let offered = |number| {
-        mute_author_of(&world.listed_in(&WorkbenchView::Whole, number).item).unwrap()
-    };
+    let offered =
+        |number| mute_author_of(&world.listed_in(&WorkbenchView::Whole, number).item).unwrap();
     assert_eq!(offered(1), mute(colleague()));
     assert_eq!(offered(2), MuteAuthor::Off);
     assert_eq!(offered(3), MuteAuthor::Off);

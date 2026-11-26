@@ -569,12 +569,8 @@ fn unheard_refreshes() -> Refreshes {
 #[test]
 fn a_query_typed_after_a_search_makes_the_older_answers_out_of_date() {
     let (to_github, incoming) = mpsc::channel();
-    let (refreshes, _done) = Refreshes::new(
-        HOURLY,
-        incoming,
-        unheard(),
-        listed(vec![plain_gcmon()]),
-    );
+    let (refreshes, _done) =
+        Refreshes::new(HOURLY, incoming, unheard(), listed(vec![plain_gcmon()]));
     to_github
         .send(GitHubMessage::Search {
             repository: cpython(),

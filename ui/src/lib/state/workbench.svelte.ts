@@ -187,6 +187,8 @@ export class WorkbenchState {
   truncated = $state<Truncated | null>(null);
   /** The timer that sends a paused search to GitHub (#465). */
   #searchTimer: ReturnType<typeof setTimeout> | undefined;
+  /** The trimmed search Tsugiki last sent to GitHub, so entering the Inbox can send one it dropped (#465). */
+  #searchAsked = "";
   /** A change to "Show muted" is saving. */
   savingShowMuted = $state(false);
   /** The reason the core refused the last change to "Show muted", if it did. */
@@ -277,9 +279,13 @@ export class WorkbenchState {
     // A change of view is neither a user action nor a core change (#1052): an answer to an action made in
     // the view left behind moves nothing.
     this.#pending.clear();
-    // A paused search the user abandoned by leaving the Inbox sends nothing (#465).
+    // A paused search the user abandoned by leaving the Inbox sends nothing then. Entering the Inbox with
+    // a text Tsugiki never sent sends it now, so the box's text and the list agree again (#465).
     this.#clearSearchTimer();
-    if (view.kind !== "inbox") {
+    if (view.kind === "inbox") {
+      const text = this.search.trim();
+      if (text !== "" && text !== this.#searchAsked) void this.sendSearch();
+    } else {
       this.needsGitHub = false;
       this.truncated = null;
     }
@@ -309,7 +315,9 @@ export class WorkbenchState {
   async sendSearch() {
     this.#clearSearchTimer();
     const text = this.search.trim();
-    if (text !== "") await commands.searchInbox(this.#repository, text);
+    if (text === "") return;
+    this.#searchAsked = text;
+    await commands.searchInbox(this.#repository, text);
   }
 
   #clearSearchTimer() {
@@ -572,9 +580,7 @@ export class WorkbenchState {
   async markSeen(stop: Stop | undefined, mark: SeenMark, archived?: ItemKey) {
     const owner = stop && ownerOf(stop, this.#everything);
     const settles = Boolean(
-      owner &&
-        owner.kind !== "placeholder" &&
-        (owner.attention !== null || owner.seen.state !== "seen"),
+      owner && owner.kind !== "placeholder" && (owner.attention !== null || owner.seen.state !== "seen"),
     );
     const asked = this.#asked(owner?.key, settles);
     const marking = archived

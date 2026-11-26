@@ -296,8 +296,8 @@ impl Inbox {
             items.push((rank, place, ListedItem { hidden, ..judged }));
         }
         for (position, hit) in answer.hits.iter().enumerate() {
-            let held =
-                rows.issues.contains_key(&hit.number) || rows.pull_requests.contains_key(&hit.number);
+            let held = rows.issues.contains_key(&hit.number)
+                || rows.pull_requests.contains_key(&hit.number);
             if held {
                 continue;
             }
@@ -427,10 +427,7 @@ fn narrowed(item: WorkbenchItem, search: &Search, rows: &Index) -> Option<Workbe
 /// `item` with only the rows `finds` keeps, or nothing when it keeps none. An Issue's header, and a PR's
 /// over the Backports beneath it, stays over the rows that match beneath it, even when it doesn't match
 /// itself, so a matching PR stays in its Issue's fold (#464).
-fn narrowed_by(
-    item: WorkbenchItem,
-    finds: impl Fn(RowKind, u32) -> bool,
-) -> Option<WorkbenchItem> {
+fn narrowed_by(item: WorkbenchItem, finds: impl Fn(RowKind, u32) -> bool) -> Option<WorkbenchItem> {
     match item {
         WorkbenchItem::Issue(mut issue) => {
             let header = finds(RowKind::Issue, issue.number);
@@ -442,8 +439,10 @@ fn narrowed_by(
                             .retain(|backport| finds(RowKind::PullRequest, backport.row.number));
                         (top || !tree.backports.is_empty()).then_some(TreeEntry::Pr(tree))
                     }
-                    TreeEntry::Backport(backport) => finds(RowKind::PullRequest, backport.row.number)
-                        .then_some(TreeEntry::Backport(backport)),
+                    TreeEntry::Backport(backport) => {
+                        finds(RowKind::PullRequest, backport.row.number)
+                            .then_some(TreeEntry::Backport(backport))
+                    }
                 })
                 .collect();
             (header || !issue.pull_requests.is_empty()).then_some(WorkbenchItem::Issue(issue))
@@ -558,9 +557,7 @@ impl WorkbenchItem {
             Self::Issue(issue) => Some(ItemKey::Issue {
                 number: issue.number,
             }),
-            Self::StandalonePr(_)
-            | Self::StandaloneBackport(_)
-            | Self::Placeholder(_) => None,
+            Self::StandalonePr(_) | Self::StandaloneBackport(_) | Self::Placeholder(_) => None,
         };
         let prs = (self.rows().into_iter()).map(|row| ItemKey::PullRequest { number: row.number });
         issue.into_iter().chain(prs).collect()

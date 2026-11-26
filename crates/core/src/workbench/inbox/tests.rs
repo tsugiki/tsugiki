@@ -1627,11 +1627,14 @@ fn keep_answer(world: &ViewWorld, text: &str, answer: InboxSearch) {
 #[test]
 fn an_answer_lists_the_cached_rows_it_returned_in_github_s_order_and_drops_the_others() {
     let world = ViewWorld::new("inbox-answer-order");
-    world.has(vec![pr_at(10, Some(1), ago(2))], vec![
-        issue_at(1, ago(5)),
-        issue_at(2, ago(4)),
-        issue_at(3, ago(3)),
-    ]);
+    world.has(
+        vec![pr_at(10, Some(1), ago(2))],
+        vec![
+            issue_at(1, ago(5)),
+            issue_at(2, ago(4)),
+            issue_at(3, ago(3)),
+        ],
+    );
     // GitHub put Issue 3 first, then Issue 1 with PR 10 in its tree, and left Issue 2 out.
     keep_answer(
         &world,

@@ -560,14 +560,11 @@ export class WorkbenchState {
   /** What line `stop` draws: its item's own line, or a PR or Backport in the item's tree. */
   #lineOf(stop: Stop): Pick<WorkbenchRow, "seen" | "mute_author"> | undefined {
     const item = this.#itemOf(stop, this.#everything);
-    if (item === undefined || item.kind === "placeholder") return undefined;
-    if (item.number === stop.number) return item;
-    const rows =
-      item.kind === "issue"
-        ? treeRows(item.pull_requests)
-        : item.kind === "standalone_pr"
-          ? item.backports
-          : [];
+    if (item === undefined) return undefined;
+    if (item.kind === "issue") {
+      return [item, ...treeRows(item.pull_requests)].find((row) => row.number === stop.number);
+    }
+    const rows = [item, ...(item.kind === "standalone_pr" ? item.backports : [])];
     return rows.find((row) => row.number === stop.number);
   }
 
@@ -623,7 +620,7 @@ export class WorkbenchState {
    * Seen. */
   hidingBy(stop: Stop): Hiding | undefined {
     const item = this.#itemOf(stop, this.#everything);
-    if (item === undefined || item.kind === "placeholder") return undefined;
+    if (item === undefined) return undefined;
     return { key: item.key, mark: item.seen.mark };
   }
 
@@ -654,11 +651,7 @@ export class WorkbenchState {
    * (#1089). Says what went wrong, if anything did. */
   async muteAuthor(login: string, stop: Stop | undefined) {
     const item = stop && this.#itemOf(stop, this.#everything);
-    const theirs =
-      item !== undefined &&
-      item.kind !== "placeholder" &&
-      item.mute_author.kind === "mute" &&
-      item.mute_author.login === login;
+    const theirs = item !== undefined && item.mute_author.kind === "mute" && item.mute_author.login === login;
     const asked = this.#asked(item?.key, theirs);
     return problemIn(commands.muteAuthor(this.#repository, login, asked));
   }
@@ -796,9 +789,13 @@ export class WorkbenchState {
     else if (same) this.#put(undefined);
   }
 
-  /** The item of `items` that holds line `stop`, under a folded Issue or not. */
-  #itemOf(stop: Stop, items: ListedItem[]): ListedItem | undefined {
-    return items.find((item) => linesOf(item, () => true).some((line) => sameStop(line.stop, stop)));
+  /** The item of `items` that holds line `stop`, under a folded Issue or not. A placeholder holds no line,
+   * as the cache knows nothing of it (#465). */
+  #itemOf(stop: Stop, items: ListedItem[]): CachedItem | undefined {
+    return items.find(
+      (item): item is CachedItem =>
+        item.kind !== "placeholder" && linesOf(item, () => true).some((line) => sameStop(line.stop, stop)),
+    );
   }
 
   /** The key of the view whose items the list shows, which keeps its own unfolded Issues. Until the answer

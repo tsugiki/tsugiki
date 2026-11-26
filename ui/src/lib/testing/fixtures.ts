@@ -58,6 +58,22 @@ export const inboxPage = <Item>(
   truncated: Truncated | null = null,
 ) => ok({ items, older, show_muted, needs_github, truncated });
 
+/** A result a search found that the cache lacks, as the Inbox draws it in GitHub's order (#465). */
+export const placeholderItem = (
+  number: number,
+  item_kind: "issue" | "pull_request",
+  updated_at = "2026-11-04T10:00:00Z",
+): ListedItem => ({
+  attention: null,
+  key: { kind: item_kind, number },
+  hidden: null,
+  unpin: "stays",
+  kind: "placeholder",
+  number,
+  item_kind,
+  updated_at,
+});
+
 /** The Workbench's answer, listing `items`, counting those that Need attention, with no folded Muted item,
  * no Review request, no Stale review, no Pinned issue that Needs attention and no Filter, unless `more` says
  * otherwise. The items stay as loosely typed as the caller made them: a mocked command checks nothing, and a

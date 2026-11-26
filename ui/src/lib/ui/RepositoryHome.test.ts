@@ -15,6 +15,7 @@ import {
   fileRow,
   inboxPage,
   ok,
+  placeholderItem,
   readyFiles,
   refused,
   workbenchPage,
@@ -5834,6 +5835,9 @@ it("sends the Inbox search to GitHub on Enter", async () => {
   const box = screen.getByRole("searchbox", { name: "Search the Inbox" });
 
   await fireEvent.input(box, { target: { value: "review:approved" } });
+  // A key that isn't Enter sends nothing; Enter sends the whole query.
+  await fireEvent.keyDown(box, { key: "a" });
+  expect(core.searchInbox).not.toHaveBeenCalled();
   await fireEvent.keyDown(box, { key: "Enter" });
 
   await waitFor(() => {
@@ -5842,24 +5846,22 @@ it("sends the Inbox search to GitHub on Enter", async () => {
 });
 
 it("shows a search result the cache lacks as a placeholder in GitHub's order", async () => {
-  const placeholder = {
-    attention: null,
-    key: { kind: "pull_request" as const, number: 4242 },
-    hidden: null,
-    unpin: "stays" as const,
-    kind: "placeholder" as const,
-    number: 4242,
-    item_kind: "pull_request" as const,
-    updated_at: "2026-11-04T10:00:00Z",
-  };
   core.workbench.mockResolvedValue(workbenchPage([]));
-  core.inbox.mockResolvedValue(inboxPage([placeholder, { ...issue, attention: null }]));
+  core.inbox.mockResolvedValue(
+    inboxPage([
+      placeholderItem(4242, "pull_request"),
+      placeholderItem(4243, "issue"),
+      { ...issue, attention: null },
+    ]),
+  );
   render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onsettings: () => {} });
   await fireEvent.click(await screen.findByRole("button", { name: "Inbox" }));
   await screen.findByRole("heading", { name: "Inbox" });
 
   expect(await screen.findByText("PR not in the cache yet")).toBeTruthy();
   expect(screen.getByText("#4242")).toBeTruthy();
+  expect(screen.getByText("Issue not in the cache yet")).toBeTruthy();
+  expect(screen.getByText("#4243")).toBeTruthy();
 });
 
 it("says how many of GitHub's results a search past 1,000 showed", async () => {

@@ -3,7 +3,7 @@ import type {
   InboxCursor_Serialize as InboxCursor,
   ListedItem_Serialize as ListedItem,
 } from "../src/lib/data/bindings.ts";
-import { inboxPage, workbenchPage, workbenchRow } from "../src/lib/testing/fixtures.ts";
+import { inboxPage, placeholderItem, workbenchPage, workbenchRow } from "../src/lib/testing/fixtures.ts";
 import { home, palette, repository } from "./fixtures.ts";
 import { changeAnswer, callsOf, emitFromCore, mockCore } from "./mock-core.ts";
 
@@ -126,16 +126,7 @@ test("Enter sends the whole search to GitHub, and its rows show with a placehold
   await openInbox(page);
   const search = page.getByRole("searchbox", { name: "Search the Inbox" });
 
-  const placeholder: ListedItem = {
-    attention: null,
-    key: { kind: "pull_request", number: 4242 },
-    hidden: null,
-    unpin: "stays",
-    kind: "placeholder",
-    number: 4242,
-    item_kind: "pull_request",
-    updated_at: "2026-11-04T10:00:00Z",
-  };
+  const placeholder = placeholderItem(4242, "pull_request");
   const answered = inboxPage([placeholder, issue(1)], null, "off", false, {
     shown: 1000,
     total: 1712,

@@ -5,7 +5,15 @@ import {
   type InboxPage_Deserialize as InboxPage,
   type ListOrder,
 } from "$lib/data/bindings";
-import { done, inboxPage, listedIssue, refused, workbenchPage, workbenchRow } from "$lib/testing/fixtures";
+import {
+  done,
+  inboxPage,
+  listedIssue,
+  placeholderItem,
+  refused,
+  workbenchPage,
+  workbenchRow,
+} from "$lib/testing/fixtures";
 import { nextTask } from "$lib/testing/helpers";
 import { catchChanged } from "$lib/testing/state";
 import {
@@ -1788,9 +1796,11 @@ describe("WorkbenchState's Inbox", () => {
       await vi.advanceTimersByTimeAsync(1);
       expect(commands.searchInbox).toHaveBeenCalledExactlyOnceWith("python/cpython", "review:approved");
 
-      // The timer an empty box would have sent is dropped, and it sends nothing.
+      // The timer an empty box would have sent is dropped, and it sends nothing, even asked to.
       await state.setSearch("");
       await vi.advanceTimersByTimeAsync(SEARCH_PAUSE_MS);
+      expect(commands.searchInbox).toHaveBeenCalledOnce();
+      await state.sendSearch();
       expect(commands.searchInbox).toHaveBeenCalledOnce();
       state.stop();
     } finally {
@@ -1853,6 +1863,46 @@ describe("WorkbenchState's Inbox", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it("keeps a placeholder out of the lines and actions, as the cache holds nothing of it", async () => {
+    catchChanged();
+    vi.mocked(commands.workbench).mockResolvedValue(answer());
+    const placeholder = placeholderItem(4242, "pull_request");
+    vi.mocked(commands.inbox).mockResolvedValue(inboxPage([placeholder, item(3)]));
+    const state = await showingInbox();
+
+    // The cursor starts on the item the cache holds, not on the placeholder above it.
+    state.moveCursor(1);
+    expect(state.cursor?.number).toBe(3);
+
+    // No line holds a placeholder, so nothing of it can be marked or hidden.
+    const stop: Stop = { number: 4242, kind: "pull_request", issue: undefined };
+    expect(state.seenOf(stop)).toBeUndefined();
+    expect(state.muteAuthorOf(stop)).toBeUndefined();
+    expect(state.hidingBy(stop)).toBeUndefined();
+    state.stop();
+  });
+
+  it("draws a standalone backport's own mark, as no row sits under it", async () => {
+    catchChanged();
+    vi.mocked(commands.workbench).mockResolvedValue(answer());
+    const backport: CachedItem = {
+      attention: null,
+      key: { kind: "pull_request", number: 4 },
+      hidden: null,
+      unpin: "stays",
+      kind: "standalone_backport",
+      backport: "manual",
+      ...workbenchRow(4, { title: "PR 4", author: "octocat", reasons: ["own_pr"] }),
+    };
+    vi.mocked(commands.inbox).mockResolvedValue(inboxPage([backport]));
+    const state = await showingInbox();
+
+    const stop: Stop = { number: 4, kind: "pull_request", issue: undefined };
+    expect(state.seenOf(stop)).toBeDefined();
+    expect(state.muteAuthorOf(stop)).toBeDefined();
+    state.stop();
   });
 
   it("reads the older pages onto the end, each item once, until the cache holds nothing older", async () => {

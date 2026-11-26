@@ -7,7 +7,7 @@ import type {
   Why,
   YourReview,
 } from "$lib/state/workbench.svelte";
-import { workbenchRow } from "$lib/testing/fixtures";
+import { placeholderItem, workbenchRow } from "$lib/testing/fixtures";
 import { stampOf } from "./time";
 import {
   ago,
@@ -249,6 +249,13 @@ it("shows a dash for an Issue whose people have all gone", () => {
 it("says an Issue has no PR yet, and gives a PR's facts", () => {
   expect(summary({ kind: "issue", ...issue, pull_requests: [], ...unmarked })).toBe("No PR yet");
   expect(summary({ kind: "standalone_pr", ...row, backports: [], ...unmarked })).toBe(details(row));
+});
+
+it("says nothing of a placeholder, as the cache holds nothing of it", () => {
+  const placeholder = placeholderItem(4242, "pull_request");
+  expect(ageTip(placeholder)).toBe("");
+  expect(peopleOf(placeholder)).toBe("");
+  expect(summary(placeholder)).toBe("");
 });
 
 it.each<[Why, string]>([

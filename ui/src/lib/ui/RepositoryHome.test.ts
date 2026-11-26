@@ -6767,6 +6767,7 @@ it("says an Issue was pinned and unpinned", async () => {
     name: "python/cpython",
     onpick: () => {},
     onsettings: () => {},
+    onsavefilter: () => {},
   });
   const row = await screen.findByRole("button", { name: "#112564 GIL drop during collection" });
   row.focus();
@@ -6782,6 +6783,7 @@ it("says an Issue was pinned and unpinned", async () => {
     name: "python/cpython",
     onpick: () => {},
     onsettings: () => {},
+    onsavefilter: () => {},
   });
   const again = await screen.findByRole("button", { name: "#112564 GIL drop during collection" });
   again.focus();
@@ -6803,7 +6805,12 @@ it("says an Issue was muted and a Muted item unmuted from its key", async () => 
   cleanup();
   const muted = { ...standalone, attention: null, hidden: "muted" };
   core.workbench.mockResolvedValue(workbenchPage([muted]));
-  render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onsettings: () => {} });
+  render(RepositoryHome, {
+    name: "python/cpython",
+    onpick: () => {},
+    onsettings: () => {},
+    onsavefilter: () => {},
+  });
   const row = await screen.findByRole("button", { name: "#5 Alone" });
   row.focus();
   await fireEvent.keyDown(row, { key: "ArrowDown" });
@@ -6840,6 +6847,7 @@ it("says an author was muted and a Muted author unmuted", async () => {
     name: "python/cpython",
     onpick: () => {},
     onsettings: () => {},
+    onsavefilter: () => {},
   });
   const row = await screen.findByRole("button", { name: "#5 Alone" });
   row.focus();

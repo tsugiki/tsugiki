@@ -64,6 +64,14 @@ describe("PrViewState", () => {
     state.stop();
   });
 
+  it("names no Issue before its view arrives, and goes back to the one it was opened from", () => {
+    const state = new PrViewState("python/cpython", 11, 10, new PanesState());
+
+    expect(state.holdingIssue).toBeUndefined();
+    expect(state.returnIssue).toBe(10);
+    state.stop();
+  });
+
   it("goes back to the first Issue its view names when the user didn't open it from one", async () => {
     vi.mocked(commands.pullRequest).mockResolvedValue(
       ok({

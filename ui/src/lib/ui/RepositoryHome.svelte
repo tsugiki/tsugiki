@@ -755,11 +755,12 @@
   }
 
   /** The line a PR view's holding item has in a list, which an action that finishes it moves the cursor
-   * from (#1077). */
-  const stopOf = (key: ItemKey): Stop =>
-    key.kind === "issue"
-      ? { number: key.number, kind: "issue", issue: undefined }
-      : { number: key.number, kind: "pull_request", issue: undefined };
+   * from (#1077). The view shows the buttons only where no Issue's tree holds the PR, so the item is a PR. */
+  const stopOf = (key: ItemKey): Stop => ({
+    number: key.number,
+    kind: "pull_request",
+    issue: undefined,
+  });
 
   /** The PR view's Archive button: Archive on the item that holds the PR on show, as its keys act, or
    * Unarchive on an Archived one (#1077). The view names the item, so the click works while the list shows

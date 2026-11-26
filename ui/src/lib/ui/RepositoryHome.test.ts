@@ -3708,6 +3708,27 @@ it("archives the Standalone PR on show from its button while the list shows anot
   );
 });
 
+it("unarchives an Archived Standalone PR from its button", async () => {
+  core.workbench.mockResolvedValue(workbenchPage([{ ...standalone, hidden: "archived" }]));
+  core.pullRequest.mockResolvedValue(
+    ok({
+      ...row,
+      number: standalone.number,
+      content: null,
+      hidden: "archived",
+      issues: [],
+      holding: { key: standalone.key, mark: standalone.seen.mark },
+    }),
+  );
+  render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onsettings: () => {} });
+
+  await fireEvent.click(await screen.findByRole("button", { name: "#5 Alone" }));
+  await screen.findByRole("region", { name: "PR view" });
+  await fireEvent.click(await screen.findByRole("button", { name: "Unarchive" }));
+
+  expect(core.unarchive).toHaveBeenCalledExactlyOnceWith("python/cpython", standalone.key, expect.anything());
+});
+
 it("mutes the Standalone PR on show from its button, and offers Unmute once it is Muted", async () => {
   const { prRow } = await listing();
   await fireEvent.click(prRow);

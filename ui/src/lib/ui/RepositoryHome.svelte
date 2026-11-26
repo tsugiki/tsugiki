@@ -272,7 +272,13 @@
     workbench.moveTo(stop);
     if (how !== "open" && fileView === undefined) focusCursor();
     if (stop.kind === "pull_request" && detail instanceof PrViewState && sameStop(detail.line, stop)) {
-      if (how === "open") detail.switchTab();
+      if (how === "open") {
+        // Enter on the open PR's row switches its tab, and leaves the focus in the list: only focus in the
+        // Detail pane follows it (#1075).
+        const follows = inDetailPane(document.activeElement);
+        detail.switchTab();
+        if (follows) focusTabContent();
+      }
       showFileView(detail, fileView);
       return;
     }
@@ -546,6 +552,17 @@
       focusedView = detail ?? unstored;
       await tick();
       pane.focus();
+    });
+  }
+
+  /** Gives the focus to the new tab's content once a tab switch has drawn it: the diff or the file view of
+   * the Files tab, or the Conversation beside the rail, and else the pane, which scrolls the Conversation
+   * without it, so the keys keep acting on the pane (#1075). */
+  function focusTabContent() {
+    void tick().then(() => {
+      const scroller = scrollerIn(detailPane());
+      if (scroller) scroller.focus({ preventScroll: true });
+      else focusDetail();
     });
   }
 
@@ -1004,13 +1021,16 @@
    * and the palette run what it gives, and the `?` list asks it, so none of them can disagree. */
   type ScreenAction = (at: KeyTarget) => Run | undefined;
 
-  /** Switches the tabs of the PR view on show, while one shows. */
-  const tabSwitch: ScreenAction = () => {
+  /** Switches the tabs of the PR view on show, while one shows. The focus stays in the Issue list when it was
+   * there, which keeps its keys, and follows the tab when it was in the Detail pane (#1075). */
+  const tabSwitch: ScreenAction = (at) => {
     const view = detail instanceof PrViewState ? detail : undefined;
     return (
       view &&
       (() => {
+        const follows = at.pane === "detail";
         view.switchTab();
+        if (follows) focusTabContent();
       })
     );
   };
@@ -1276,13 +1296,35 @@
     scroller?.scrollBy({ top: step * LINE });
   }
 
+  /** Pages the Detail pane by a screen, as PgDn and PgUp do, on the region `scrollDetail` scrolls. */
+  function pageDetail(step: 1 | -1) {
+    const pane = detailPane();
+    const scroller = scrollerIn(pane) ?? pane;
+    scroller?.scrollBy({ top: step * scroller.clientHeight });
+  }
+
+  /** Goes to the start or the end of the Detail pane, as Home and End do, on the region `scrollDetail`
+   * scrolls. */
+  function scrollDetailTo(where: "start" | "end") {
+    const pane = detailPane();
+    const scroller = scrollerIn(pane) ?? pane;
+    scroller?.scrollBy({
+      top:
+        where === "start"
+          ? -scroller.scrollTop
+          : scroller.scrollHeight - scroller.clientHeight - scroller.scrollTop,
+    });
+  }
+
   /**
    * The list's keys and the PR view's. A dialog on top keeps them, and a text box or a focused control
    * keeps its own. The window's guard has already stopped the browser for Ctrl+B, Ctrl+Shift+G, Ctrl+Alt+U
    * and Ctrl+F, which work in a text box too unless `[keys]` gives them a key that types there, and for
    * Ctrl+Alt+B outside one, as AltGr sends it to type.
    * ↑ and ↓ go where the focus line shows (#602): they scroll the Detail pane while it holds the focus or
-   * the list is hidden, and move the list's cursor otherwise. With the list hidden, Enter has no row to open.
+   * the list is hidden, and move the list's cursor otherwise. PgDn, PgUp, Home and End scroll the pane's
+   * content the same way, and the list keeps its own keys wherever it holds the focus (#1075). With the
+   * list hidden, Enter has no row to open.
    */
   function onkeydown(e: KeyboardEvent) {
     if (!keysActive) return;
@@ -1315,6 +1357,15 @@
     } else if ((key === "arrowdown" || key === "arrowup") && forDetail(at)) {
       e.preventDefault();
       scrollDetail(key === "arrowdown" ? 1 : -1);
+    } else if (key === "pagedown" && forDetail(at)) {
+      e.preventDefault();
+      pageDetail(1);
+    } else if (key === "pageup" && forDetail(at)) {
+      e.preventDefault();
+      pageDetail(-1);
+    } else if ((key === "home" || key === "end") && forDetail(at)) {
+      e.preventDefault();
+      scrollDetailTo(key === "home" ? "start" : "end");
     } else if (key === "arrowdown" || key === "arrowup") {
       e.preventDefault();
       moveCursor(key === "arrowdown" ? 1 : -1);

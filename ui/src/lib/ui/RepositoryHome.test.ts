@@ -1176,6 +1176,63 @@ it("switches the PR view's tabs with Ctrl+PageDown and Ctrl+PageUp", async () =>
   expect(files.getAttribute("aria-selected")).toBe("false");
 });
 
+it("keeps the focus in the list when Ctrl+PageDown, Ctrl+PageUp and Enter switch the tab", async () => {
+  const { prRow } = await listing();
+  await fireEvent.click(prRow);
+  const selected = (name: string) => screen.getByRole("tab", { name }).getAttribute("aria-selected");
+  prRow.focus();
+
+  await fireEvent(prRow, keydown({ key: "PageDown", ctrlKey: true }));
+  const down = [selected("Files"), document.activeElement === prRow];
+  await fireEvent(prRow, keydown({ key: "PageUp", ctrlKey: true }));
+  const up = [selected("Conversation"), document.activeElement === prRow];
+  // Enter on the row under the cursor, with the list taking the keys as at launch.
+  (document.activeElement as HTMLElement).blur();
+  await press("Enter");
+  const enter = [selected("Files"), document.activeElement === document.body];
+
+  expect([down, up, enter]).toEqual([
+    ["true", true],
+    ["true", true],
+    ["true", true],
+  ]);
+});
+
+it("follows the tab with the focus in the Detail pane, so the keys keep acting on it", async () => {
+  const files = await onFiles();
+  await fireEvent.click(files);
+  const diff = await screen.findByRole("region", { name: "Diff" });
+  const view = screen.getByRole("region", { name: "PR view" });
+  diff.focus();
+
+  await fireEvent(diff, keydown({ key: "PageDown", ctrlKey: true }));
+  const left = files.getAttribute("aria-selected");
+  await vi.waitFor(() => {
+    expect(document.activeElement).toBe(view);
+  });
+  await fireEvent(view, keydown({ key: "PageUp", ctrlKey: true }));
+  const back = await screen.findByRole("region", { name: "Diff" });
+  await vi.waitFor(() => {
+    expect(document.activeElement).toBe(back);
+  });
+
+  expect(left).toBe("false");
+});
+
+it("follows the tab when a click on the open PR's row switches it, with the focus in the pane", async () => {
+  const { prRow } = await listing();
+  await fireEvent.click(prRow);
+  const view = screen.getByRole("region", { name: "PR view" });
+  (await within(view).findByRole("button", { name: "Mark Seen" })).focus();
+
+  await fireEvent.click(prRow);
+
+  expect(screen.getByRole("tab", { name: "Files" }).getAttribute("aria-selected")).toBe("true");
+  await vi.waitFor(() => {
+    expect(document.activeElement).toBe(view);
+  });
+});
+
 it("switches the Files tab between unified and side by side with Ctrl+Alt+U, for each PR after", async () => {
   core.pullRequestFiles.mockResolvedValue(ok(readyFiles(0)));
   const { prRow, treeRow } = await listing();
@@ -5166,6 +5223,74 @@ it("scrolls the Detail pane with ↑ and ↓ while the list is hidden, and leave
 
   expect(scrollBy.mock.calls).toEqual([[{ top: 40 }], [{ top: -40 }]]);
   expect(rowNamed("#112564 GIL drop during collection").getAttribute("aria-current")).toBe("true");
+});
+
+/** Lays out `scroller` as jsdom can't, as a 600 px box on 5,000 px of content, scrolled 150 px down, and
+ * records what it scrolls by. */
+const scrollsBy = (scroller: HTMLElement) => {
+  const scrollBy = vi.fn();
+  Object.defineProperty(scroller, "scrollBy", { value: scrollBy });
+  Object.defineProperty(scroller, "clientHeight", { value: 600 });
+  Object.defineProperty(scroller, "scrollHeight", { value: 5000 });
+  Object.defineProperty(scroller, "scrollTop", { value: 150, writable: true });
+  return scrollBy;
+};
+
+/** The scrolls PgDn, PgUp, Home and End ask of a scroller: a screen down, a screen up, back to the top, and
+ * on to the end. */
+const PAGE_CALLS = [[{ top: 600 }], [{ top: -600 }], [{ top: -150 }], [{ top: 4250 }]];
+
+const pageKeys = ["PageDown", "PageUp", "Home", "End"];
+
+it("pages the diff with PgDn and PgUp, and goes to its start and end with Home and End, in the pane's focus", async () => {
+  const files = await onFiles();
+  await fireEvent.click(files);
+  const diff = await screen.findByRole("region", { name: "Diff" });
+  const onScroll = scrollsBy(diff);
+  diff.focus();
+
+  for (const key of pageKeys) await fireEvent.keyDown(diff, { key });
+
+  expect(onScroll.mock.calls).toEqual(PAGE_CALLS);
+});
+
+it("pages the Conversation with PgDn and PgUp, and goes to its start and end, while the pane holds the focus", async () => {
+  const { prRow } = await listing();
+  await fireEvent.click(prRow);
+  const view = screen.getByRole("region", { name: "PR view" });
+  await press("F6");
+  await press("F6");
+  await vi.waitFor(() => {
+    expect(document.activeElement).toBe(view);
+  });
+  const onScroll = scrollsBy(view);
+
+  for (const key of pageKeys) await fireEvent.keyDown(view, { key });
+
+  expect(onScroll.mock.calls).toEqual(PAGE_CALLS);
+});
+
+it("pages the file view with PgDn and PgUp, and goes to its start and end, while the pane holds the focus", async () => {
+  await onFileView();
+  const code = screen.getByRole("region", { name: "Definition's code" });
+  const onScroll = scrollsBy(code);
+  code.focus();
+
+  for (const key of pageKeys) await fireEvent.keyDown(code, { key });
+
+  expect(onScroll.mock.calls).toEqual(PAGE_CALLS);
+});
+
+it("leaves PgDn, PgUp, Home and End to the list while it holds the focus", async () => {
+  const { prRow } = await listing();
+  await fireEvent.click(prRow);
+  prRow.focus();
+  const pressed = pageKeys.map((key) => keydown({ key }));
+
+  for (const key of pressed) await fireEvent(prRow, key);
+
+  expect(pressed.map((key) => key.defaultPrevented)).toEqual([false, false, false, false]);
+  expect(screen.getByRole("tab", { name: "Conversation" }).getAttribute("aria-selected")).toBe("true");
 });
 
 it("lets the Detail pane take the focus only while the list is hidden, so a click in it leaves Enter alone", async () => {

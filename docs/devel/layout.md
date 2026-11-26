@@ -111,8 +111,8 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
     `Ctrl+Alt+B`, or "Hide Issue List" in the command palette, hides the list with its footer and its edge,
     so the Detail pane gets its room. The same key, or "Show Issue List", brings it back at its width. In a
     text box the key types as usual, since AltGr sends it too. While the list is hidden:
-    - ↑ ↓ scroll the Detail pane, and the cursor stays where it was. `Alt+←` and `Alt+→` still go through
-      history.
+    - ↑ ↓ scroll the Detail pane, `PgDn` and `PgUp` page it, and `Home` and `End` go to its start and end;
+      the cursor stays where it was. `Alt+←` and `Alt+→` still go through history.
     - E and M act on the Detail pane's item; with a PR open, on the item the PR belongs to. With nothing open
       they do nothing. Q and Shift+Q act on the Detail pane's item too, and on a PR view that is the PR.
     - A click on a view in the Sidebar brings the list back, showing that view.
@@ -154,7 +154,9 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
       starts with its branch and ends with its author, and a PR that Needs attention shows in bold. The
       worklist's line for an Issue still says "2 open of 3 PRs", as it has no room for five counts.
     - The PR view shows Conversation and Files as tabs, and opens on Conversation. `Ctrl+PageDown` and
-      `Ctrl+PageUp` switch tabs, and so does `Enter` on the PR's row once the PR is open.
+      `Ctrl+PageUp` switch tabs, and so does `Enter` on the PR's row once the PR is open. A switch leaves the
+      focus where it was: in the Issue list it stays there, and in the Detail pane it moves to the new tab's
+      content, so its keys keep acting on the pane.
     - An Issue or PR the database lacks, which quick open's "Fetch #N from GitHub" asks for
       ([keyboard.md](keyboard.md)), shows `owner/repo #N` at once, with "Fetching owner/repo #N from
       GitHub…" under it. The pane takes the focus as a pick from quick open does. The session fetches the
@@ -214,8 +216,9 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
     ([keyboard.md](keyboard.md)). The pane that holds the keyboard focus, the Issue list or the Detail pane,
     shows a 2 px line in the Theme's focus colour along its top edge, as VS Code does, so the user can tell
     where ↑ ↓ go. With the focus in the Detail pane, as after a click on one of its buttons or a press of
-    `F6`, ↑ ↓ scroll it even while the list shows. With the focus on no control, as at launch, the list takes
-    the keys and shows the line. While the
+    `F6`, ↑ ↓ scroll it a line at a time, `PgDn` and `PgUp` page it, and `Home` and `End` go to its start and
+    end, even while the list shows: the diff on Files, the file view over it, or the Conversation. With the
+    focus on no control, as at launch, the list takes the keys and shows the line. While the
     list holds the focus, its row under the cursor takes the active selection colour, and the inactive one,
     a dim tint, once the focus moves away. The palette or a dialog on top, or another app in front, leaves
     every pane inactive. No ring goes round a whole pane.

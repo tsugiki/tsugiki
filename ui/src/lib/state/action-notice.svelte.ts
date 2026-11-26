@@ -18,9 +18,22 @@ export function didWords(key: ItemKey, did: Did): string {
   return `${itemName(key)} ${did}`;
 }
 
-/** What the user did to the author `login`: "Muted nascheme" or "Unmuted nascheme". */
+/** What the user did to the author `login`: "Muted some-author" or "Unmuted some-author". */
 export function authorWords(login: string, did: "muted" | "unmuted"): string {
   return `${did === "muted" ? "Muted" : "Unmuted"} ${login}`;
+}
+
+/** Whether the point `x`, `y` is over `rect`. The panel takes no click, so a row under it keeps its own. */
+export function overRect(rect: Pick<DOMRect, "left" | "right" | "top" | "bottom">, x: number, y: number) {
+  return x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom;
+}
+
+/** Whether the pointer is over `panel`, which may not be in the page yet. */
+export function overPanel(
+  panel: HTMLElement | undefined,
+  point: { clientX: number; clientY: number },
+): boolean {
+  return panel !== undefined && overRect(panel.getBoundingClientRect(), point.clientX, point.clientY);
 }
 
 /**

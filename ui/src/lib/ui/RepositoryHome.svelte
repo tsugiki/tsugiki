@@ -115,7 +115,7 @@
     diffFiles = "all",
     diffPeek = "inline",
     repositoryState,
-    statusBarVisible = true,
+    statusBarHeight = 0,
   }: {
     name: string;
     /** Opens the Repository picker, from the Repository's name atop the Sidebar. */
@@ -129,8 +129,8 @@
     diffPeek?: PeekLayout;
     /** The Repository's state, which its Issue and PR views say atop while it is Read-only (#398). */
     repositoryState?: RepositoryState | undefined;
-    /** Whether the status bar shows, which the action panel sits above while it does (#1072). */
-    statusBarVisible?: boolean;
+    /** The height the status bar draws at, which the action panel sits above (#1072). */
+    statusBarHeight?: number;
   } = $props();
 
   /** What the last action on an item did, which the action panel says (#1072). */
@@ -522,7 +522,9 @@
     const problem = await marking(opened);
     if (workbench === opened) {
       markProblem = problem;
+      // A refused action says why in the alert alone; the panel keeps no stale word of the last one (#1072).
       if (problem === undefined) notice.show(words);
+      else notice.clear();
     }
     return problem;
   }
@@ -1946,7 +1948,7 @@
 
 <!-- Says what the last action on an item did (#1072). It stays in the page while it says nothing, so a
      screen reader announces each change. -->
-<ActionPanel {notice} {hud} {statusBarVisible} />
+<ActionPanel {notice} {hud} {statusBarHeight} />
 
 <style>
   /* The panes take the window's height, and each scrolls by itself. The wheel stops at a pane's end, even

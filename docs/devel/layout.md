@@ -280,7 +280,8 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
 - A **status bar** runs along the bottom of every screen, below the panes. [status-bar.md](status-bar.md)
   says what each of its parts shows and when.
 - A small floating panel sits in the window's bottom-right corner and says what the last action on an item
-  did ([#1072](https://github.com/tsugiki/tsugiki/issues/1072)). It sits above the status bar, or at the
-  window's bottom edge while the bar is hidden, over the rail's foot while the rail is open. While the
-  performance HUD shows, the HUD keeps the bottom of the corner and the panel sits above it. It takes no
-  focus. [workbench.md](workbench.md) says which actions show it and how it behaves.
+  did ([#1072](https://github.com/tsugiki/tsugiki/issues/1072)). It sits above the status bar at the height
+  the bar draws, or at the window's bottom edge while the bar draws nothing, over the rail's foot while the
+  rail is open. While the performance HUD shows, the HUD keeps the bottom of the corner and the panel sits
+  above it. It takes no focus, and a click on a row under it still reaches the row.
+  [workbench.md](workbench.md) says which actions show it and how it behaves.

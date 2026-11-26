@@ -6407,13 +6407,16 @@ it("says an author was muted and a Muted author unmuted", async () => {
   await vi.waitFor(() => expect(actionPanel().textContent).toBe("Unmuted some-author"));
 });
 
-it("says the alert and shows no panel when the core refuses the action", async () => {
-  core.archive.mockResolvedValue(refused("no database"));
-  const { treeRow } = await listing();
+it("says the alert, and clears what the last action said, when the core refuses the action", async () => {
+  const { component, treeRow } = await listing();
   treeRow.focus();
   await fireEvent.keyDown(treeRow, { key: "ArrowDown" });
   await fireEvent.keyDown(treeRow, { key: "ArrowUp" });
 
+  component.runChord("pin", chordEnd());
+  await vi.waitFor(() => expect(actionPanel().textContent).toBe("Issue #112564 pinned"));
+
+  core.archive.mockResolvedValue(refused("no database"));
   await fireEvent.keyDown(treeRow, { key: "e" });
 
   await screen.findByText("Tsugiki couldn't mark this item: no database");

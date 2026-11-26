@@ -127,7 +127,7 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
   them. It has no section or fold of its own, in the Workbench, a Filter or a Built-in view.
 - Each action on an item says what it did in a small panel in the window's bottom-right corner
   ([#1072](https://github.com/tsugiki/tsugiki/issues/1072)), once the core has kept it: "Issue #141148
-  archived", "PR #162138 muted", "Muted nascheme". Archive, Unarchive, Mute, Unmute, Mute author, Unmute
+  archived", "PR #162138 muted", "Muted some-author". Archive, Unarchive, Mute, Unmute, Mute author, Unmute
   author, Mark Seen, Mark Unseen, Pin and Unpin say so, by key, button, the command palette or, once the
   right-click menu lands ([#927](https://github.com/tsugiki/tsugiki/issues/927)), a right-click. A second
   action replaces the words and starts the five seconds again; the panel goes after five, and the pointer

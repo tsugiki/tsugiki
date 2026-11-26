@@ -87,6 +87,9 @@
   onDestroy(tellCoreWhenShown());
 
   let addOpen = $state(false);
+  /** The height the status bar draws at, which the action panel sits above (#1072). A bar the settings hide
+   * still draws a line when it says why GitHub is quiet, or offers to fetch git. */
+  let statusBarHeight = $state(0);
   /** What the palette's text box holds as it opens, while the palette is open: `>` for its commands, or
    * nothing for quick open. */
   let paletteText = $state<string>();
@@ -569,7 +572,7 @@
         diffFiles={settings.diffFiles}
         diffPeek={settings.diffPeek}
         repositoryState={repositoryState?.state}
-        statusBarVisible={settings.statusBarVisible}
+        {statusBarHeight}
       />
     {/if}
   {:else if home.error}
@@ -605,6 +608,9 @@
   oncheckagain={() => void status.checkMirrorsAgain()}
   onquestion={(repository) => {
     if (!dialogOpen) questionFor = repository;
+  }}
+  onheight={(height) => {
+    statusBarHeight = height;
   }}
 />
 {#if questionFor !== undefined}

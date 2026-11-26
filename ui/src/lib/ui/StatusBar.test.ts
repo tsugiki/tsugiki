@@ -820,3 +820,17 @@ describe("StatusBar's request in flight", () => {
     expect(waiting()?.textContent).toBe("Waiting for GitHub: refresh of some-maintainer/gcmon, 3 s");
   });
 });
+
+describe("its drawn height", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("tells the window the height it draws at, so the action panel sits above it (#1072)", () => {
+    vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockReturnValue(24);
+    const onheight = vi.fn();
+    render(StatusBar, { status: OCTOCAT_ONLINE, onheight });
+
+    expect(onheight).toHaveBeenLastCalledWith(24);
+  });
+});

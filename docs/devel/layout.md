@@ -153,10 +153,17 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
       and count, "Open, 1" or "Needs attention, 1", and skips the icons, the dots and "Bold". Each PR's line
       starts with its branch and ends with its author, and a PR that Needs attention shows in bold. The
       worklist's line for an Issue still says "2 open of 3 PRs", as it has no room for five counts.
-    - The PR view shows Conversation and Files as tabs, and opens on Conversation. `Ctrl+PageDown` and
-      `Ctrl+PageUp` switch tabs, and so does `Enter` on the PR's row once the PR is open. A switch leaves the
-      focus where it was: in the Issue list it stays there, and in the Detail pane it moves to the new tab's
-      content, so its keys keep acting on the pane.
+    - The PR view of a PR no Issue's tree holds, a Standalone PR, a Standalone Backport or a Backport in a
+      Standalone PR's tree, shows Archive, Mute and "Mute <author>" beside Mark Seen, with the rules the Issue
+      view's buttons follow: Archive reads Unarchive on an Archived item, a Muted item shows only Unmute and
+      "Mute <author>", a Muted author's item only "Unmute <author>", and "Mute <author>" is off on the user's
+      own PR (#1077). A PR in an Issue's tree shows only Mark Seen: its `gh-N` crumb opens the Issue its view
+      names, where the Issue's buttons are, and `E`, `M` and the palette still act on the Issue from the PR
+      view. No ★ shows, as only Issues take a pin
+      ([#488](https://github.com/tsugiki/tsugiki/issues/488)). The PR view shows Conversation and Files as
+      tabs, and opens on Conversation. `Ctrl+PageDown` and `Ctrl+PageUp` switch tabs, and so does `Enter` on
+      the PR's row once the PR is open. A switch leaves the focus where it was: in the Issue list it stays
+      there, and in the Detail pane it moves to the new tab's content, so its keys keep acting on the pane.
     - An Issue or PR the database lacks, which quick open's "Fetch #N from GitHub" asks for
       ([keyboard.md](keyboard.md)), shows `owner/repo #N` at once, with "Fetching owner/repo #N from
       GitHub…" under it. The pane takes the focus as a pick from quick open does. The session fetches the
@@ -200,8 +207,9 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
     Esc closes what is on top, wherever the focus is: a dialog, the palette or a Peek first, then the wait
     for a chord's second key, a Definition peek, in the diff or the file view, or the diff's search, then the
     file view, which goes back to the PR's diff, and last a PR, which goes back to the Issue it was opened
-    under. With nothing on top, Esc in the Detail pane gives the focus back to the Issue list, on the row of
-    the item on show, or on the list itself when that item has no row, when the list shows; with the list
+    under, or else the first its view names. With nothing on top, Esc in the Detail pane gives the focus back
+    to the Issue list, on the row of the item on show, or on the list itself when that item has no row, when
+    the list shows; with the list
     hidden, Esc does nothing. A PR opened from a row of
     its own (a Standalone PR, one of its Backports, a Dependency update) has nothing under it, so Esc leaves
     it on show, as it leaves an Issue, and moves only the focus. A text box keeps Esc,

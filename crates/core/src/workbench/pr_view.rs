@@ -11,7 +11,7 @@ use crate::error::Error;
 use crate::facts::pull_request_content::PullRequestContent;
 use crate::repository_settings::RepositorySettings;
 use crate::store::{Snapshot, StoreReader};
-use crate::work::{Causes, SharedReviews};
+use crate::work::{Causes, Hiding, SharedReviews};
 
 /// A PR as the Detail pane shows it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
@@ -29,6 +29,10 @@ pub struct PrView {
     /// The Issues whose trees hold the PR, in number order. Pin acts on one of them while the PR is on show
     /// (#488), and on none for a Standalone PR.
     pub issues: Vec<HoldingIssue>,
+    /// The item that holds the PR, with its part in Mark Seen: the Issue whose tree holds it, or the
+    /// Standalone PR or Standalone Backport that is its own item (#1077). Archive, Mute and Mute author act
+    /// on it, whether or not the list on show holds it.
+    pub holding: Hiding,
 }
 
 /// An Issue whose tree holds the PR on show, with whether the user pinned it (#488).
@@ -83,14 +87,19 @@ impl PrView {
         let found = items.iter().find_map(|item| {
             let row = item.rows().into_iter().find(|row| row.number == number)?;
             let hidden = Hidden::of(&causes, item.key(), &item.numbers());
-            Some((row.clone(), hidden))
+            let holding = Hiding {
+                key: item.key(),
+                mark: item.seen().mark.clone(),
+            };
+            Some((row.clone(), hidden, holding))
         });
-        Ok(found.map(|(row, hidden)| Self {
+        Ok(found.map(|(row, hidden, holding)| Self {
             row,
             content,
             shares_review_of,
             hidden,
             issues,
+            holding,
         }))
     }
 }

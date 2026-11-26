@@ -5,8 +5,9 @@
   import type { IssueView, IssueViewState } from "$lib/state/issue-view.svelte";
   import { LinkOpener } from "$lib/state/link-opener.svelte";
   import type { RepositoryState } from "$lib/state/repository-state.svelte";
-  import { isMuted, treeRows, type MuteAuthor, type TreeEntry } from "$lib/state/workbench.svelte";
+  import { isMuted, treeRows, type TreeEntry } from "$lib/state/workbench.svelte";
   import Conversation from "./Conversation.svelte";
+  import HideButtons from "./HideButtons.svelte";
   import MarkButton from "./MarkButton.svelte";
   import { issueIcon, prIcon, type Octicon } from "./octicons";
   import ReadOnlyNote from "./ReadOnlyNote.svelte";
@@ -63,12 +64,6 @@
     not_on_github: "GitHub doesn't have this Issue, or your token can't see it.",
     other: "Tsugiki couldn't read what this Issue says from GitHub. tsugiki.log says why.",
   };
-
-  /** The Mute author button's words for what `offered` offers: the author it mutes or unmutes (#494). */
-  const muteAuthorWords = (offered: MuteAuthor) =>
-    offered.kind === "off"
-      ? "Mute author"
-      : `${offered.kind === "mute" ? "Mute" : "Unmute"} ${offered.login}`;
 
   /** The words for an Issue Tsugiki doesn't hold, such as one a link named, and why once a read failed. */
   const notHeld = (number: number, why: ReadFailure | undefined) => {
@@ -194,26 +189,7 @@
               onpin(view);
             }}>{view.pinned ? "★ Unpin" : "☆ Pin"}</button
           >
-          {#if !muted}
-            <button
-              onclick={() => {
-                onarchive(view);
-              }}>{view.hidden === "archived" ? "Unarchive" : "Archive"}</button
-            >
-          {/if}
-          {#if view.hidden !== "muted_author"}
-            <button
-              onclick={() => {
-                onmute(view);
-              }}>{muted ? "Unmute" : "Mute"}</button
-            >
-          {/if}
-          <button
-            disabled={view.mute_author.kind === "off"}
-            onclick={() => {
-              onmuteauthor(view);
-            }}>{muteAuthorWords(view.mute_author)}</button
-          >
+          <HideButtons {view} {onarchive} {onmute} {onmuteauthor} />
         </MarkButton>
       </div>
 

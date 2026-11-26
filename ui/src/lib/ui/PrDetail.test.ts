@@ -5,6 +5,7 @@ import { remapKeys } from "$lib/state/keymap.svelte";
 import { PanesState } from "$lib/state/panes.svelte";
 import { PrViewState, type PrView } from "$lib/state/pr-view.svelte";
 import { done, ok, readyFiles, refused, workbenchRow } from "$lib/testing/fixtures";
+import { headerButtons } from "$lib/testing/helpers";
 import { stampOf } from "./time";
 import PrDetail from "./PrDetail.svelte";
 
@@ -75,6 +76,10 @@ const view: PrView = {
   shares_review_of: null,
   issues: [],
   hidden: null,
+  holding: {
+    key: { kind: "pull_request", number: 11 },
+    mark: { numbers: [11], up_to: "2026-11-04T10:00:00Z", findings: [] },
+  },
 };
 
 const NOW = new Date("2026-11-04T11:00:00Z");
@@ -99,6 +104,9 @@ it("says the time since with a clock a day on", async () => {
     now: new Date("2026-11-05T11:00:00Z"),
     onback: vi.fn(),
     onmark: vi.fn(),
+    onarchive: vi.fn(),
+    onmute: vi.fn(),
+    onmuteauthor: vi.fn(),
   });
 
   expect(screen.getByText(/into main · updated/).textContent).toBe("into main · updated 1d ago");
@@ -107,6 +115,20 @@ it("says the time since with a clock a day on", async () => {
 /** The PR on show, which stops after each test, as its Files tab loads once it shows. */
 let onShow: PrViewState | undefined;
 
+/** The view the core answers: the Issue `issue` a PR opened from one is under holds it. */
+const held = (answer: PrView | null, issue: number | undefined): PrView | null => {
+  if (!answer || issue === undefined) return answer;
+  const issues = answer.issues.length > 0 ? answer.issues : [{ number: issue, pinned: false }];
+  const [first] = issues;
+  if (first === undefined) return answer;
+  const from = issues.find((one) => one.number === issue) ?? first;
+  return {
+    ...answer,
+    issues,
+    holding: { key: { kind: "issue", number: from.number }, mark: answer.holding.mark },
+  };
+};
+
 /** Shows the PR as opened from Issue `issue`, in the panes laid out as `panes` says. */
 const shown = async (
   answer: PrView | null,
@@ -114,12 +136,29 @@ const shown = async (
   onback = vi.fn(),
   onmark = vi.fn(),
   panes = new PanesState(),
+  buttons: {
+    onarchive?: (view: PrView) => void;
+    onmute?: (view: PrView) => void;
+    onmuteauthor?: (view: PrView) => void;
+    marks?: boolean;
+  } = {},
 ) => {
-  core.pullRequest.mockResolvedValue(ok(answer));
+  core.pullRequest.mockResolvedValue(ok(held(answer, issue)));
   const state = new PrViewState("python/cpython", 11, issue, panes);
   onShow = state;
   await state.load();
-  render(PrDetail, { repository: "python/cpython", pr: state, panes, now: NOW, onback, onmark });
+  render(PrDetail, {
+    repository: "python/cpython",
+    pr: state,
+    panes,
+    now: NOW,
+    onback,
+    onmark,
+    onarchive: buttons.onarchive ?? vi.fn(),
+    onmute: buttons.onmute ?? vi.fn(),
+    onmuteauthor: buttons.onmuteauthor ?? vi.fn(),
+    marks: buttons.marks ?? true,
+  });
   return state;
 };
 
@@ -400,6 +439,9 @@ it("says why it can't show the PR", async () => {
     now: NOW,
     onback: vi.fn(),
     onmark: vi.fn(),
+    onarchive: vi.fn(),
+    onmute: vi.fn(),
+    onmuteauthor: vi.fn(),
   });
   state.stop();
 
@@ -418,6 +460,9 @@ it("says atop the view that the token can't write to a Read-only Repository, and
     now: NOW,
     onback: vi.fn(),
     onmark: vi.fn(),
+    onarchive: vi.fn(),
+    onmute: vi.fn(),
+    onmuteauthor: vi.fn(),
   };
   const words = "Read-only: your token can't write to python/cpython";
   const { rerender } = render(PrDetail, {
@@ -442,6 +487,80 @@ it("offers Mark Seen in its header while the PR has New activity, and Mark Unsee
   onShow?.stop();
   await shown({ ...view, seen: { ...view.seen, state: "seen" } }, 10);
   expect(screen.getByRole("button", { name: "Mark Unseen" })).toBeTruthy();
+});
+
+it("offers Archive, Mute and Mute author beside Mark Seen on a Standalone PR, and each acts on the PR", async () => {
+  const onarchive = vi.fn();
+  const onmute = vi.fn();
+  const onmuteauthor = vi.fn();
+  await shown(view, undefined, vi.fn(), vi.fn(), new PanesState(), {
+    onarchive,
+    onmute,
+    onmuteauthor,
+  });
+
+  expect(headerButtons()).toEqual(["Archive", "Mute", "Mute pr-author", "Mark Seen"]);
+  await fireEvent.click(screen.getByRole("button", { name: "Archive" }));
+  await fireEvent.click(screen.getByRole("button", { name: "Mute" }));
+  await fireEvent.click(screen.getByRole("button", { name: "Mute pr-author" }));
+
+  expect(onarchive).toHaveBeenCalledExactlyOnceWith(view);
+  expect(onmute).toHaveBeenCalledExactlyOnceWith(view);
+  expect(onmuteauthor).toHaveBeenCalledExactlyOnceWith(view);
+});
+
+it("reads Unarchive on an Archived Standalone PR", async () => {
+  await shown({ ...view, hidden: "archived" }, undefined);
+
+  expect(headerButtons()).toEqual(["Unarchive", "Mute", "Mute pr-author", "Mark Seen"]);
+});
+
+it("shows only Unmute and Mute author on a Muted Standalone PR, and only Unmute author on a Muted author's", async () => {
+  const onmute = vi.fn();
+  const muted = { ...view, hidden: "muted" as const };
+  await shown(muted, undefined, vi.fn(), vi.fn(), new PanesState(), { onmute, marks: false });
+
+  expect(headerButtons()).toEqual(["Unmute", "Mute pr-author"]);
+  await fireEvent.click(screen.getByRole("button", { name: "Unmute" }));
+  expect(onmute).toHaveBeenCalledExactlyOnceWith(muted);
+
+  cleanup();
+  onShow?.stop();
+  const byMuted = {
+    ...view,
+    hidden: "muted_author" as const,
+    mute_author: { kind: "unmute" as const, login: "pr-author" },
+  };
+  await shown(byMuted, undefined, vi.fn(), vi.fn(), new PanesState(), { marks: false });
+
+  expect(headerButtons()).toEqual(["Unmute pr-author"]);
+});
+
+it("leaves Mute author off on the user's own Standalone PR", async () => {
+  await shown({ ...view, author: "me", mute_author: { kind: "off" } }, undefined);
+
+  const off = screen.getByRole("button", { name: "Mute author" });
+  expect((off as HTMLButtonElement).disabled).toBe(true);
+});
+
+it("shows only Mark Seen on a PR in an Issue's tree, whose actions act on its Issue", async () => {
+  await shown(view, 10);
+
+  expect(headerButtons()).toEqual(["Mark Seen"]);
+});
+
+it("shows only Mark Seen and the gh-N crumb on a tree PR the view wasn't opened from", async () => {
+  const onback = vi.fn();
+  const tree: PrView = {
+    ...view,
+    issues: [{ number: 10, pinned: false }],
+    holding: { key: { kind: "issue", number: 10 }, mark: view.holding.mark },
+  };
+  await shown(tree, undefined, onback);
+
+  expect(headerButtons()).toEqual(["Mark Seen"]);
+  await fireEvent.click(screen.getByRole("button", { name: "gh-10" }));
+  expect(onback).toHaveBeenCalledExactlyOnceWith(10);
 });
 
 const rail = () => screen.queryByRole("complementary", { name: "Rail" });
@@ -741,6 +860,9 @@ it("hands the focus the pane takes on to the Conversation beside the rail, which
     now: NOW,
     onback: vi.fn(),
     onmark: vi.fn(),
+    onarchive: vi.fn(),
+    onmute: vi.fn(),
+    onmuteauthor: vi.fn(),
     focusable: true,
   });
   const section = screen.getByRole("region", { name: "PR view" });

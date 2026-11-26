@@ -2,6 +2,7 @@ use time::OffsetDateTime;
 
 use super::testing::reviewed;
 use super::*;
+use crate::facts::activity::ItemKey;
 use crate::facts::pull_requests::PullRequestFacts;
 use crate::store::testing::OpenStore;
 use crate::testing::{cpython, cpython_settings};
@@ -86,6 +87,61 @@ fn a_pr_names_each_issue_that_holds_it_and_whether_it_is_pinned() {
     let held = |number, pinned| HoldingIssue { number, pinned };
     assert_eq!(holding, [held(1, false), held(3, true)]);
     assert_eq!(standalone, [], "only an Issue takes a pin");
+}
+
+#[test]
+fn a_pr_names_the_item_that_holds_it_and_its_part_in_mark_seen() {
+    let world = ViewWorld::new("pr-view-holding");
+    let title = "A lone change";
+    let alone = PullRequestFacts {
+        number: 6,
+        title: title.to_owned(),
+        ..stranger()
+    };
+    world.has(
+        vec![
+            fixing(5, 1),
+            alone,
+            bots_backport(7, &format!("[3.14] {title} (GH-6)")),
+            backport(8, &format!("[3.14] {title} (GH-6)"), vec![Some(someone())]),
+        ],
+        vec![issue(1)],
+    );
+
+    let in_issue = view(&world, 5).unwrap();
+    let own = view(&world, 6).unwrap();
+    let under = view(&world, 7).unwrap();
+    let manual = view(&world, 8).unwrap();
+
+    world.finish();
+    assert_eq!(in_issue.holding.key, ItemKey::Issue { number: 1 });
+    assert_eq!(
+        in_issue.holding.mark.numbers,
+        [1, 5],
+        "the Issue's whole tree"
+    );
+    assert_eq!(own.holding.key, ItemKey::PullRequest { number: 6 });
+    assert_eq!(own.holding.mark.numbers, [6]);
+    assert_eq!(
+        under.holding.key,
+        ItemKey::PullRequest { number: 6 },
+        "a Bot backport acts on the Standalone PR above it"
+    );
+    assert_eq!(
+        under.holding.mark.numbers,
+        [6],
+        "the mark is the Standalone PR's, not the backport's"
+    );
+    assert_eq!(
+        manual.holding.key,
+        ItemKey::PullRequest { number: 6 },
+        "a Manual backport acts on the Standalone PR above it"
+    );
+    assert_eq!(
+        manual.holding.mark.numbers,
+        [6],
+        "the mark is the Standalone PR's, not the backport's"
+    );
 }
 
 #[test]

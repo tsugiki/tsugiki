@@ -7,6 +7,7 @@ import {
   type CiState,
   type IssueItem,
   type ListedItem,
+  type MuteAuthor,
   type PrState,
   type Seen,
   type TreeEntry,
@@ -83,6 +84,11 @@ export const offersMarkSeen = (seen: Seen) => seen.state !== "seen";
 
 /** The reasons an item Needs attention, the newest first. */
 export const preview = (attention: Attention) => attention.why.map(saying).join(" · ");
+
+/** The words of the Issue view's and the PR view's Mute author button: the author it mutes or unmutes, or
+ * "Mute author" while it's off (#494). */
+export const muteAuthorWords = (offered: MuteAuthor) =>
+  offered.kind === "off" ? "Mute author" : `${offered.kind === "mute" ? "Mute" : "Unmute"} ${offered.login}`;
 
 const AGO_UNITS = { minute: "m", hour: "h", day: "d" } as const;
 

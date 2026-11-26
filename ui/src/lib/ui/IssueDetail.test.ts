@@ -4,6 +4,7 @@ import { IssueViewState, type IssueView } from "$lib/state/issue-view.svelte";
 import { settingsAsk } from "$lib/state/settings-ask.svelte";
 import type { TreeEntry } from "$lib/state/workbench.svelte";
 import { done, ok, refused, workbenchRow } from "$lib/testing/fixtures";
+import { headerButtons } from "$lib/testing/helpers";
 import { stampOf } from "./time";
 import IssueDetail from "./IssueDetail.svelte";
 
@@ -170,10 +171,6 @@ it("offers Archive beside Mark Seen, and Unarchive on an Archived Issue", async 
   await shown({ ...view, hidden: "archived" });
   expect(screen.getByRole("button", { name: "Unarchive" })).toBeTruthy();
 });
-
-/** The header's buttons, by their words. */
-const headerButtons = () =>
-  screen.getAllByRole("button", { name: /^(un)?(archive|mute|mark)/i }).map((button) => button.textContent);
 
 it("offers Mute beside Archive, and on a Muted Issue Unmute and Mute author", async () => {
   const onmute = vi.fn();

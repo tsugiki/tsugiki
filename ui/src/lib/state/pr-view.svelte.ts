@@ -2,6 +2,7 @@
 // code.
 import {
   commands,
+  type HoldingIssue,
   type PrView_Serialize,
   type PullRequestContent_Serialize,
   type ReviewState as ReviewStateData,
@@ -27,7 +28,8 @@ export type ThreadLine = ThreadLine_Serialize;
 export type PrTab = "conversation" | "files";
 
 export class PrViewState extends DetailState<PrView> {
-  /** The Issue the user opened this PR from, which Esc and its `gh-N` link go back to. */
+  /** The Issue the user opened this PR from. Esc and its `gh-N` link go back to `returnIssue`, which may be
+   * another Issue its view names. */
   readonly issue: number | undefined;
   /** Its Files tab, which reads the diff the first time it shows. Opening the PR has already handed a head
    * the mirror lacks to the mirror. */
@@ -117,6 +119,20 @@ export class PrViewState extends DetailState<PrView> {
   /** The line of the list the user opened this PR from. A PR that fixes two Issues has a line under each. */
   get line(): Stop {
     return { number: this.number, kind: "pull_request", issue: this.issue };
+  }
+
+  /** The Issue whose tree holds the PR, as its view names it: the one the user opened it from, or else the
+   * first (#1077). Nothing before the view arrives, for a Standalone PR, or when the Issue it was opened from
+   * no longer holds it. */
+  get holdingIssue(): HoldingIssue | undefined {
+    const issues = this.view?.issues ?? [];
+    return issues.find((issue) => issue.number === this.issue) ?? issues[0];
+  }
+
+  /** The number of the Issue `holdingIssue` names, which Esc and the crumb go back to. Before the view
+   * arrives, the one the user opened the PR from. */
+  get returnIssue(): number | undefined {
+    return this.view === null || this.view === undefined ? this.issue : this.holdingIssue?.number;
   }
 
   /** Opens review thread `id` in the Files tab, unfolded (#184). */

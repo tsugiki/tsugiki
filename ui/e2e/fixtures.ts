@@ -76,7 +76,8 @@ export const issueView: IssueView = {
   needs_attention: [],
 };
 
-/** What `pullRequest` answers for PR #10: its description says "The fix", and `reviews` are its Reviews. */
+/** What `pullRequest` answers for PR #10: its description says "The fix", `reviews` are its Reviews, and
+ * Issue #7's tree holds it. */
 export const prView = (reviews: Review[] = []): PrView => ({
   ...row,
   content: {
@@ -88,8 +89,12 @@ export const prView = (reviews: Review[] = []): PrView => ({
     earlier_reviews: 0,
   },
   shares_review_of: null,
-  issues: [],
+  issues: [{ number: issue.number, pinned: false }],
   hidden: null,
+  holding: {
+    key: { kind: "issue", number: issue.number },
+    mark: issue.seen.mark,
+  },
 });
 
 /** Runs palette command `title`, as the user picks it from the palette's commands. */

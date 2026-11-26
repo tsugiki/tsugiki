@@ -55,6 +55,7 @@ export type {
   BackportKind,
   CantCheck,
   CiState,
+  Hidden,
   IssueState,
   ItemKey,
   MuteAuthor,

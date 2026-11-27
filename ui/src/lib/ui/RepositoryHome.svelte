@@ -63,6 +63,7 @@
   import { issueIcon, prIcon, type Octicon } from "./octicons";
   import type { PaletteAction, PaletteName } from "./Palette.svelte";
   import PaneEdge from "./PaneEdge.svelte";
+  import PersonLink from "./PersonLink.svelte";
   import PrDetail from "./PrDetail.svelte";
   import Sidebar from "./Sidebar.svelte";
   import SidebarIcons from "./SidebarIcons.svelte";
@@ -74,7 +75,6 @@
     detailWords,
     headline,
     offersMarkSeen,
-    peopleOf,
     preview,
     summary,
     treeCount,
@@ -84,6 +84,8 @@
 
   /** How far ↑ or ↓ scrolls the Detail pane while the list is hidden, in CSS pixels, as a browser does. */
   const LINE = 40;
+  /** The separator between two names in a row's people, with the space Svelte trims at a block's edge. */
+  const NAME_SEPARATOR = ", ";
   /** The view of every PR's diff, unified or side by side, which `Ctrl+Alt+U` switches. */
   const diffView = new DiffViewChoice();
   /** How the user laid out the panes, which stays the same from one Repository to the next. */
@@ -1095,6 +1097,15 @@
     void panes.show("list");
   }
 
+  /** Opens the Inbox on the typed search for `login`, from a click on their name anywhere on the screen
+   * (#472), and shows the list once it holds the search. A name the core can't spell leaves the panes as they
+   * were, with the page's error saying why. */
+  function openPerson(login: string) {
+    void workbench.openPerson(login).then((opened) => {
+      if (opened) void panes.show("list");
+    });
+  }
+
   /** The names the list's switch gives each order. */
   const ORDERS: Record<ListOrder, string> = { attention: "By attention ⇅", last_update: "By last update ⇅" };
 
@@ -1636,7 +1647,22 @@
   }}
     <li class={["item", { attention: item.attention !== null }]}>
       <div class={["row", { greyed: greyed(item) }]} data-row={lineName(stop)}>
-        <span class="people">{peopleOf(item)}</span>
+        <span class="people">
+          {#if item.kind === "issue"}
+            {#if item.people.length === 0}
+              —
+            {:else}
+              {#each item.people as login, index (login)}{#if index > 0}{NAME_SEPARATOR}{/if}<PersonLink
+                  {login}
+                  onopen={openPerson}
+                />{/each}
+            {/if}
+          {:else if item.author}
+            <PersonLink login={item.author} onopen={openPerson} />
+          {:else}
+            deleted user
+          {/if}
+        </span>
         <span class="headline">
           {#if item.kind === "issue" && item.pull_requests.length > 0}
             <button
@@ -1958,6 +1984,7 @@
         onmute={muteByButton}
         onmuteauthor={muteAuthorByButton}
         onpin={(view) => void togglePin({ number: view.number, pinned: view.pinned })}
+        onperson={openPerson}
         onopenpr={(number) => {
           open({ number, kind: "pull_request", issue: issue.number });
         }}
@@ -1979,6 +2006,7 @@
         onarchive={archivePrByButton}
         onmute={mutePrByButton}
         onmuteauthor={muteAuthorPrByButton}
+        onperson={openPerson}
         marks={!detailMuted()}
         focusable={panes.hidden("list") || focusedView === pr}
       >

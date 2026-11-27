@@ -17,7 +17,6 @@ import {
   detailWords,
   foldedTip,
   headline,
-  peopleOf,
   preview,
   prStateWords,
   staleReviewLine,
@@ -240,18 +239,6 @@ it("starts an Issue with its number and title", () => {
   expect(headline(issue)).toBe("#112564 GIL drop during collection");
 });
 
-it("names the people an Issue involves, or a PR's author", () => {
-  expect(peopleOf({ kind: "issue", ...issue, ...unmarked })).toBe("issue-author, some-author");
-  expect(peopleOf({ kind: "standalone_pr", ...row, backports: [], ...unmarked })).toBe("some-author");
-  expect(peopleOf({ kind: "standalone_backport", ...row, author: null, backport: "bot", ...unmarked })).toBe(
-    "deleted user",
-  );
-});
-
-it("shows a dash for an Issue whose people have all gone", () => {
-  expect(peopleOf({ kind: "issue", ...issue, people: [], ...unmarked })).toBe("—");
-});
-
 it("says an Issue has no PR yet, and gives a PR's facts", () => {
   expect(summary({ kind: "issue", ...issue, pull_requests: [], ...unmarked })).toBe("No PR yet");
   expect(summary({ kind: "standalone_pr", ...row, backports: [], ...unmarked })).toBe(details(row));
@@ -260,7 +247,6 @@ it("says an Issue has no PR yet, and gives a PR's facts", () => {
 it("says nothing of a placeholder, as the cache holds nothing of it", () => {
   const placeholder = placeholderItem(4242, "pull_request");
   expect(ageTip(placeholder)).toBe("");
-  expect(peopleOf(placeholder)).toBe("");
   expect(summary(placeholder)).toBe("");
 });
 

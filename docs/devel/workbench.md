@@ -35,8 +35,11 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
   switched on, and "Involved" (`is:open involves:@me -author:@me`), switched off. Repositories added before
   the switch keep their Filters, switched off, and so does a Repository whose settings leave its Filters
   out: it reads as having both starters, switched off.
-- Clicking a person's name opens a temporary `author:<login>` Filter. It lists their Issues and the Issues
-  their PRs fix. It stays in the Sidebar, marked unsaved, until the user saves it as a Filter or closes it.
+- Clicking a person's name (in a list row, an Issue's or PR's header, a comment or a Review) puts
+  `is:open author:<login>` in the Inbox's search box, in a Filter's shape: the typed search lists that
+  person's Issues and the Issues their PRs fix, with the PRs as Matched PRs and Standalone PRs as rows,
+  the cache's matches at once then GitHub's answer, in GitHub's order, a placeholder where the cache
+  lacks a result. Its Save offers that text as a Filter's name.
 - The **Inbox** lists every open item of the Repository the user hasn't triaged: each open Issue with its PRs
   under it, grouped as on the Workbench, and each Standalone PR on its own, the latest update first. It has
   no Issues or PRs switch, and no switch of order. Pin, Archive and Mute each take an item out, and so does

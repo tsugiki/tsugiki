@@ -34,6 +34,7 @@ vi.mock("$lib/data/bindings", () => ({
     inbox: vi.fn(),
     searchInbox: vi.fn(),
     fillInboxPlaceholders: vi.fn(),
+    personQuery: vi.fn(),
     markSeen: vi.fn(),
     markUnseen: vi.fn(),
     archive: vi.fn(),
@@ -1821,6 +1822,93 @@ describe("WorkbenchState's Inbox", () => {
     await state.sendSearch();
     expect(commands.searchInbox).toHaveBeenCalledExactlyOnceWith("python/cpython", "review:approved");
     state.stop();
+  });
+
+  it("puts the query a clicked name runs in the box and opens the Inbox (#472)", async () => {
+    catchChanged();
+    vi.mocked(commands.personQuery).mockResolvedValue(ok("is:open author:alice"));
+    vi.mocked(commands.workbench).mockResolvedValue(answer());
+    vi.mocked(commands.searchInbox).mockResolvedValue(done);
+    const state = new WorkbenchState("python/cpython");
+    await state.load();
+
+    const opened = await state.openPerson("alice");
+
+    expect(opened).toBe(true);
+    expect(commands.personQuery).toHaveBeenCalledExactlyOnceWith("alice");
+    expect(state.search).toBe("is:open author:alice");
+    expect(state.selected).toEqual({ kind: "inbox" });
+    expect(commands.searchInbox).toHaveBeenCalledExactlyOnceWith("python/cpython", "is:open author:alice");
+    state.stop();
+  });
+
+  it("says why a clicked name opened nothing when the core can't spell it (#472)", async () => {
+    catchChanged();
+    vi.mocked(commands.personQuery).mockResolvedValue(refused("that name names no one person"));
+    vi.mocked(commands.workbench).mockResolvedValue(answer());
+    const state = new WorkbenchState("python/cpython");
+    await state.load();
+    const asked = vi.mocked(commands.workbench).mock.calls.length;
+
+    const opened = await state.openPerson("");
+
+    expect(opened).toBe(false);
+    expect(state.error).toBe("that name names no one person");
+    expect(state.search).toBe("");
+    expect(state.selected).toEqual({ kind: "whole" });
+    expect(commands.workbench).toHaveBeenCalledTimes(asked);
+    expect(commands.searchInbox).not.toHaveBeenCalled();
+    state.stop();
+  });
+
+  it("sends only the last of two quick clicks' searches (#472)", async () => {
+    catchChanged();
+    type Spelled = Awaited<ReturnType<typeof commands.personQuery>>;
+    let answerAlice!: (value: Spelled) => void;
+    let answerBob!: (value: Spelled) => void;
+    const alice = new Promise<Spelled>((resolve) => {
+      answerAlice = resolve;
+    });
+    const bob = new Promise<Spelled>((resolve) => {
+      answerBob = resolve;
+    });
+    vi.mocked(commands.personQuery).mockReturnValueOnce(alice).mockReturnValueOnce(bob);
+    vi.mocked(commands.workbench).mockResolvedValue(answer());
+    vi.mocked(commands.searchInbox).mockResolvedValue(done);
+    const state = new WorkbenchState("python/cpython");
+    await state.load();
+
+    const first = state.openPerson("alice");
+    const second = state.openPerson("bob");
+    // The click the user made first answers last, and must not put its name back in the box.
+    answerBob(ok("is:open author:bob"));
+    answerAlice(ok("is:open author:alice"));
+    await Promise.all([first, second]);
+
+    expect(state.search).toBe("is:open author:bob");
+    expect(commands.searchInbox).toHaveBeenCalledExactlyOnceWith("python/cpython", "is:open author:bob");
+    state.stop();
+  });
+
+  it("writes nothing when a clicked name's search lands after the window stopped (#472)", async () => {
+    catchChanged();
+    type Spelled = Awaited<ReturnType<typeof commands.personQuery>>;
+    let answerAlice!: (value: Spelled) => void;
+    const alice = new Promise<Spelled>((resolve) => {
+      answerAlice = resolve;
+    });
+    vi.mocked(commands.personQuery).mockReturnValue(alice);
+    vi.mocked(commands.workbench).mockResolvedValue(answer());
+    const state = new WorkbenchState("python/cpython");
+    await state.load();
+
+    const opening = state.openPerson("alice");
+    state.stop();
+    answerAlice(ok("is:open author:alice"));
+
+    expect(await opening).toBe(false);
+    expect(state.search).toBe("");
+    expect(commands.searchInbox).not.toHaveBeenCalled();
   });
 
   it("saves the Inbox's search as a Filter, opens it, and clears the box", async () => {

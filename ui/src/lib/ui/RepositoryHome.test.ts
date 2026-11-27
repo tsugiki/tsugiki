@@ -44,6 +44,7 @@ const core = vi.hoisted(() => ({
   inbox: vi.fn(),
   searchInbox: vi.fn(),
   fillInboxPlaceholders: vi.fn(),
+  personQuery: vi.fn(),
   issue: vi.fn(),
   openIssue: vi.fn(),
   pullRequest: vi.fn(),
@@ -98,6 +99,7 @@ vi.mock("$lib/data/bindings", async () => {
       inbox: core.inbox,
       searchInbox: core.searchInbox,
       fillInboxPlaceholders: core.fillInboxPlaceholders,
+      personQuery: core.personQuery,
       issue: core.issue,
       openIssue: core.openIssue,
       pullRequest: core.pullRequest,
@@ -456,6 +458,22 @@ it("says an Issue has no PR yet, with no count of none", async () => {
   ]);
 });
 
+it("names a deleted author of a Standalone PR", async () => {
+  core.workbench.mockResolvedValue(
+    workbenchPage([{ kind: "standalone_pr", ...row, author: null, backports: [] }], { count: 1 }),
+  );
+  render(RepositoryHome, {
+    name: "python/cpython",
+    onpick: () => {},
+    onsettings: () => {},
+    onsavefilter: () => {},
+  });
+
+  const item = await screen.findByRole("listitem");
+
+  expect(item.querySelector(".people")?.textContent).toBe("deleted user");
+});
+
 it("lists an Issue folded, and its PRs under it once unfolded", async () => {
   vi.setSystemTime("2026-11-04T13:00:00Z");
   const attention = { since: "2026-11-04T10:00:00Z", why: [{ kind: "review_requested" }] };
@@ -524,6 +542,68 @@ it("shows a Filter's Issues when the user selects it, with the Sidebar's counts"
   expect(await screen.findByRole("button", { name: "#112564 GIL drop during collection" })).toBeTruthy();
   expect(screen.getByRole("button", { name: "Workbench 7" })).toBeTruthy();
   expect(screen.getByRole("button", { name: "Mine 1" }).getAttribute("aria-current")).toBe("true");
+});
+
+it("puts the query a clicked name runs in the Inbox's box and opens the Inbox (#472)", async () => {
+  const query = "is:open author:issue-author";
+  core.personQuery.mockResolvedValue(ok(query));
+  core.workbench.mockResolvedValue(workbenchPage([issue], { count: 1 }));
+  core.searchInbox.mockResolvedValue(done);
+  core.inbox.mockResolvedValue(inboxPage([issue], null, "off", false, null, query));
+  render(RepositoryHome, {
+    name: "python/cpython",
+    onpick: () => {},
+    onsettings: () => {},
+    onsavefilter: () => {},
+  });
+
+  await fireEvent.click(await screen.findByRole("button", { name: "issue-author" }));
+
+  expect((screen.getByRole("searchbox", { name: "Search the Inbox" }) as HTMLInputElement).value).toBe(query);
+  expect(await screen.findByRole("heading", { name: "Inbox" })).toBeTruthy();
+  await vi.waitFor(() => {
+    expect(core.searchInbox).toHaveBeenCalledExactlyOnceWith("python/cpython", query);
+  });
+  expect(await screen.findByRole("button", { name: "#112564 GIL drop during collection" })).toBeTruthy();
+});
+
+it("saves the search a clicked name put in the box as a Filter (#472)", async () => {
+  const query = "is:open author:issue-author";
+  const onsavefilter = vi.fn();
+  core.personQuery.mockResolvedValue(ok(query));
+  core.workbench.mockResolvedValue(workbenchPage([issue], { count: 1 }));
+  core.searchInbox.mockResolvedValue(done);
+  core.inbox.mockResolvedValue(inboxPage([issue], null, "off", false, null, query));
+  render(RepositoryHome, {
+    name: "python/cpython",
+    onpick: () => {},
+    onsettings: () => {},
+    onsavefilter,
+  });
+
+  await fireEvent.click(await screen.findByRole("button", { name: "issue-author" }));
+  await fireEvent.click(await screen.findByRole("button", { name: "Save" }));
+
+  expect(onsavefilter).toHaveBeenCalledExactlyOnceWith({ name: query, query });
+});
+
+it("says why a clicked name opened nothing, and leaves the Inbox closed (#472)", async () => {
+  core.personQuery.mockResolvedValue(refused("that name names no one person"));
+  core.workbench.mockResolvedValue(workbenchPage([issue], { count: 1 }));
+  render(RepositoryHome, {
+    name: "python/cpython",
+    onpick: () => {},
+    onsettings: () => {},
+    onsavefilter: () => {},
+  });
+
+  await fireEvent.click(await screen.findByRole("button", { name: "issue-author" }));
+
+  expect((await screen.findByRole("alert")).textContent).toBe(
+    "Tsugiki can't read this Workbench: that name names no one person",
+  );
+  expect(screen.queryByRole("searchbox", { name: "Search the Inbox" })).toBeNull();
+  expect(core.searchInbox).not.toHaveBeenCalled();
 });
 
 it("marks what Needs attention the way unread mail is, and says why", async () => {

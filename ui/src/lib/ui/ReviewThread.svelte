@@ -11,6 +11,7 @@
   import ThreadCode from "./ThreadCode.svelte";
   import { stampOf } from "./time";
   import { ago, commentCount } from "./workbench-row";
+  import PersonLink from "./PersonLink.svelte";
 
   let {
     thread,
@@ -18,12 +19,15 @@
     now,
     ontoggle,
     onlink,
+    onperson,
   }: {
     thread: DiffThread;
     folded: boolean;
     now: Date;
     ontoggle: () => void;
     onlink: (address: string) => void;
+    /** Fills the Inbox's search box with the search for a clicked name (#472). */
+    onperson: (login: string) => void;
   } = $props();
 
   /** The hidden comments the user opened, by their place in the thread. */
@@ -32,7 +36,8 @@
   let whole = $state(false);
 
   const count = $derived(thread.comments.length + thread.later_comments);
-  const started = $derived(thread.comments.at(0)?.author ?? "deleted user");
+  const first = $derived(thread.comments.at(0)?.author ?? null);
+  const started = $derived(first ?? "deleted user");
   const summary = $derived(`${started} · ${commentCount(count)}`);
   /** Where the thread is, when it isn't under a line of the diff. */
   const where = $derived.by(() => {
@@ -57,10 +62,13 @@
     count === 1 ? "1 later comment is on GitHub." : `${String(count)} later comments are on GitHub.`;
 </script>
 
-<button type="button" class="head" aria-expanded={!folded} aria-label={label} onclick={ontoggle}>
-  <span class="chevron">{folded ? "▸" : "▾"}</span><span>{summary}</span
+<div class="head">
+  <button type="button" class="toggle" aria-expanded={!folded} aria-label={label} onclick={ontoggle}>
+    <span class="chevron">{folded ? "▸" : "▾"}</span>
+  </button>{#if first}<PersonLink login={first} onopen={onperson} />{:else}deleted user{/if}<span
+    >{` · ${commentCount(count)}`}</span
   >{#each marks as mark, at (at)}{#if mark !== undefined}<span class="chip">{mark}</span>{/if}{/each}
-</button>
+</div>
 {#if !folded}
   {#if code !== null}
     <ThreadCode
@@ -81,7 +89,7 @@
   {#each thread.comments as comment, at (at)}
     <article>
       <p class="by" title={stampOf(comment.created_at)}>
-        {`${comment.author ?? "deleted user"} · ${ago(comment.created_at, now)}`}{#if comment.submission === "pending"}<span
+        {#if comment.author}<PersonLink login={comment.author} onopen={onperson} />{:else}deleted user{/if}{` · ${ago(comment.created_at, now)}`}{#if comment.submission === "pending"}<span
             class="chip pending"
             title="Only you see it until you submit your review on github.com.">Pending, yours</span
           >{/if}
@@ -110,24 +118,48 @@
 
 <style>
   .head {
+    position: relative;
     display: flex;
-    gap: 6px;
     align-items: center;
+    box-sizing: border-box;
     width: 100%;
     height: 20px;
     padding: 0 8px;
-    border: 0;
     text-align: left;
-    background: none;
   }
 
-  .head:hover,
-  .head:focus-visible {
+  /* The chevron folds the thread from the keyboard, and its cover carries a click anywhere on the line to
+     it, as a row's title does. The name link keeps itself above the cover. */
+  .toggle {
+    all: unset;
+    display: flex;
+    align-items: center;
+    cursor: pointer;
+  }
+
+  .toggle::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    cursor: pointer;
+  }
+
+  .head:hover {
     text-decoration: underline;
+  }
+
+  .toggle:focus-visible::after {
+    outline: 1px solid var(--accent);
   }
 
   .chevron {
     width: 1ch;
+    margin-right: 6px;
+  }
+
+  /* The marks follow the count with the room the line's parts had between them. */
+  .head .chip {
+    margin-left: 6px;
   }
 
   /* The theme's attention colour, for a draft only the user sees. */

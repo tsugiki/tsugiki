@@ -8,6 +8,11 @@ import * as __TAURI_EVENT from "@tauri-apps/api/event";
 export const commands = {
 	about: () => __TAURI_INVOKE<About>("about"),
 	/**
+	 *  The typed search clicking the person `login` runs (#472), as the core spells it, for the window to put in
+	 *  the Inbox's search box. This waits on nothing.
+	 */
+	personQuery: (login: string) => typedError<string, Error_Serialize>(__TAURI_INVOKE("person_query", { login })),
+	/**
 	 *  Opens WebView2's DevTools for the window that asks, from the palette (#460). Only a development build
 	 *  has DevTools: a release turns the browser's keys off and refuses here too (ADR 0013).
 	 */

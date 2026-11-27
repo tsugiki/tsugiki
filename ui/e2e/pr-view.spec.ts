@@ -25,7 +25,7 @@ import {
   own,
   prView,
 } from "./fixtures.ts";
-import { changeAnswer, mockCore } from "./mock-core.ts";
+import { callsOf, changeAnswer, mockCore } from "./mock-core.ts";
 import { themes } from "./themes.ts";
 
 /** PR #10, approved at the head its diff reads from. */
@@ -235,6 +235,7 @@ const threaded = async (page: Page, at: DiffThread["at"], words: string) => {
     themes: ok(themes),
     home,
     workbench: workbenchPage([issue]),
+    personQuery: ok("is:open author:some-reviewer"),
     openIssue: done,
     issue: ok(issueView),
     openPullRequest: done,
@@ -303,6 +304,33 @@ test("a thread's place in the Conversation opens it in Files, under its line in 
   await page.keyboard.press("ControlOrMeta+Alt+u");
   await expect(pane.getByRole("region", { name: "Side-by-side diff" })).toBeVisible();
   await expect.poll(() => gaps("The fix", "And more")).toEqual([0, expect.any(Number)]);
+});
+
+test("a click anywhere on a thread's line folds it, but a click on its author fills the Inbox's box", async ({
+  page,
+}) => {
+  const pane = await threaded(page, { kind: "row", row: 2, side: "RIGHT" }, "Say what it fixes.");
+  await pane.getByRole("button", { name: "NEWS:1" }).click();
+
+  const box = pane.getByRole("group", { name: "Review thread" });
+  const head = box.locator(".head");
+  const toggle = head.getByRole("button").first();
+  // A point on the line past the chevron and the author's name, which the fold's cover still carries.
+  const away = { position: { x: 150, y: 10 } };
+
+  await head.click(away);
+  await expect(toggle).toHaveAttribute("aria-expanded", "false");
+  await expect(box).not.toContainText("Say what it fixes.");
+
+  await head.click(away);
+  await expect(toggle).toHaveAttribute("aria-expanded", "true");
+  await expect(box).toContainText("Say what it fixes.");
+
+  await head.getByRole("button", { name: "some-reviewer", exact: true }).click();
+  await expect(page.getByRole("searchbox", { name: "Search the Inbox" })).toHaveValue(
+    "is:open author:some-reviewer",
+  );
+  await expect.poll(() => callsOf(page, "searchInbox")).toBe(1);
 });
 
 test("an Outdated thread sits at the top of its file with the last lines of its code, all of them on Show more", async ({

@@ -234,6 +234,8 @@ export class WorkbenchState {
   #lastAsked = 0;
   #stopListening: (() => void) | undefined;
   #stopped = false;
+  /** The click on a name that last asked for its search, which alone writes the box (#472). */
+  #personAsked = 0;
 
   /** The Workbench of `repository`, with the hooks the page that shows it gives. */
   constructor(
@@ -332,6 +334,32 @@ export class WorkbenchState {
   #clearSearchTimer() {
     if (this.#searchTimer !== undefined) clearTimeout(this.#searchTimer);
     this.#searchTimer = undefined;
+  }
+
+  /** Opens the Inbox on the typed search that lists what `login` authored (#472): the box holds the query the
+   * core spells, and the Inbox lists it as it lists any typed search. Answers whether the click still owned
+   * the box, so a click a newer one overtook, or one that lands after the window stopped, changes nothing. */
+  async openPerson(login: string): Promise<boolean> {
+    const asked = (this.#personAsked += 1);
+    const spelled = await ask(commands.personQuery(login));
+    if (!this.#ownsPerson(asked)) return false;
+    if (spelled.status === "error") {
+      this.error = spelled.error.message;
+      return false;
+    }
+    // The resets the box's own typing makes, before the Inbox sends and asks for the query below.
+    this.search = spelled.data;
+    this.#reach = undefined;
+    this.needsGitHub = false;
+    this.truncated = null;
+    await this.select({ kind: "inbox" });
+    return true;
+  }
+
+  /** Whether the *`asked`*'th click on a name still owns the box: no newer click overtook it, and the window
+   * is still up (#472). */
+  #ownsPerson(asked: number): boolean {
+    return asked === this.#personAsked && !this.#stopped;
   }
 
   /** The Save as Filter dialog's draft: the box's text as its name, and the query with Tsugiki's additions

@@ -22,8 +22,18 @@
   import { cloningWords } from "./synced";
   import { PR_UNREAD } from "./unread-words";
 
-  let { files, now, onlink }: { files: PrFilesState; now: Date; onlink: (address: string) => void } =
-    $props();
+  let {
+    files,
+    now,
+    onlink,
+    onperson,
+  }: {
+    files: PrFilesState;
+    now: Date;
+    onlink: (address: string) => void;
+    /** Fills the Inbox's search box with the search for a clicked name (#472). */
+    onperson: (login: string) => void;
+  } = $props();
 
   /** A commit's short name, as GitHub shows it. */
   const short = (commit: string) => commit.slice(0, 7);
@@ -158,7 +168,7 @@
     {/if}
     <SplitPeek {files} peek={files.peekOn(undefined, "split")}>
       <div class="diff">
-        <DiffRows diff={files} files={files.view.files} news={files.view.news} {now} {onlink} />
+        <DiffRows diff={files} files={files.view.files} news={files.view.news} {now} {onlink} {onperson} />
       </div>
     </SplitPeek>
   {/if}

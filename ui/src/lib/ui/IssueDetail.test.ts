@@ -116,13 +116,20 @@ const shown = async (
   onmute = vi.fn(),
   onmuteauthor = vi.fn(),
   onpin = vi.fn(),
+  onperson?: (login: string) => void,
 ) => {
   core.issue.mockResolvedValue(ok(answer));
   const state = new IssueViewState("python/cpython", 7);
   await state.load();
   const issue = state;
   const on = { onopenpr, onmark, onarchive, onmute, onmuteauthor, onpin };
-  render(IssueDetail, { repository: "python/cpython", issue, now: NOW, ...on });
+  render(IssueDetail, {
+    repository: "python/cpython",
+    issue,
+    now: NOW,
+    ...on,
+    ...(onperson === undefined ? {} : { onperson }),
+  });
   state.stop();
   return state;
 };
@@ -143,6 +150,44 @@ it("shows the title and author, the description and the recent comments", async 
   const headers = [...document.querySelectorAll("article > header")].map((header) => header.textContent);
   expect(headers).toEqual(["some-reviewer · 2h ago", "deleted user · 1h ago"]);
   expect(screen.getByText("3 earlier comments are on GitHub.")).toBeTruthy();
+});
+
+it("names a deleted author on the byline where the login is gone", async () => {
+  await shown({ ...view, author: null });
+
+  expect(document.querySelector("p.byline b")?.textContent).toBe("deleted user");
+});
+
+it("names a deleted author of a PR in its tree", async () => {
+  const pull_requests = view.pull_requests.map((entry) =>
+    entry.kind === "pr" ? { ...entry, author: null } : entry,
+  );
+  await shown({ ...view, pull_requests });
+
+  expect([...document.querySelectorAll(".who")].map((who) => who.textContent)).toContain("deleted user");
+});
+
+it("fills the Inbox's search box from a PR's author in the Issue's tree", async () => {
+  const onperson = vi.fn();
+  await shown(view, vi.fn(), vi.fn(), vi.fn(), vi.fn(), vi.fn(), vi.fn(), onperson);
+
+  const authors = screen.getAllByRole("button", { name: "some-author" });
+  expect(authors.length).toBeGreaterThan(0);
+  await fireEvent.click(authors[0] as HTMLElement);
+
+  expect(onperson).toHaveBeenCalledExactlyOnceWith("some-author");
+});
+
+it("fills the Inbox's search box from the Issue's author, and does nothing unless the page listens", async () => {
+  const onperson = vi.fn();
+  await shown(view, vi.fn(), vi.fn(), vi.fn(), vi.fn(), vi.fn(), vi.fn(), onperson);
+
+  await fireEvent.click(screen.getByRole("button", { name: "issue-author" }));
+  expect(onperson).toHaveBeenCalledExactlyOnceWith("issue-author");
+  cleanup();
+
+  await shown(view);
+  await fireEvent.click(screen.getByRole("button", { name: "issue-author" }));
 });
 
 it("offers Mark Seen in its header while something is new or it is Marked unseen, and Mark Unseen otherwise", async () => {

@@ -22,6 +22,12 @@ impl Login {
         Self(login.to_owned())
     }
 
+    /// Reads a login a clicked name gave, which names one person when it is text without spaces.
+    pub fn parse(text: &str) -> Option<Self> {
+        let text = text.trim();
+        (!text.is_empty() && text.split_whitespace().count() == 1).then(|| Self(text.to_owned()))
+    }
+
     pub fn as_str(&self) -> &str {
         &self.0
     }

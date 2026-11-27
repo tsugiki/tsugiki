@@ -41,12 +41,15 @@
     news,
     now,
     onlink,
+    onperson,
   }: {
     diff: PrFilesState;
     files: DiffFile[];
     news: NewsEntry[];
     now: Date;
     onlink: (address: string) => void;
+    /** Fills the Inbox's search box with the search for a clicked name (#472). */
+    onperson: (login: string) => void;
   } = $props();
 
   const os = currentOs();
@@ -596,6 +599,7 @@
               diff.toggleThread(block.index);
             }}
             {onlink}
+            {onperson}
           />
         </div>
       {/if}

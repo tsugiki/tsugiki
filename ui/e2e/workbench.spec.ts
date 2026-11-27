@@ -3,6 +3,7 @@ import type { ListedItem_Serialize as ListedItem } from "../src/lib/data/binding
 import {
   done,
   HOUR_POINTS,
+  inboxPage,
   listedIssue,
   OCTOCAT_ONLINE,
   ok,
@@ -11,7 +12,7 @@ import {
   workbenchRow,
 } from "../src/lib/testing/fixtures.ts";
 import { grabEdge, home, own, repository } from "./fixtures.ts";
-import { changeAnswer, emitFromCore, mockCore } from "./mock-core.ts";
+import { changeAnswer, callsOf, emitFromCore, mockCore } from "./mock-core.ts";
 import { themes } from "./themes.ts";
 
 const mine = { name: "Mine", query: "is:open author:@me", on_workbench: true, count: 1, problem: null };
@@ -194,6 +195,36 @@ test("the Sidebar lists the Filters, and selecting one shows its Issues", async 
   await expect(page.getByRole("listitem")).toHaveCount(1);
   await expect(page.getByRole("listitem")).toContainText("#157178 GH-156425: Clear GC frame on early return");
   await expect(sidebar.getByRole("button", { name: "Mine 1" })).toHaveAttribute("aria-current", "true");
+});
+
+test("a clicked name fills the Inbox's search box, and its Save saves that search", async ({ page }) => {
+  const query = "is:open author:issue-author";
+  await mockCore(page, {
+    home,
+    personQuery: ok(query),
+    workbench: workbenchPage([review], { count: 1 }),
+    inbox: inboxPage([review], null, "off", false, null, query),
+  });
+  await page.goto("/");
+
+  await page.getByRole("button", { name: "issue-author", exact: true }).click();
+
+  const box = page.getByRole("searchbox", { name: "Search the Inbox" });
+  await expect(box).toHaveValue(query);
+  await expect(page.getByRole("listitem")).toHaveCount(1);
+  await expect(page.getByRole("listitem")).toContainText("#112564 GIL drop during collection");
+  await expect.poll(() => callsOf(page, "searchInbox")).toBe(1);
+
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Save as Filter" });
+  await expect(dialog.getByRole("textbox", { name: "Name" })).toHaveValue(query);
+  await expect(dialog.getByRole("textbox", { name: "Query" })).toHaveValue(query);
+  await dialog.getByRole("button", { name: "Save" }).click();
+
+  // The new Filter opens in place of the Inbox, under the name the box had.
+  await expect(dialog).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: query })).toBeVisible();
+  await expect.poll(() => callsOf(page, "saveFilter")).toBe(1);
 });
 
 test("the Sidebar's Pinned issues lists the pins, and an unpin takes the row away and lowers the count", async ({

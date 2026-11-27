@@ -37,6 +37,19 @@ fn about_answers_with_what_the_core_says() {
 }
 
 #[test]
+fn person_query_spells_the_search_a_clicked_name_runs() {
+    assert_eq!(
+        person_query("some-author").unwrap(),
+        "is:open author:some-author"
+    );
+}
+
+#[test]
+fn person_query_refuses_a_name_that_names_no_one_person() {
+    assert_eq!(person_query("  ").unwrap_err().kind, ErrorKind::Internal);
+}
+
+#[test]
 fn a_release_refuses_to_open_devtools() {
     let app = mock_app();
     let window = tauri::WebviewWindowBuilder::new(&app, "main", tauri::WebviewUrl::default())

@@ -19,6 +19,7 @@
   import MarkButton from "./MarkButton.svelte";
   import { prIcon } from "./octicons";
   import PaneEdge from "./PaneEdge.svelte";
+  import PersonLink from "./PersonLink.svelte";
   import Rail from "./Rail.svelte";
   import RailFiles from "./RailFiles.svelte";
   import RailSearch from "./RailSearch.svelte";
@@ -38,6 +39,7 @@
     onarchive,
     onmute,
     onmuteauthor,
+    onperson = () => {},
     marks = true,
     focusable = false,
     header,
@@ -59,6 +61,8 @@
     /** Mute author on the PR's author, or Unmute author on a Muted author, as the header's button offers
      * for the PR on show (#494). */
     onmuteauthor: (view: PrView) => void;
+    /** Fills the Inbox's search box with the search for a clicked name (#472). */
+    onperson?: (login: string) => void;
     /** Whether the header offers Mark Seen or Mark Unseen, which it doesn't on a PR of a Muted item
      * (#492). */
     marks?: boolean;
@@ -206,7 +210,12 @@
         {headline(view)}
       </button>
     </h2>
-    <p class="byline"><b>{view.author ?? "deleted user"}</b> <StateWords row={view} /></p>
+    <p class="byline">
+      <b
+        >{#if view.author}<PersonLink login={view.author} onopen={onperson} />{:else}deleted user{/if}</b
+      >
+      <StateWords row={view} />
+    </p>
     <!-- A PR no Issue's tree holds offers the actions of the item it shows: its own, or the Standalone PR's
          over its Backport (#1077). A PR in an Issue's tree shows only Mark Seen, as its `gh-N` crumb opens
          the Issue view, where the Issue's buttons are. -->
@@ -284,6 +293,7 @@
             <Conversation
               content={view.content}
               {now}
+              {onperson}
               onlink={(address) => void links.openLink(address)}
               onthread={(id) => {
                 pr.openThread(id);
@@ -293,7 +303,7 @@
             <p class="byline">{PR_UNREAD[pr.failedRead ?? "reading"]}</p>
           {/if}
         {:else}
-          <FilesTab files={pr.files} {now} onlink={(address) => void links.openLink(address)} />
+          <FilesTab {onperson} files={pr.files} {now} onlink={(address) => void links.openLink(address)} />
         {/if}
       </div>
       {#if railed}

@@ -1834,6 +1834,33 @@ fn apply_writes_a_switch_the_page_changed_and_leaves_the_others_as_the_file_wrot
 }
 
 #[test]
+fn apply_keeps_a_switch_the_file_already_says_as_the_user_wrote_it() {
+    let (mut files, folders, _root) = settings_saying("filters-switch-same", TWO_FILTERS);
+
+    files
+        .apply(filters_of(
+            &files.loaded().settings,
+            "a/b",
+            vec![
+                edited_on(
+                    "Bug reports",
+                    "label:bug",
+                    Some("label:bug"),
+                    OnWorkbench::On,
+                ),
+                edited_on("Docs", "label:docs", Some("label:docs"), OnWorkbench::Off),
+            ],
+        ))
+        .unwrap();
+    let after = fs::read_to_string(folders.settings_file()).unwrap();
+
+    assert_eq!(
+        after,
+        TWO_FILTERS.replace("\"Bugs\" # The bugs.", "\"Bug reports\" # The bugs.")
+    );
+}
+
+#[test]
 fn apply_deletes_a_filter_and_adds_one_off_the_workbench() {
     let (mut files, folders, _root) = settings_saying("filters-add", TWO_FILTERS);
 

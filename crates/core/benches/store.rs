@@ -456,6 +456,8 @@ fn content() -> IssueContent {
             })
             .collect(),
         earlier_comments: 40,
+        events: vec![],
+        earlier_events: 0,
         opened_at: Some(updated(40)),
     }
 }

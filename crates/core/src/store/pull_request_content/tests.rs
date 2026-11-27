@@ -63,6 +63,8 @@ fn with_reviews(reviews: Vec<Review>) -> PullRequestContent {
             body_html: "<p>Fixes the crash</p>".to_owned(),
             comments: vec![],
             earlier_comments: 0,
+            events: vec![],
+            earlier_events: 0,
             opened_at: Some(OffsetDateTime::UNIX_EPOCH),
         },
         reviews,

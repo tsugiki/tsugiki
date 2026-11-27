@@ -152,6 +152,8 @@ pub fn empty_conversation() -> IssueContent {
         body_html: String::new(),
         comments: vec![],
         earlier_comments: 0,
+        events: vec![],
+        earlier_events: 0,
         opened_at: None,
     }
 }

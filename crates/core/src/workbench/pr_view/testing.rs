@@ -54,6 +54,8 @@ pub(crate) fn reviewed() -> PullRequestContent {
                 },
             }],
             earlier_comments: 2,
+            events: vec![],
+            earlier_events: 0,
             opened_at: Some(OffsetDateTime::UNIX_EPOCH),
         },
         reviews: vec![

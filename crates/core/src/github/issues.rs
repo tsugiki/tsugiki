@@ -29,7 +29,7 @@ enum StateWire {
 /// Why GitHub says an Issue closed, or reopened. A reason GitHub adds later reads as a plain close.
 #[derive(Deserialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
-enum StateReason {
+pub(super) enum StateReason {
     NotPlanned,
     Duplicate,
     #[serde(other)]

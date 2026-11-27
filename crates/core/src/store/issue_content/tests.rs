@@ -1,7 +1,8 @@
 use time::OffsetDateTime;
 
 use super::*;
-use crate::facts::issue_content::CommentId;
+use crate::facts::issue_content::{CommentId, IssueEventKind, Reference};
+use crate::facts::labels::Label;
 use crate::login::Login;
 use crate::store::testing::OpenStore;
 use crate::testing::cpython;
@@ -24,8 +25,53 @@ fn content(body_html: &str, comments: Vec<IssueComment>) -> IssueContent {
         body_html: body_html.to_owned(),
         comments,
         earlier_comments: 2,
+        events: vec![],
+        earlier_events: 2,
         opened_at: OffsetDateTime::from_unix_timestamp(1_700_000_000).ok(),
     }
+}
+
+#[test]
+fn each_event_comes_back_in_order_with_what_it_names() {
+    let db = OpenStore::new("issue-content-events");
+    let at = OffsetDateTime::from_unix_timestamp(1_700_000_000).unwrap();
+    let events = vec![
+        IssueEvent {
+            actor: Some(Login::new("some-author")),
+            created_at: at,
+            kind: IssueEventKind::Labeled {
+                label: Label::new("type-bug"),
+            },
+        },
+        IssueEvent {
+            actor: None,
+            created_at: at,
+            kind: IssueEventKind::CrossReferenced {
+                reference: Reference {
+                    repository: crate::testing::cpython(),
+                    number: 12,
+                    title: "Fix it".to_owned(),
+                    url: "https://github.com/python/cpython/pull/12".to_owned(),
+                },
+            },
+        },
+    ];
+    let read = IssueContent {
+        events: events.clone(),
+        earlier_events: 3,
+        ..content("<p>One</p>", vec![])
+    };
+    db.store
+        .save_issue_content(&crate::testing::cpython(), 1, read.clone())
+        .unwrap();
+
+    assert_eq!(
+        db.reader
+            .issue_content(&crate::testing::cpython(), 1)
+            .unwrap(),
+        Some(read)
+    );
+    db.close();
 }
 
 #[test]

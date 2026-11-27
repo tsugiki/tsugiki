@@ -159,10 +159,11 @@ const LAYERS: &[Layer] = &[
     },
     Layer {
         module: "facts",
-        uses: &["filters", "login"],
+        uses: &["filters", "login", "repository"],
         why: "Holds the facts `work` judges: what `github` parses, the patch-ids the Mirror worker reads, \
               and the bundles the store fills. They belong to neither the client nor the store, so a module \
-              that judges facts needs neither. A bundle names each Filter's results by its query.",
+              that judges facts needs neither. A bundle names each Filter's results by its query, and an \
+              Issue's event names another Repository.",
     },
     Layer {
         module: "conventions",

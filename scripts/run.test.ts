@@ -63,9 +63,11 @@ describe("messageOf", () => {
 });
 
 describe("gh", () => {
+  // A Windows CI runner busy with the rest of the build can take more than five seconds to start gh, so
+  // this test gets a longer timeout than Vitest's default.
   it("gives gh's output", () => {
     expect(gh("--version")).toMatch(/^gh version \d/);
-  });
+  }, 30_000);
 });
 
 describe("git", () => {

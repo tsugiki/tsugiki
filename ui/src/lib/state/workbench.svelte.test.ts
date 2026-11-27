@@ -2044,7 +2044,7 @@ describe("WorkbenchState's Inbox", () => {
     state.stop();
   });
 
-  it("sends each quick click's own search, not the one a later click asked for", async () => {
+  it("sends only the last of two quick clicks' searches", async () => {
     catchChanged();
     let answerAlice!: (value: Awaited<ReturnType<typeof commands.workbench>>) => void;
     const alice = new Promise<Awaited<ReturnType<typeof commands.workbench>>>((resolve) => {
@@ -2063,13 +2063,74 @@ describe("WorkbenchState's Inbox", () => {
     answerAlice(workbenchPage([], { filter_query: "is:open author:alice" }));
     await openingAlice;
 
-    expect(vi.mocked(commands.searchInbox).mock.calls).toEqual([
-      ["python/cpython", "is:open author:bob"],
-      ["python/cpython", "is:open author:alice"],
-    ]);
+    expect(vi.mocked(commands.searchInbox).mock.calls).toEqual([["python/cpython", "is:open author:bob"]]);
     expect(state.person).toEqual({ login: "bob" });
     expect(state.personDraft).toEqual({ name: "bob", query: "is:open author:bob" });
     state.stop();
+  });
+
+  it("sends one search for a double click on the same name", async () => {
+    catchChanged();
+    let answerPerson!: (value: Awaited<ReturnType<typeof commands.workbench>>) => void;
+    const person = new Promise<Awaited<ReturnType<typeof commands.workbench>>>((resolve) => {
+      answerPerson = resolve;
+    });
+    vi.mocked(commands.workbench).mockResolvedValueOnce(answer()).mockReturnValue(person);
+    vi.mocked(commands.searchInbox).mockResolvedValue(done);
+    const state = new WorkbenchState("python/cpython");
+    await state.load();
+
+    const first = state.openPerson("octocat");
+    const second = state.openPerson("octocat");
+    answerPerson(workbenchPage([], { filter_query: "is:open author:octocat" }));
+    await Promise.all([first, second]);
+
+    expect(vi.mocked(commands.searchInbox).mock.calls).toEqual([
+      ["python/cpython", "is:open author:octocat"],
+    ]);
+    state.stop();
+  });
+
+  it("sends nothing when the person is closed before the answer lands", async () => {
+    catchChanged();
+    let answerAlice!: (value: Awaited<ReturnType<typeof commands.workbench>>) => void;
+    const alice = new Promise<Awaited<ReturnType<typeof commands.workbench>>>((resolve) => {
+      answerAlice = resolve;
+    });
+    vi.mocked(commands.workbench)
+      .mockResolvedValueOnce(answer())
+      .mockReturnValueOnce(alice)
+      .mockResolvedValue(workbenchPage([]));
+    vi.mocked(commands.searchInbox).mockResolvedValue(done);
+    const state = new WorkbenchState("python/cpython");
+    await state.load();
+
+    const opening = state.openPerson("alice");
+    await state.closePerson();
+    answerAlice(workbenchPage([], { filter_query: "is:open author:alice" }));
+    await opening;
+
+    expect(commands.searchInbox).not.toHaveBeenCalled();
+    state.stop();
+  });
+
+  it("sends nothing when the person's answer lands after the state stopped", async () => {
+    catchChanged();
+    let answerAlice!: (value: Awaited<ReturnType<typeof commands.workbench>>) => void;
+    const alice = new Promise<Awaited<ReturnType<typeof commands.workbench>>>((resolve) => {
+      answerAlice = resolve;
+    });
+    vi.mocked(commands.workbench).mockResolvedValueOnce(answer()).mockReturnValueOnce(alice);
+    vi.mocked(commands.searchInbox).mockResolvedValue(done);
+    const state = new WorkbenchState("python/cpython");
+    await state.load();
+
+    const opening = state.openPerson("alice");
+    state.stop();
+    answerAlice(workbenchPage([], { filter_query: "is:open author:alice" }));
+    await opening;
+
+    expect(commands.searchInbox).not.toHaveBeenCalled();
   });
 
   it("offers no Save until the Inbox's answer for the text arrives, nor once that answer fails", async () => {

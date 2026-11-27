@@ -303,7 +303,7 @@
             <p class="byline">{PR_UNREAD[pr.failedRead ?? "reading"]}</p>
           {/if}
         {:else}
-          <FilesTab files={pr.files} {now} onlink={(address) => void links.openLink(address)} {onperson} />
+          <FilesTab {onperson} files={pr.files} {now} onlink={(address) => void links.openLink(address)} />
         {/if}
       </div>
       {#if railed}

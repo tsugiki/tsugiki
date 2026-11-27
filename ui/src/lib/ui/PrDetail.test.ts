@@ -4,7 +4,8 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { remapKeys } from "$lib/state/keymap.svelte";
 import { PanesState } from "$lib/state/panes.svelte";
 import { PrViewState, type PrView } from "$lib/state/pr-view.svelte";
-import { done, ok, readyFiles, refused, workbenchRow } from "$lib/testing/fixtures";
+import type { DiffRow } from "$lib/state/pr-files.svelte";
+import { diffFile, diffThread, done, ok, readyFiles, refused, workbenchRow } from "$lib/testing/fixtures";
 import { headerButtons } from "$lib/testing/helpers";
 import { stampOf } from "./time";
 import PrDetail from "./PrDetail.svelte";
@@ -15,6 +16,8 @@ const core = vi.hoisted(() => ({
   openOnGithub: vi.fn(),
   openLink: vi.fn(),
   pullRequestFiles: vi.fn(),
+  pullRequestRows: vi.fn(),
+  pullRequestSpans: vi.fn(),
   cloning: vi.fn(),
   mirrorStates: vi.fn(),
   mirrorsHeld: vi.fn(),
@@ -32,6 +35,8 @@ vi.mock("$lib/data/bindings", async () => {
       openOnGithub: core.openOnGithub,
       openLink: core.openLink,
       pullRequestFiles: core.pullRequestFiles,
+      pullRequestRows: core.pullRequestRows,
+      pullRequestSpans: core.pullRequestSpans,
       cloning: core.cloning,
       mirrorStates: core.mirrorStates,
       mirrorsHeld: core.mirrorsHeld,
@@ -178,6 +183,7 @@ beforeEach(() => {
   core.openOnGithub.mockResolvedValue(done);
   core.openLink.mockResolvedValue(done);
   core.pullRequestFiles.mockResolvedValue(ok({ state: "fetching" }));
+  core.pullRequestSpans.mockReturnValue(new Promise(() => {}));
   core.cloning.mockResolvedValue(null);
   core.mirrorStates.mockResolvedValue([]);
   core.mirrorsHeld.mockResolvedValue(false);
@@ -197,6 +203,12 @@ it("opens on the Conversation: the title and author, the description, comments a
   );
   expect(headers).toEqual(["some-reviewer · 2h ago", "some-reviewer approved at 0123abc · 1h ago"]);
   expect(screen.getByText("2 earlier comments are on GitHub.")).toBeTruthy();
+});
+
+it("names a deleted author on the byline where the login is gone", async () => {
+  await shown({ ...view, author: null }, 10);
+
+  expect(document.querySelector("p.byline b")?.textContent).toBe("deleted user");
 });
 
 it("opens the person Filter from the PR's author, and does nothing unless the page listens", async () => {
@@ -444,6 +456,39 @@ it("sends a link in a NEWS entry to the browser", async () => {
   await fireEvent.click(await screen.findByRole("link", { name: "gh-1" }));
 
   expect(core.openLink).toHaveBeenCalledExactlyOnceWith(url);
+});
+
+it("opens the person Filter from a thread's author in the Files tab", async () => {
+  const rows: DiffRow[] = [
+    { kind: "file", path: "a.py", old_path: null, change: { kind: "lines", added: 0, removed: 0 } },
+    { kind: "hunk", text: "@@ -1,2 +1,2 @@" },
+    { kind: "context", old: 1, new: 1, text: "a" },
+  ];
+  core.pullRequestFiles.mockResolvedValue(
+    ok(
+      readyFiles(rows.length, {
+        files: [
+          diffFile("a.py", 0, {
+            change: { kind: "lines", added: 0, removed: 0 },
+            columns: 8,
+          }),
+        ],
+        threads: {
+          kind: "shown",
+          threads: [diffThread("T1", { kind: "row", row: 2, side: "RIGHT" })],
+        },
+      }),
+    ),
+  );
+  core.pullRequestRows.mockResolvedValue(ok(rows));
+  const onperson = vi.fn();
+  await shown(view, 10, vi.fn(), vi.fn(), new PanesState(), { onperson });
+  await fireEvent.click(screen.getByRole("tab", { name: "Files" }));
+
+  const authors = await screen.findAllByRole("button", { name: "some-reviewer" });
+  for (const author of authors) await fireEvent.click(author);
+
+  expect(onperson.mock.calls).toEqual([["some-reviewer"], ["some-reviewer"]]);
 });
 
 it("says so for a PR Tsugiki doesn't hold", async () => {

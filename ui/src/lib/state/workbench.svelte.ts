@@ -192,9 +192,11 @@ export class WorkbenchState {
   search = $state("");
   /** The temporary person Filter a clicked name opens (#472), until the user saves or closes it. */
   person = $state<{ login: string }>();
-  /** The search the person Filter saves as, as the core spells it, once it has answered about the person on
-   * show (#472). */
+  /** The search the person Filter saves as, as the core spells it, for the person the user opened, until it
+   * is saved or closed (#472). */
   #personQuery = $state<string>();
+  /** The click that asked for the person Filter on show, which alone sends its search (#472). */
+  #personAsked = 0;
   /** Whether the search the last answer read needs GitHub, so the Inbox lists no local rows (#464). */
   needsGitHub = $state(false);
   /** How many results the search's answer listed of how many it reaches, past GitHub's 1,000 (#465). */
@@ -363,27 +365,42 @@ export class WorkbenchState {
    * matches at once, and Tsugiki sends its search to GitHub again, as it does each time the Filter opens. A
    * click on another person replaces the one before.
    *
-   * This sends the query that `login`'s own answer named, not the state a later click left: the answer
-   * carries it back even when a newer question replaced the one that asked for it.
+   * Only the click that still owns the view sends a search. An answer a newer click overtook, or one that
+   * lands after the user closed the Filter or the window stopped, spells a query for nobody (#472).
    */
   async openPerson(login: string) {
+    const asked = (this.#personAsked += 1);
     this.person = { login };
     this.#personQuery = undefined;
     const query = await this.select({ kind: "person", login });
-    if (query !== undefined) await commands.searchInbox(this.#repository, query);
+    if (query === undefined || !this.#ownsPerson(asked, login)) return;
+    await commands.searchInbox(this.#repository, query);
+  }
+
+  /** Whether the person `login` the *`asked`*'th click opened still owns the view on show, so its answer
+   * sends the search it spelled (#472). */
+  #ownsPerson(asked: number, login: string): boolean {
+    return (
+      asked === this.#personAsked &&
+      !this.#stopped &&
+      this.person?.login === login &&
+      this.selected.kind === "person" &&
+      this.selected.login === login
+    );
   }
 
   /** Closes the temporary person Filter (#472): the Sidebar lists it no more, and the list shows the
    * Workbench while it showed the person. */
   async closePerson() {
     const closing = this.person !== undefined && this.selected.kind === "person";
+    this.#personAsked += 1;
     this.person = undefined;
     this.#personQuery = undefined;
     if (closing) await this.select({ kind: "whole" });
   }
 
   /** The person Filter's draft for the Save as Filter dialog (#472): the login as its name, and the query
-   * the core spelled, once its answer about the person on show has arrived. */
+   * the core spelled, for the person the user opened, until it is saved or closed. */
   get personDraft(): { name: string; query: string } | undefined {
     const person = this.person;
     const query = this.#personQuery;

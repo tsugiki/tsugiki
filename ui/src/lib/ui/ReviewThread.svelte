@@ -118,15 +118,18 @@
 
 <style>
   .head {
+    position: relative;
     display: flex;
-    gap: 6px;
     align-items: center;
+    box-sizing: border-box;
     width: 100%;
     height: 20px;
     padding: 0 8px;
     text-align: left;
   }
 
+  /* The chevron folds the thread from the keyboard, and its cover carries a click anywhere on the line to
+     it, as a row's title does. The name link keeps itself above the cover. */
   .toggle {
     all: unset;
     display: flex;
@@ -134,13 +137,29 @@
     cursor: pointer;
   }
 
-  .toggle:hover,
-  .toggle:focus-visible {
+  .toggle::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    cursor: pointer;
+  }
+
+  .head:hover {
     text-decoration: underline;
+  }
+
+  .toggle:focus-visible::after {
+    outline: 1px solid var(--accent);
   }
 
   .chevron {
     width: 1ch;
+    margin-right: 6px;
+  }
+
+  /* The marks follow the count with the room the line's parts had between them. */
+  .head .chip {
+    margin-left: 6px;
   }
 
   /* The theme's attention colour, for a draft only the user sees. */

@@ -152,6 +152,32 @@ it("shows the title and author, the description and the recent comments", async 
   expect(screen.getByText("3 earlier comments are on GitHub.")).toBeTruthy();
 });
 
+it("names a deleted author on the byline where the login is gone", async () => {
+  await shown({ ...view, author: null });
+
+  expect(document.querySelector("p.byline b")?.textContent).toBe("deleted user");
+});
+
+it("names a deleted author of a PR in its tree", async () => {
+  const pull_requests = view.pull_requests.map((entry) =>
+    entry.kind === "pr" ? { ...entry, author: null } : entry,
+  );
+  await shown({ ...view, pull_requests });
+
+  expect([...document.querySelectorAll(".who")].map((who) => who.textContent)).toContain("deleted user");
+});
+
+it("opens the person Filter from a PR's author in the Issue's tree", async () => {
+  const onperson = vi.fn();
+  await shown(view, vi.fn(), vi.fn(), vi.fn(), vi.fn(), vi.fn(), vi.fn(), onperson);
+
+  const authors = screen.getAllByRole("button", { name: "some-author" });
+  expect(authors.length).toBeGreaterThan(0);
+  await fireEvent.click(authors[0] as HTMLElement);
+
+  expect(onperson).toHaveBeenCalledExactlyOnceWith("some-author");
+});
+
 it("opens the person Filter from the Issue's author, and does nothing unless the page listens", async () => {
   const onperson = vi.fn();
   await shown(view, vi.fn(), vi.fn(), vi.fn(), vi.fn(), vi.fn(), vi.fn(), onperson);

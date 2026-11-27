@@ -6,7 +6,7 @@
 //! request is out.
 
 use std::cell::{Cell, RefCell};
-use std::collections::VecDeque;
+use std::collections::{HashSet, VecDeque};
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::sync::mpsc::{Receiver, RecvTimeoutError, Sender};
 use std::time::{Duration, Instant};
@@ -79,10 +79,11 @@ pub(super) enum GitHubMessage {
         text: String,
     },
     /// The Inbox shows placeholders `numbers`, which the user scrolled to, so GitHub answers what they say
-    /// (#466).
+    /// (#466). The reply names the numbers the thread handled, so the window can ask for the rest.
     FillPlaceholders {
         repository: RepositoryName,
         numbers: Vec<u32>,
+        reply: Sender<Result<Vec<u32>, Error>>,
     },
     /// The size of a Repository on GitHub, which the Mirror worker asks before a clone.
     Size {
@@ -213,6 +214,9 @@ pub(super) struct Refreshes {
     pub(super) on_screen: RefCell<OnScreen>,
     /// The settings owner's view, which the syncs read each Repository's settings from.
     pub(super) settings: LatestReader<SettingsView>,
+    /// The Inbox placeholders the thread has answered since launch, by Repository: each waits for no request
+    /// again, whether GitHub had an item for it or not (#466).
+    pub(super) filled: RefCell<HashSet<(RepositoryName, u32)>>,
     /// How many of the user's refreshes it has done, and the copy the session counts those it passed on
     /// against.
     pub(super) refreshes_done: Cell<u64>,
@@ -256,10 +260,11 @@ pub(super) enum Turn {
         text: String,
     },
     /// The Inbox shows placeholders `numbers`, which the user scrolled to, so GitHub answers what they say
-    /// (#466).
+    /// (#466). The reply names the numbers the thread handled, so the window can ask for the rest.
     FillPlaceholders {
         repository: RepositoryName,
         numbers: Vec<u32>,
+        reply: Sender<Result<Vec<u32>, Error>>,
     },
     /// The session couldn't keep what it saved.
     Problem(Error),
@@ -293,10 +298,26 @@ impl Refreshes {
             fetching,
             on_screen: RefCell::new(OnScreen::new(intervals.on_screen)),
             settings,
+            filled: RefCell::new(HashSet::new()),
             refreshes_done: Cell::new(0),
             done_copy: RefCell::new(done_copy),
         };
         (refreshes, copy)
+    }
+
+    /// Whether the Inbox's placeholder `number` of `repository` has already been answered, so no request is
+    /// needed for it again (#466).
+    fn was_filled(&self, repository: &RepositoryName, number: u32) -> bool {
+        (self.filled.borrow()).contains(&(repository.clone(), number))
+    }
+
+    /// Keeps that the Inbox's placeholders `numbers` of `repository` have been answered (#466), so scrolling
+    /// back over them asks GitHub nothing.
+    fn mark_filled(&self, repository: &RepositoryName, numbers: &[u32]) {
+        let mut filled = self.filled.borrow_mut();
+        for number in numbers {
+            let _ = filled.insert((repository.clone(), *number));
+        }
     }
 
     /// The Repositories the settings list, in their order.
@@ -419,9 +440,16 @@ impl Refreshes {
                     GitHubMessage::Check { .. }
                     | GitHubMessage::FetchUnstored { .. }
                     | GitHubMessage::Size { .. }
-                    | GitHubMessage::Search { .. }
-                    | GitHubMessage::FillPlaceholders { .. },
+                    | GitHubMessage::Search { .. },
                 ) => {}
+                // A fill while there is no token asks nothing, and the window may ask again once there is.
+                Ok(GitHubMessage::FillPlaceholders { reply, .. }) => {
+                    #[expect(
+                        clippy::let_underscore_must_use,
+                        reason = "this fails only if the caller has gone, and nobody then asks for the rest"
+                    )]
+                    let _ = reply.send(Ok(Vec::new()));
+                }
             }
         }
     }
@@ -453,10 +481,12 @@ impl Refreshes {
                 Ok(GitHubMessage::FillPlaceholders {
                     repository,
                     numbers,
+                    reply,
                 }) => {
                     return Turn::FillPlaceholders {
                         repository,
                         numbers,
+                        reply,
                     };
                 }
                 Ok(GitHubMessage::FilterSearch { repository, query }) => {
@@ -711,8 +741,9 @@ pub(super) fn watch(
             Turn::FillPlaceholders {
                 repository,
                 numbers,
+                reply,
             } => {
-                let filled = {
+                let Filled { handled, problem } = {
                     let read = Reading {
                         github: &github,
                         queue: refreshes,
@@ -728,7 +759,12 @@ pub(super) fn watch(
                         },
                     )
                 };
-                if let Err(problem) = filled {
+                #[expect(
+                    clippy::let_underscore_must_use,
+                    reason = "this fails only if the caller has gone, and nobody then asks for the rest"
+                )]
+                let _ = reply.send(Ok(handled));
+                if let Some(problem) = problem {
                     syncs.after_fetch_failure(&problem, due.status);
                     tell_problem(board, problem, store);
                 }
@@ -837,53 +873,107 @@ struct Placeholders<'a> {
     numbers: &'a [u32],
 }
 
-/// Fetches what the placeholders `numbers` of `repository` say, in one batch, and saves them in the cache
-/// (#466). The Inbox reads them on the next `changed`, and they stay after the search is cleared. A number
-/// GitHub has nothing under, or refuses alone, keeps its placeholder until a later search, and says so in the
-/// log alone.
+/// What a fill did: the numbers it handled, which the window then keeps quiet, and the problem that stopped
+/// it, if one did (#466).
+struct Filled {
+    handled: Vec<u32>,
+    problem: Option<Error>,
+}
+
+/// Fetches what the placeholders `numbers` of `repository` say, a batch of `PLACEHOLDER_BATCH` at a time,
+/// and saves them in the cache (#466). The Inbox reads them on the next `changed`, and they stay after the
+/// search is cleared. A batch GitHub shrank after a 502 leaves the rest to the next batch here, so a fill
+/// covers every number it was given. A number GitHub has nothing under, or refuses alone, counts as handled
+/// and keeps its placeholder until a later search, and says so in the log alone. A number the store already
+/// holds, or this thread answered before, costs no request.
 fn fill_placeholders(
     board: &mut StatusBoard,
     store: &Store,
     read: &Reading<'_>,
     placeholders: Placeholders<'_>,
-) -> Result<(), Error> {
+) -> Filled {
     let Placeholders {
         repository,
         numbers,
     } = placeholders;
-    let batch = read
-        .github
-        .fetch_items(repository, numbers, PLACEHOLDER_BATCH)?;
-    let mut issues = Vec::new();
-    let mut issue_activity = Vec::new();
-    let mut pull_requests = Vec::new();
-    for (number, numbered) in numbers.iter().zip(batch.items) {
-        match numbered {
-            Numbered::Issue(facts, activity) => {
-                issues.push(facts);
-                issue_activity.push(activity);
-            }
-            Numbered::PullRequest(facts, activity) => pull_requests.push((*facts, activity)),
-            Numbered::Missing => {
-                log::warn!("GitHub has no #{number} of {repository}, which a search found");
-            }
-            // `fetch_items` logged what GitHub refused.
-            Numbered::Hidden => {}
+    let (mut handled, mut remaining): (Vec<u32>, Vec<u32>) =
+        (numbers.iter().copied()).partition(|number| read.queue.was_filled(repository, *number));
+    match store.numbers_lacking(repository, &remaining) {
+        Ok(lacking) => {
+            let lacking: HashSet<u32> = lacking.into_iter().collect();
+            handled.extend(
+                (remaining.iter())
+                    .copied()
+                    .filter(|number| !lacking.contains(number)),
+            );
+            read.queue.mark_filled(repository, &handled);
+            remaining.retain(|number| lacking.contains(number));
         }
+        Err(problem) => log::warn!(
+            "Tsugiki couldn't check whether {} holds the Inbox's placeholders: {}",
+            repository,
+            problem.message
+        ),
     }
-    let mut touched: Vec<u32> = issues.iter().map(|issue| issue.number).collect();
-    touched.extend(pull_requests.iter().map(|(facts, _)| facts.number));
-    if touched.is_empty() {
-        return Ok(());
+    while !remaining.is_empty() {
+        let batch = match read
+            .github
+            .fetch_items(repository, &remaining, PLACEHOLDER_BATCH)
+        {
+            Ok(batch) => batch,
+            Err(problem) => {
+                return Filled {
+                    handled,
+                    problem: Some(problem),
+                };
+            }
+        };
+        let asked = batch.asked_for.min(remaining.len());
+        let asked_numbers: Vec<u32> = remaining.drain(..asked).collect();
+        let mut issues = Vec::new();
+        let mut issue_activity = Vec::new();
+        let mut pull_requests = Vec::new();
+        for (number, numbered) in asked_numbers.iter().zip(batch.items) {
+            match numbered {
+                Numbered::Issue(facts, activity) => {
+                    issues.push(facts);
+                    issue_activity.push(activity);
+                }
+                Numbered::PullRequest(facts, activity) => pull_requests.push((*facts, activity)),
+                Numbered::Missing => {
+                    log::warn!("GitHub has no #{number} of {repository}, which a search found");
+                }
+                // `fetch_items` logged what GitHub refused.
+                Numbered::Hidden => {}
+            }
+        }
+        let mut touched: Vec<u32> = issues.iter().map(|issue| issue.number).collect();
+        touched.extend(pull_requests.iter().map(|(facts, _)| facts.number));
+        if !touched.is_empty() {
+            if let Err(problem) =
+                store.save_fetched_items(repository, (issues, issue_activity), pull_requests)
+            {
+                return Filled {
+                    handled,
+                    problem: Some(problem),
+                };
+            }
+            let change = Change {
+                repository: repository.clone(),
+                items: touched,
+            };
+            hand_over_heads(&(read.queue.fetching), read.syncs, &change);
+            board.changed(&change);
+        }
+        // Each number the batch asked for is answered, with an item or with nothing, so it asks nothing
+        // again this session.
+        read.queue.mark_filled(repository, &asked_numbers);
+        handled.extend(asked_numbers);
     }
-    store.save_fetched_items(repository, (issues, issue_activity), pull_requests)?;
-    let change = Change {
-        repository: repository.clone(),
-        items: touched,
-    };
-    hand_over_heads(&(read.queue.fetching), read.syncs, &change);
-    board.changed(&change);
-    Ok(())
+    Filled {
+        handled,
+        problem: None,
+    }
 }
 
 /// Tells the window and the Mirror worker what the sync queue's `progress` says, if anything. A step's news

@@ -285,10 +285,12 @@ pub(crate) enum SessionMessage {
         text: String,
     },
     /// The Inbox shows placeholders `numbers`, which the user scrolled to, so the session fetches their
-    /// facts in batches of `PLACEHOLDER_BATCH` (#466).
+    /// facts in batches of `PLACEHOLDER_BATCH` (#466). The answer names the numbers the core handled, so the
+    /// window can ask again for the rest.
     FillPlaceholders {
         repository: RepositoryName,
         numbers: Vec<u32>,
+        reply: Sender<Result<Vec<u32>, Error>>,
     },
     /// "Show muted" on the Inbox of `repository` turned to `show` (#825), which answers once the store has
     /// kept it, or why it couldn't. The window then asks for the Inbox again.
@@ -622,13 +624,19 @@ impl Fetching {
 
     /// The Inbox shows placeholders `numbers` of `repository`, which the user scrolled to: the session
     /// fetches what they say from GitHub, a batch of `PLACEHOLDER_BATCH` at a time and each number once,
-    /// saves them in the cache, and the `changed` event follows (#466). Placeholders the user never scrolled
-    /// to cost no request.
-    pub fn fill_placeholders(&self, repository: RepositoryName, numbers: Vec<u32>) {
-        self.to_session(SessionMessage::FillPlaceholders {
+    /// saves them in the cache, and the `changed` event follows (#466). Answers the numbers the core handled,
+    /// so the window asks again for the rest. Placeholders the user never scrolled to cost no request. A
+    /// session that has stopped answers that it isn't connected; one with no token answers none.
+    pub fn fill_placeholders(
+        &self,
+        repository: RepositoryName,
+        numbers: Vec<u32>,
+    ) -> Result<Vec<u32>, Error> {
+        answered(&self.session, |reply| SessionMessage::FillPlaceholders {
             repository,
             numbers,
-        });
+            reply,
+        })
     }
 
     /// Fetches Issue or PR `number` of `repository`, which the database lacks, and waits for the answer.

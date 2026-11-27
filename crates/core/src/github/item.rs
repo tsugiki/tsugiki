@@ -25,6 +25,11 @@ const OPERATION: &str = "FetchItem";
 /// Names the fetch of a batch of items, whose query names each number, so it has no recording.
 const BATCH_OPERATION: &str = "FetchItems";
 
+/// The alias a batch's query gives item `number`, which its answer comes back under.
+pub(super) fn alias(number: u32) -> String {
+    format!("i{number}")
+}
+
 /// What a fetch of one item reads, whichever kind GitHub says it is, and the Repository that holds it now.
 fn item_selection() -> String {
     format!(
@@ -48,7 +53,10 @@ fn fetch_items_query(numbers: &[u32]) -> String {
     let selection = item_selection();
     let fields: Vec<String> = numbers
         .iter()
-        .map(|number| format!("i{number}: {FIELD}(number: {number}) {{ {selection} }}"))
+        .map(|number| {
+            let alias = alias(*number);
+            format!("{alias}: {FIELD}(number: {number}) {{ {selection} }}")
+        })
         .collect();
     format!(
         "query {BATCH_OPERATION}($owner: String!, $name: String!) {{ \
@@ -187,8 +195,7 @@ impl GitHub {
             repository: Holder,
             rate_limit: RateLimit,
         }
-        let alias = |number: &u32| format!("i{number}");
-        let aliases: Vec<String> = numbers.iter().map(alias).collect();
+        let aliases: Vec<String> = numbers.iter().map(|number| alias(*number)).collect();
         let reply = self.read_at_size(
             size.min(numbers.len()),
             |first| {
@@ -219,7 +226,7 @@ impl GitHub {
         let asked = data.repository.name_with_owner;
         let mut items = Vec::new();
         for number in numbers.iter().take(asked_for) {
-            let name = alias(number);
+            let name = alias(*number);
             let refused = hidden.iter().any(|field| field == &name);
             hidden.retain(|field| field != &name);
             let answer = (data.repository.items).remove(&name).flatten();

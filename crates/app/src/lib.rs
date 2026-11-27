@@ -280,19 +280,6 @@ fn search_inbox(repository: &str, search: &str, calls: State<'_, Calls>) -> Resu
     Ok(())
 }
 
-/// Fills the Inbox's placeholders `numbers`, which the user scrolled to: GitHub's facts for each are kept in
-/// the cache in batches of 50, and the `changed` event follows (#466). Returns at once.
-#[tauri::command]
-#[specta::specta]
-fn fill_inbox_placeholders(
-    repository: &str,
-    numbers: Vec<u32>,
-    calls: State<'_, Calls>,
-) -> Result<(), Error> {
-    calls.fill_inbox_placeholders(RepositoryName::parse(repository)?, numbers);
-    Ok(())
-}
-
 /// Tells the core the user opened an Issue, which reads what it says from GitHub, and returns at once. Its
 /// Last seen stays: only Mark Seen moves it.
 #[tauri::command]
@@ -1202,7 +1189,7 @@ pub fn specta_builder<R: tauri::Runtime>() -> Builder<R> {
             slow_commands::workbench,
             slow_commands::inbox,
             search_inbox,
-            fill_inbox_placeholders,
+            slow_commands::fill_inbox_placeholders,
             slow_commands::issue,
             slow_commands::repository_state,
             slow_commands::repository_sync,

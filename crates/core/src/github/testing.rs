@@ -9,6 +9,7 @@
 
 use tsugiki_token::testing::{gh_alone, gh_prints};
 
+use super::item::alias;
 use super::*;
 use crate::facts::pull_requests::NodeId;
 use crate::read_only::WritableRepository;
@@ -302,7 +303,7 @@ pub fn items_refused(asked: &RepositoryName, number: u32) -> Result<Reply, Unrea
             "FORBIDDEN",
             "Resource not accessible by personal access token",
         ),
-        json!(["repository", format!("i{number}")]),
+        json!(["repository", alias(number)]),
     )
 }
 
@@ -310,7 +311,7 @@ pub fn items_refused(asked: &RepositoryName, number: u32) -> Result<Reply, Unrea
 fn items_data(asked: &RepositoryName, items: &[(u32, Value)]) -> Value {
     let mut repository = json!({ "nameWithOwner": asked.to_string() });
     for (number, item) in items {
-        repository[format!("i{number}").as_str()] = item.clone();
+        repository[alias(*number).as_str()] = item.clone();
     }
     json!({ "repository": repository })
 }

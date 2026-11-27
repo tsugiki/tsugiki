@@ -184,11 +184,17 @@ impl Calls {
 
     /// Fetches the placeholders `numbers` of the Inbox, which the user scrolled to, in batches of 50, and
     /// keeps them in the cache (#466). The `changed` event follows, and the Inbox then draws their rows in
-    /// the placeholders' places. Placeholders the user never scrolled to cost no request, and one number is
-    /// asked for once.
-    pub fn fill_inbox_placeholders(&self, repository: RepositoryName, numbers: Vec<u32>) {
-        if !numbers.is_empty() {
-            self.fetching.fill_placeholders(repository, numbers);
+    /// the placeholders' places. Answers the numbers the core handled, so the window asks again for the rest.
+    /// Placeholders the user never scrolled to cost no request, and one number is asked for once.
+    pub fn fill_inbox_placeholders(
+        &self,
+        repository: RepositoryName,
+        numbers: Vec<u32>,
+    ) -> Result<Vec<u32>, Error> {
+        if numbers.is_empty() {
+            Ok(Vec::new())
+        } else {
+            self.fetching.fill_placeholders(repository, numbers)
         }
     }
 

@@ -1955,7 +1955,7 @@ describe("WorkbenchState's Inbox", () => {
     vi.mocked(commands.workbench).mockResolvedValue(answer());
     const placeholder = placeholderItem(4242, "pull_request");
     vi.mocked(commands.inbox).mockResolvedValue(inboxPage([placeholder, item(3)]));
-    vi.mocked(commands.fillInboxPlaceholders).mockResolvedValue(ok(null));
+    vi.mocked(commands.fillInboxPlaceholders).mockResolvedValue(ok([4242]));
     const state = await showingInbox();
 
     await state.fillPlaceholders([4242, 4242]);
@@ -1964,6 +1964,24 @@ describe("WorkbenchState's Inbox", () => {
     // Scrolling back over the placeholder asks nothing more.
     await state.fillPlaceholders([4242]);
     expect(commands.fillInboxPlaceholders).toHaveBeenCalledOnce();
+    state.stop();
+  });
+
+  it("asks again for a placeholder the core couldn't handle", async () => {
+    catchChanged();
+    vi.mocked(commands.workbench).mockResolvedValue(answer());
+    vi.mocked(commands.inbox).mockResolvedValue(inboxPage([placeholderItem(4242, "pull_request"), item(3)]));
+    vi.mocked(commands.fillInboxPlaceholders).mockResolvedValueOnce(ok([]));
+    const state = await showingInbox();
+
+    await state.fillPlaceholders([4242]);
+    expect(commands.fillInboxPlaceholders).toHaveBeenCalledExactlyOnceWith("python/cpython", [4242]);
+
+    // The core handled none, as when it couldn't reach GitHub, so a later scroll asks again.
+    vi.mocked(commands.fillInboxPlaceholders).mockResolvedValueOnce(ok([4242]));
+    await state.fillPlaceholders([4242]);
+    expect(commands.fillInboxPlaceholders).toHaveBeenLastCalledWith("python/cpython", [4242]);
+    expect(commands.fillInboxPlaceholders).toHaveBeenCalledTimes(2);
     state.stop();
   });
 

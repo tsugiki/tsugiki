@@ -6470,7 +6470,7 @@ it("fills only the placeholders the user scrolls to, each once, in the Inbox (#4
       { ...issue, attention: null },
     ]),
   );
-  core.fillInboxPlaceholders.mockResolvedValue(ok(null));
+  core.fillInboxPlaceholders.mockResolvedValue(ok([4242, 4243]));
   render(RepositoryHome, {
     name: "python/cpython",
     onpick: () => {},

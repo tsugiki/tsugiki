@@ -217,8 +217,9 @@ export class WorkbenchState {
   #reading: Promise<void> = Promise.resolve();
   /** Whether the Inbox's next older page is asked for and not yet read, so it is asked for once. */
   #olderAsked = false;
-  /** The Inbox's placeholder numbers the list asked the core to fill, each once (#466). */
-  #placeholdersAsked = new SvelteSet<number>();
+  /** The Inbox's placeholder numbers the list asked the core to fill, each once (#466). A plain `Set`: no
+   * render reads it, so changing it doesn't run the page's effect for the list's items again. */
+  #placeholdersAsked = new Set<number>();
   /** The list's order as the window holds it now, and the order the items on show were asked in. */
   #order: () => ListOrder;
   #shownOrder: ListOrder | undefined;
@@ -407,7 +408,8 @@ export class WorkbenchState {
   }
 
   /** Asks the core to fill the placeholders with `numbers` that the list shows (#466), each number once:
-   * the session fetches them in batches of 50. A placeholder the user scrolls back over costs no request. */
+   * the session fetches them in batches of 50. A placeholder the user scrolls back over costs no request.
+   * One the core couldn't handle is dropped, so a later scroll asks again for it. */
   async fillPlaceholders(numbers: number[]): Promise<void> {
     const fresh = numbers.filter((number) => {
       if (this.#placeholdersAsked.has(number)) return false;
@@ -415,10 +417,10 @@ export class WorkbenchState {
       return true;
     });
     if (fresh.length === 0) return;
-    const problem = await problemIn(commands.fillInboxPlaceholders(this.#repository, fresh));
-    // A command that didn't reach the core asked GitHub nothing, so a later scroll may ask again.
-    if (problem !== undefined) {
-      for (const number of fresh) this.#placeholdersAsked.delete(number);
+    const answer = await ask(commands.fillInboxPlaceholders(this.#repository, fresh));
+    const handled = answer.status === "ok" ? answer.data : [];
+    for (const number of fresh) {
+      if (!handled.includes(number)) this.#placeholdersAsked.delete(number);
     }
   }
 

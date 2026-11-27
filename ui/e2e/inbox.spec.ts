@@ -3,7 +3,7 @@ import type {
   InboxCursor_Serialize as InboxCursor,
   ListedItem_Serialize as ListedItem,
 } from "../src/lib/data/bindings.ts";
-import { inboxPage, placeholderItem, workbenchPage, workbenchRow } from "../src/lib/testing/fixtures.ts";
+import { inboxPage, ok, placeholderItem, workbenchPage, workbenchRow } from "../src/lib/testing/fixtures.ts";
 import { home, palette, repository } from "./fixtures.ts";
 import { changeAnswer, callsOf, emitFromCore, mockCore } from "./mock-core.ts";
 
@@ -157,6 +157,8 @@ test("fills a placeholder only once the list scrolls to it, and asks for it once
     home,
     workbench,
     inbox: pageOf([...issues(60, 1), placeholder], false),
+    // The core handles the one placeholder, so the window keeps it quiet.
+    fillInboxPlaceholders: ok([4242]),
   });
   await page.goto("/");
   await openInbox(page);

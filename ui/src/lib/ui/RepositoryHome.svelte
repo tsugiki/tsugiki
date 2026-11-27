@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { tick } from "svelte";
+  import { onDestroy, tick } from "svelte";
   import { ActionNotice, authorWords, didWords } from "$lib/state/action-notice.svelte";
   import type { GitHubItem } from "$lib/state/browser";
   import { lineOf, samePlace, type FileView, type HistoryPlace } from "$lib/state/file-view.svelte";
@@ -215,10 +215,23 @@
     }
     if (numbers.length > 0) void workbench.fillPlaceholders(numbers);
   }
+  /** Fills the placeholders the list shows once the browser draws the frame a scroll asked for, so a fling
+   * over a long list runs the scan once a frame (#466). */
+  let placeholderFrame: number | undefined;
+  function fillPlaceholdersWhenDrawn() {
+    if (placeholderFrame !== undefined) return;
+    placeholderFrame = requestAnimationFrame(() => {
+      placeholderFrame = undefined;
+      fillPlaceholdersNearScreen();
+    });
+  }
+  onDestroy(() => {
+    if (placeholderFrame !== undefined) cancelAnimationFrame(placeholderFrame);
+  });
   /** A scroll of the list reads the older page near its end, and fills the placeholders on screen (#466). */
   function onListScroll() {
     readOlderNearEnd();
-    fillPlaceholdersNearScreen();
+    fillPlaceholdersWhenDrawn();
   }
   // A page too short to fill the list leaves nothing to scroll, so each new page and the list's return check
   // again.
@@ -1601,8 +1614,8 @@
      attention, or else a summary. -->
 {#snippet listed(item: ListedItem)}
   {#if item.kind === "placeholder"}
-    <!-- A result GitHub found that the cache lacks, which a later ticket fills as the user scrolls to it
-         (#465). It takes its place in GitHub's order, and nothing acts on it yet. -->
+    <!-- A result GitHub found that the cache lacks, which fills as the user scrolls to it (#465, #466). It
+         takes its place in GitHub's order, and nothing acts on it yet. -->
     <li class="item placeholder" data-placeholder={String(item.number)}>
       <div class="row">
         <span class="people"></span>
@@ -2035,8 +2048,8 @@
     font-size: 13px;
   }
 
-  /* A result a search found that the cache lacks, which takes its place until a later ticket fills it
-     (#465). */
+  /* A result a search found that the cache lacks, which takes its place until a fill reaches it as the user
+     scrolls (#465, #466). */
   .item.placeholder {
     opacity: 0.6;
   }

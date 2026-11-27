@@ -2978,7 +2978,8 @@ fn a_placeholder_the_window_scrolled_to_is_filled_and_an_empty_batch_asks_nothin
     );
     drop(wired.stop());
 
-    assert_eq!(filled, Ok(Value::Null));
-    assert_eq!(empty, Ok(Value::Null));
+    // With no token the GitHub thread asks nothing, and the window learns it handled none.
+    assert_eq!(filled, Ok(json!([])));
+    assert_eq!(empty, Ok(json!([])));
     assert!(unknown.is_err(), "{unknown:?}");
 }

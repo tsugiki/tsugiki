@@ -21,7 +21,7 @@ use crate::github::replay::Replayer;
 use crate::github::testing::{
     Canned, RATE_LIMIT, SIGNED_IN, Scripted, answer, answered, dated, fetched_nodes, filter_page,
     github, issue_item, item_answer, item_missing, items_answer, page_info, pr_content, pr_item,
-    pr_node, pull_request_answer, reply_ok, search_page, signed_in_as,
+    pr_node, pull_request_answer, replied, reply_ok, search_page, signed_in_as,
 };
 use crate::github::{Reply, Request, Transport, Unreachable};
 use crate::login::Login;
@@ -698,7 +698,11 @@ fn placeholders_the_user_scrolls_to_are_fetched_once_and_kept() {
     let (board, changes) = changes_board();
     let session = Session::start(board, Ok(folders.clone()), reaching(access), HOURLY);
 
-    session.fetching().fill_placeholders(gcmon(), vec![7, 8]);
+    let handled = session
+        .fetching()
+        .fill_placeholders(gcmon(), vec![7, 8])
+        .unwrap();
+    assert_eq!(handled, [7, 8], "both placeholders were handled");
     wait_for_placeholders(&asked);
     let change = changes
         .recv_timeout(PLENTY)
@@ -706,7 +710,11 @@ fn placeholders_the_user_scrolls_to_are_fetched_once_and_kept() {
     assert_eq!(change.items, [7, 8]);
 
     // The same placeholders again, and one the store now holds, ask GitHub nothing.
-    session.fetching().fill_placeholders(gcmon(), vec![7, 8]);
+    let again = session
+        .fetching()
+        .fill_placeholders(gcmon(), vec![7, 8])
+        .unwrap();
+    assert_eq!(again, [7, 8], "the core still says it handled both");
     session.stop(PLENTY);
 
     assert_eq!(
@@ -722,13 +730,59 @@ fn placeholders_the_user_scrolls_to_are_fetched_once_and_kept() {
 }
 
 #[test]
+fn a_fill_whose_first_batch_github_shrank_asks_for_the_rest() {
+    // A 502 makes the client ask again for half the batch, and the fill then takes the numbers the answer
+    // didn't cover (#466).
+    let (access, asked) = scripted(vec![
+        signed_in(),
+        replied(502, "bad gateway"),
+        items_answer(&gcmon(), &[(7, issue_item(7, &gcmon()))]),
+        items_answer(&gcmon(), &[(8, pr_item(8))]),
+    ]);
+    let (folders, folder) = temp_folders("session-fill-shrunk");
+    let (board, _seen) = watched_board();
+    let session = Session::start(board, Ok(folders.clone()), reaching(access), HOURLY);
+
+    let handled = session
+        .fetching()
+        .fill_placeholders(gcmon(), vec![7, 8])
+        .unwrap();
+    assert_eq!(
+        handled,
+        [7, 8],
+        "the tail is asked for once the first batch shrinks"
+    );
+    let asked_again = (asked.try_iter())
+        .filter(|(operation, _)| operation == "FetchItems")
+        .count();
+    assert_eq!(
+        asked_again, 3,
+        "the 502 asks for the batch again, then the tail on its own"
+    );
+    session.stop(PLENTY);
+
+    let db = OpenStore::of(folders.database(), folder);
+    let facts = db.reader.work_facts(&gcmon()).unwrap();
+    assert!(facts.issues.iter().any(|issue| issue.number == 7));
+    assert!(facts.pull_requests.iter().any(|pr| pr.number == 8));
+    db.close();
+}
+
+#[test]
 fn a_fill_github_cant_answer_keeps_the_placeholders() {
     let (access, asked) = scripted(vec![signed_in(), Err(Unreachable::Offline)]);
     let (folders, folder) = temp_folders("session-fill-offline");
     let (board, _seen) = watched_board();
     let session = Session::start(board, Ok(folders.clone()), reaching(access), HOURLY);
 
-    session.fetching().fill_placeholders(gcmon(), vec![7]);
+    let handled = session
+        .fetching()
+        .fill_placeholders(gcmon(), vec![7])
+        .unwrap();
+    assert!(
+        handled.is_empty(),
+        "GitHub answered nothing, so nothing was handled"
+    );
     wait_for_placeholders(&asked);
     session.stop(PLENTY);
 
@@ -740,7 +794,7 @@ fn a_fill_github_cant_answer_keeps_the_placeholders() {
 #[test]
 fn a_placeholder_github_has_nothing_under_isnt_fetched_again() {
     // GitHub has nothing under 7, so the store keeps no item and a second scroll would ask again without the
-    // session's own record of what it asked (#466).
+    // thread's own record of what it answered (#466).
     let (access, asked) = scripted(vec![
         signed_in(),
         items_answer(&gcmon(), &[(7, Value::Null)]),
@@ -750,12 +804,24 @@ fn a_placeholder_github_has_nothing_under_isnt_fetched_again() {
     let (board, _seen) = watched_board();
     let session = Session::start(board, Ok(folders.clone()), reaching(access), HOURLY);
 
-    session.fetching().fill_placeholders(gcmon(), vec![7]);
+    let handled = session
+        .fetching()
+        .fill_placeholders(gcmon(), vec![7])
+        .unwrap();
+    assert_eq!(
+        handled,
+        [7],
+        "an answer with no item still handled the number"
+    );
     wait_for_placeholders(&asked);
     // The search's answer proves the fill's turn is over, so the next call is not racing it.
     session.fetching().search(gcmon(), "fix".to_owned());
     wait_for_search(&asked);
-    session.fetching().fill_placeholders(gcmon(), vec![7]);
+    let again = session
+        .fetching()
+        .fill_placeholders(gcmon(), vec![7])
+        .unwrap();
+    assert_eq!(again, [7]);
     session.stop(PLENTY);
 
     assert_eq!(
@@ -1900,9 +1966,11 @@ fn named_for_github(message: GitHubMessage) -> String {
         GitHubMessage::FillPlaceholders {
             repository,
             numbers,
+            reply,
         } => SessionMessage::FillPlaceholders {
             repository,
             numbers,
+            reply,
         },
         GitHubMessage::FilterSearch { repository, query } => {
             SessionMessage::FilterSearch { repository, query }

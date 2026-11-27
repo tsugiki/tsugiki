@@ -74,6 +74,21 @@ pub(crate) async fn fetch_item(
     check_aside(move || crate::fetch_unstored(&repository, number, &calls)).await
 }
 
+/// Fills the Inbox's placeholders `numbers`, which the user scrolled to, in batches of 50, and keeps them in
+/// the cache (#466). Answers the numbers the core handled, so the window asks again for the rest. It waits
+/// for GitHub, so it stays off the thread that answers the window's other commands.
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn fill_inbox_placeholders(
+    repository: String,
+    numbers: Vec<u32>,
+    calls: State<'_, Calls>,
+) -> Result<Vec<u32>, Error> {
+    let calls = calls.inner().clone();
+    check_aside(move || calls.fill_inbox_placeholders(RepositoryName::parse(&repository)?, numbers))
+        .await
+}
+
 /// Runs `check`, which asks GitHub, on a thread meant for blocking. A check can wait out a stuck request, and
 /// this leaves the threads that answer the window's other commands free.
 async fn check_aside<T: Send + 'static>(

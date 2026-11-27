@@ -279,10 +279,11 @@ export const commands = {
 	 */
 	searchInbox: (repository: string, search: string) => typedError<null, Error_Serialize>(__TAURI_INVOKE("search_inbox", { repository, search })),
 	/**
-	 *  Fills the Inbox's placeholders `numbers`, which the user scrolled to: GitHub's facts for each are kept in
-	 *  the cache in batches of 50, and the `changed` event follows (#466). Returns at once.
+	 *  Fills the Inbox's placeholders `numbers`, which the user scrolled to, in batches of 50, and keeps them in
+	 *  the cache (#466). Answers the numbers the core handled, so the window asks again for the rest. It waits
+	 *  for GitHub, so it stays off the thread that answers the window's other commands.
 	 */
-	fillInboxPlaceholders: (repository: string, numbers: number[]) => typedError<null, Error_Serialize>(__TAURI_INVOKE("fill_inbox_placeholders", { repository, numbers })),
+	fillInboxPlaceholders: (repository: string, numbers: number[]) => typedError<number[], Error_Serialize>(__TAURI_INVOKE("fill_inbox_placeholders", { repository, numbers })),
 	/**
 	 *  The Issue view of Issue `number`, or nothing if Tsugiki doesn't hold it. This waits on the database and
 	 *  never on GitHub (ADR 0018).
@@ -2865,13 +2866,13 @@ export type Place =
 
 /**
  *  A result a search on GitHub found that the cache lacks (#465). The Inbox shows its number and whether it
- *  is an Issue or a PR; a later ticket fetches what it says as the user scrolls to it.
+ *  is an Issue or a PR; as the user scrolls to it, a fill fetches what it says (#466).
  */
 export type Placeholder = Placeholder_Serialize | Placeholder_Deserialize;
 
 /**
  *  A result a search on GitHub found that the cache lacks (#465). The Inbox shows its number and whether it
- *  is an Issue or a PR; a later ticket fetches what it says as the user scrolls to it.
+ *  is an Issue or a PR; as the user scrolls to it, a fill fetches what it says (#466).
  */
 export type Placeholder_Deserialize = {
 	number: number,
@@ -2883,7 +2884,7 @@ export type Placeholder_Deserialize = {
 
 /**
  *  A result a search on GitHub found that the cache lacks (#465). The Inbox shows its number and whether it
- *  is an Issue or a PR; a later ticket fetches what it says as the user scrolls to it.
+ *  is an Issue or a PR; as the user scrolls to it, a fill fetches what it says (#466).
  */
 export type Placeholder_Serialize = {
 	number: number,
@@ -4478,8 +4479,8 @@ export type WorkbenchItem_Deserialize = {
 	kind: "standalone_backport",
 } & BackportRow_Deserialize | 
 /**
- *  A result a search on GitHub found that the cache lacks, in its place in the list until a later ticket
- *  fills it (#465).
+ *  A result a search on GitHub found that the cache lacks, in its place in the list until the user
+ *  scrolls to it and a fetch fills it (#465, #466).
  */
 {
 	kind: "placeholder",
@@ -4498,8 +4499,8 @@ export type WorkbenchItem_Serialize = {
 	kind: "standalone_backport",
 } & BackportRow_Serialize | 
 /**
- *  A result a search on GitHub found that the cache lacks, in its place in the list until a later ticket
- *  fills it (#465).
+ *  A result a search on GitHub found that the cache lacks, in its place in the list until the user
+ *  scrolls to it and a fetch fills it (#465, #466).
  */
 {
 	kind: "placeholder",

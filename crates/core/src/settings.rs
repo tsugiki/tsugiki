@@ -2454,7 +2454,13 @@ fn put_inline_filters(list: &mut Array, edits: &[EditedFilter]) {
         let filter = match claim(&mut kept, edit) {
             Some(mut filter) => {
                 put_name_and_search(&mut filter, edit);
+                // A key added at the end would follow the space before the `}`, so it moves to the new last
+                // value, as `read_only` does. It is a Filter whose switch stays that this leaves be.
+                let closing = closing_space(&filter);
                 put_switch(&mut filter, edit);
+                if let Some(closing) = closing {
+                    keep_closing_space(&mut filter, closing);
+                }
                 filter
             }
             None => {
@@ -2493,9 +2499,8 @@ fn put_name_and_search(filter: &mut dyn TableLike, edit: &EditedFilter) {
 
 /// Gives `filter` the "On the Workbench" switch of `edit`, when the page changed it and the file says
 /// other, keeping a comment the user wrote on the key. A Filter switched off says so, as `switch_filter`
-/// writes it, and it leaves the key as the user wrote it otherwise. A key added at the end of an inline
-/// table moves the user's space before the `}` to the new last value, as `put_read_only` does, so the rest
-/// of the table stays as the user wrote it, a list over several lines with its comments included.
+/// writes it, and it leaves the key as the user wrote it otherwise. A block keeps its last key's trailing
+/// comment, which an inline table's `put_inline_filters` moves around the new key.
 fn put_switch(filter: &mut dyn TableLike, edit: &EditedFilter) {
     let Some(wanted) = edit.on_workbench else {
         return;
@@ -2503,16 +2508,12 @@ fn put_switch(filter: &mut dyn TableLike, edit: &EditedFilter) {
     if switch_of(&*filter) == wanted {
         return;
     }
-    let closing = closing_space(&*filter);
     merge_value(
         filter,
         ON_WORKBENCH,
         &toml_edit::value(bool::from(wanted)),
         None,
     );
-    if let Some(closing) = closing {
-        keep_closing_space(filter, closing);
-    }
 }
 
 /// The "On the Workbench" switch `filter` says: a Filter without the key is off.

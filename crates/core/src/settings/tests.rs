@@ -2040,6 +2040,39 @@ fn apply_switches_a_filter_in_an_inline_list_on_keeping_its_comment_and_lines() 
 }
 
 #[test]
+fn apply_switches_a_block_filter_on_and_leaves_its_last_key_s_comment_where_it_is() {
+    let (mut files, folders, _root) = settings_saying(
+        "filters-block-comment",
+        "[[repositories]]\nname = \"a/b\"\n\n[[repositories.filters]]\nname = \"Bugs\"\nquery = \
+         \"label:bug\" # note\n",
+    );
+
+    files
+        .apply(filters_of(
+            &files.loaded().settings,
+            "a/b",
+            vec![edited_on(
+                "Bugs",
+                "label:bug",
+                Some("label:bug"),
+                OnWorkbench::On,
+            )],
+        ))
+        .unwrap();
+    let after = fs::read_to_string(folders.settings_file()).unwrap();
+
+    assert_eq!(
+        after,
+        "[[repositories]]\nname = \"a/b\"\n\n[[repositories.filters]]\nname = \"Bugs\"\nquery = \
+         \"label:bug\" # note\non_workbench = true\n"
+    );
+    assert_eq!(
+        read_filters(&files),
+        [("Bugs".to_owned(), "label:bug".to_owned(), true)]
+    );
+}
+
+#[test]
 fn apply_adds_a_filter_to_an_inline_list_switched_on() {
     let (mut files, folders, _root) = settings_saying(
         "filters-inline-added-switch",

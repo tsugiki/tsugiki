@@ -1,6 +1,6 @@
 import { render, screen } from "@testing-library/svelte";
 import { expect, it } from "vitest";
-import { issueIcon, prIcon, type Octicon } from "./octicons";
+import { issueIcon, prIcon, showsAsDraft, type Octicon } from "./octicons";
 import StateIcon from "./StateIcon.svelte";
 
 const named = (icon: Octicon | undefined) => icon && [icon.label, icon.tone];
@@ -35,6 +35,15 @@ it("gives each PR state GitHub's icon and color, and a draft that ended the icon
     ["Merged PR", "done"],
     ["Closed PR", "closed"],
   ]);
+});
+
+it("shows a PR as a draft only while it is open", () => {
+  expect([
+    showsAsDraft({ state: "OPEN", is_draft: true }),
+    showsAsDraft({ state: "OPEN", is_draft: false }),
+    showsAsDraft({ state: "CLOSED", is_draft: true }),
+    showsAsDraft({ state: "MERGED", is_draft: true }),
+  ]).toEqual([true, false, false, false]);
 });
 
 it("draws the icon in its color, names it for a screen reader and a tooltip, and adds no text", () => {

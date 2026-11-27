@@ -4685,8 +4685,8 @@ export type Workbench_Deserialize = {
 	pinned: number,
 	filters: FilterLine_Deserialize[],
 	/**
-	 *  The search a person Filter runs, spelled out, which its Save as Filter dialog takes (#472). Nothing in
-	 *  every other view.
+	 *  The search a person Filter runs, spelled out, which its Save as Filter dialog takes (#472). Empty in
+	 *  another view.
 	 */
 	filter_query?: FilterQuery | null,
 };
@@ -4713,8 +4713,8 @@ export type Workbench_Serialize = {
 	pinned: number,
 	filters: FilterLine_Serialize[],
 	/**
-	 *  The search a person Filter runs, spelled out, which its Save as Filter dialog takes (#472). Nothing in
-	 *  every other view.
+	 *  The search a person Filter runs, spelled out, which its Save as Filter dialog takes (#472). Empty in
+	 *  another view.
 	 */
 	filter_query: FilterQuery | null,
 };

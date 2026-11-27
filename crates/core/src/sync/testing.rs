@@ -7,6 +7,7 @@ use serde_json::{Value, json};
 use time::format_description::well_known::Rfc3339;
 
 use super::{Progress, Syncs};
+use crate::github::item::alias;
 pub(super) use crate::github::testing::{RATE_LIMIT, fetched_nodes, pr_node, search_page};
 use crate::github::testing::{Scripted, answer, github, issue_node, page_info, reply_ok, token};
 use crate::github::{GitHub, Reply, Request, Transport, Unreachable};
@@ -265,7 +266,7 @@ pub(super) fn nothing(rate: &str) -> Result<Reply, Unreachable> {
 pub(super) fn issues(numbers: &[u32], rate: &str) -> Result<Reply, Unreachable> {
     let fields: serde_json::Map<String, Value> = numbers
         .iter()
-        .map(|&number| (format!("i{number}"), issue_node(number)))
+        .map(|&number| (alias(number), issue_node(number)))
         .collect();
     answer(json!({ "repository": fields }), rate)
 }
@@ -313,7 +314,7 @@ pub(super) fn issue_references(issues: &[(u32, &[u32])], rate: &str) -> Result<R
                 "number": number,
                 "timelineItems": reference_timeline(prs, None),
             });
-            (format!("i{number}"), issue)
+            (alias(*number), issue)
         })
         .collect();
     answer(json!({ "repository": fields }), rate)
@@ -331,10 +332,9 @@ pub(super) fn issue_references_with_more(
         "number": number,
         "timelineItems": reference_timeline(prs, Some(older)),
     });
-    answer(
-        json!({ "repository": { format!("i{number}"): field } }),
-        rate,
-    )
+    let mut repository = json!({});
+    repository[alias(number).as_str()] = field;
+    answer(json!({ "repository": repository }), rate)
 }
 
 /// An answer to a read of Issues by number, none of which has a cross-reference.

@@ -219,6 +219,7 @@ export class WorkbenchState {
   #olderAsked = false;
   /** The Inbox's placeholder numbers the list asked the core to fill, each once (#466). A plain `Set`: no
    * render reads it, so changing it doesn't run the page's effect for the list's items again. */
+  // eslint-disable-next-line svelte/prefer-svelte-reactivity
   #placeholdersAsked = new Set<number>();
   /** The list's order as the window holds it now, and the order the items on show were asked in. */
   #order: () => ListOrder;

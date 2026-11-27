@@ -1985,6 +1985,23 @@ describe("WorkbenchState's Inbox", () => {
     state.stop();
   });
 
+  it("asks again for a placeholder whose fill the core refused", async () => {
+    catchChanged();
+    vi.mocked(commands.workbench).mockResolvedValue(answer());
+    vi.mocked(commands.inbox).mockResolvedValue(inboxPage([placeholderItem(4242, "pull_request"), item(3)]));
+    vi.mocked(commands.fillInboxPlaceholders).mockResolvedValueOnce(refused("no database"));
+    const state = await showingInbox();
+
+    // The refusal says nothing was handled, so a later scroll asks again.
+    await state.fillPlaceholders([4242]);
+    expect(commands.fillInboxPlaceholders).toHaveBeenCalledExactlyOnceWith("python/cpython", [4242]);
+
+    vi.mocked(commands.fillInboxPlaceholders).mockResolvedValueOnce(ok([4242]));
+    await state.fillPlaceholders([4242]);
+    expect(commands.fillInboxPlaceholders).toHaveBeenCalledTimes(2);
+    state.stop();
+  });
+
   it("draws a standalone backport's own mark, as no row sits under it", async () => {
     catchChanged();
     vi.mocked(commands.workbench).mockResolvedValue(answer());

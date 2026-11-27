@@ -868,16 +868,16 @@ fn keep_search(
 }
 
 /// The placeholders an Inbox shows, which the user scrolled to, and the Repository they are in (#466).
-struct Placeholders<'a> {
-    repository: &'a RepositoryName,
-    numbers: &'a [u32],
+pub(super) struct Placeholders<'a> {
+    pub(super) repository: &'a RepositoryName,
+    pub(super) numbers: &'a [u32],
 }
 
 /// What a fill did: the numbers it handled, which the window then keeps quiet, and the problem that stopped
 /// it, if one did (#466).
-struct Filled {
-    handled: Vec<u32>,
-    problem: Option<Error>,
+pub(super) struct Filled {
+    pub(super) handled: Vec<u32>,
+    pub(super) problem: Option<Error>,
 }
 
 /// Fetches what the placeholders `numbers` of `repository` say, a batch of `PLACEHOLDER_BATCH` at a time,
@@ -886,7 +886,7 @@ struct Filled {
 /// covers every number it was given. A number GitHub has nothing under, or refuses alone, counts as handled
 /// and keeps its placeholder until a later search, and says so in the log alone. A number the store already
 /// holds, or this thread answered before, costs no request.
-fn fill_placeholders(
+pub(super) fn fill_placeholders(
     board: &mut StatusBoard,
     store: &Store,
     read: &Reading<'_>,

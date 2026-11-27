@@ -25,8 +25,8 @@ const OPERATION: &str = "FetchItem";
 /// Names the fetch of a batch of items, whose query names each number, so it has no recording.
 const BATCH_OPERATION: &str = "FetchItems";
 
-/// The alias a batch's query gives item `number`, which its answer comes back under.
-pub(super) fn alias(number: u32) -> String {
+/// The alias a query gives item `number`, which its answer comes back under.
+pub(crate) fn alias(number: u32) -> String {
     format!("i{number}")
 }
 

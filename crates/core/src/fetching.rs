@@ -623,10 +623,10 @@ impl Fetching {
     }
 
     /// The Inbox shows placeholders `numbers` of `repository`, which the user scrolled to: the session
-    /// fetches what they say from GitHub, a batch of `PLACEHOLDER_BATCH` at a time and each number once,
-    /// saves them in the cache, and the `changed` event follows (#466). Answers the numbers the core handled,
-    /// so the window asks again for the rest. Placeholders the user never scrolled to cost no request. A
-    /// session that has stopped answers that it isn't connected; one with no token answers none.
+    /// fetches what they say from GitHub, a batch of `PLACEHOLDER_BATCH` at a time, saves them in the cache,
+    /// and the `changed` event follows (#466). A number it handles is asked for once, and one it couldn't
+    /// handle comes back for the window to ask again. Placeholders the user never scrolled to cost no
+    /// request. A session that has stopped answers that it isn't connected; one with no token answers none.
     pub fn fill_placeholders(
         &self,
         repository: RepositoryName,

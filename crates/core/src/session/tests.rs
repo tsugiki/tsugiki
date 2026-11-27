@@ -832,6 +832,57 @@ fn a_placeholder_github_has_nothing_under_isnt_fetched_again() {
 }
 
 #[test]
+fn a_fill_with_no_token_asks_nothing_and_the_window_asks_again_later() {
+    let access = GitHubAccess {
+        transport: Box::new(Canned(Err(Unreachable::Offline))),
+        token_from: NO_GH,
+    };
+    let (folders, _folder) = temp_folders("session-fill-no-token");
+    let (board, _seen) = watched_board();
+    let session = Session::start(board, Ok(folders), reaching(access), HOURLY);
+
+    let handled = session
+        .fetching()
+        .fill_placeholders(gcmon(), vec![7])
+        .unwrap();
+    session.stop(PLENTY);
+
+    assert!(
+        handled.is_empty(),
+        "no token asks nothing, so the window asks again once there is one"
+    );
+}
+
+#[test]
+fn a_fill_the_store_cant_keep_is_a_problem_and_leaves_the_numbers_to_ask_again() {
+    let (mut board, _seen) = watched_board();
+    let answer = items_answer(&gcmon(), &[(7, issue_item(7, &gcmon()))]);
+    let access = replying(vec![signed_in(), answer]);
+    let github = connect_alone(&mut quiet_board(), &empty_store(), access).unwrap();
+    let read = Reading {
+        github: &github,
+        queue: &unheard_refreshes(),
+        syncs: &Syncs::default(),
+    };
+
+    let filled = fill_placeholders(
+        &mut board,
+        &Store::stopped(),
+        &read,
+        Placeholders {
+            repository: &gcmon(),
+            numbers: &[7],
+        },
+    );
+
+    assert!(
+        filled.handled.is_empty(),
+        "the store kept nothing, so the window asks again"
+    );
+    assert!(filled.problem.is_some(), "the status bar says why");
+}
+
+#[test]
 fn watching_follows_github_until_told_to_stop() {
     // `Replies` panics if it is asked a fourth time, so the third status has to stop the watching.
     let access = replying(vec![signed_in(), Err(Unreachable::Offline), signed_in()]);

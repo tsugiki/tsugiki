@@ -397,6 +397,21 @@ fn a_fetch_of_an_unstored_item_asks_the_session_and_is_offline_once_it_drops_the
 }
 
 #[test]
+fn a_fill_of_inbox_placeholders_sends_their_numbers_to_the_session() {
+    let calls = Setup::new("fill-placeholders");
+    let fetching = calls.fetching.clone();
+    let repository = calls.world.repository();
+
+    let asking = std::thread::spawn(move || fetching.fill_placeholders(repository, vec![7, 8]));
+    let heard = named(calls.session.recv_timeout(Duration::from_secs(10)).unwrap());
+    let answer = asking.join().unwrap();
+
+    calls.finish();
+    assert_eq!(heard, "fill placeholders [7, 8]");
+    assert!(answer.is_err(), "the session dropped the reply");
+}
+
+#[test]
 fn opening_a_pr_puts_it_on_screen_once_its_conversation_is_asked_for() {
     let calls = Setup::new("open-on-screen");
     let missing = Error::new(ErrorKind::NotFound, "No folder for the mirrors.");

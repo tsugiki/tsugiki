@@ -20,8 +20,9 @@ use crate::github::points::HourPoints;
 use crate::github::replay::Replayer;
 use crate::github::testing::{
     Canned, RATE_LIMIT, SIGNED_IN, Scripted, answer, answered, dated, fetched_nodes, filter_page,
-    github, issue_item, item_answer, item_missing, items_answer, page_info, pr_content, pr_item,
-    pr_node, pull_request_answer, replied, reply_ok, search_page, signed_in_as,
+    github, issue_item, item_answer, item_missing, items_answer, items_refused, page_info,
+    pr_content, pr_item, pr_node, pull_request_answer, replied, reply_ok, search_page,
+    signed_in_as,
 };
 use crate::github::{Reply, Request, Transport, Unreachable};
 use crate::login::Login;
@@ -765,6 +766,30 @@ fn a_fill_whose_first_batch_github_shrank_asks_for_the_rest() {
     let facts = db.reader.work_facts(&gcmon()).unwrap();
     assert!(facts.issues.iter().any(|issue| issue.number == 7));
     assert!(facts.pull_requests.iter().any(|pr| pr.number == 8));
+    db.close();
+}
+
+#[test]
+fn a_fill_github_refuses_one_number_for_handles_it_and_asks_nothing_more_for_it() {
+    let (access, asked) = scripted(vec![signed_in(), items_refused(&gcmon(), 7)]);
+    let (folders, folder) = temp_folders("session-fill-refused");
+    let (board, _seen) = watched_board();
+    let session = Session::start(board, Ok(folders.clone()), reaching(access), HOURLY);
+
+    let handled = session
+        .fetching()
+        .fill_placeholders(gcmon(), vec![7, 8])
+        .unwrap();
+    wait_for_placeholders(&asked);
+    session.stop(PLENTY);
+
+    assert_eq!(
+        handled,
+        [7, 8],
+        "a refused number is handled, as a missing one is"
+    );
+    let db = OpenStore::of(folders.database(), folder);
+    assert!(db.reader.work_facts(&gcmon()).unwrap().issues.is_empty());
     db.close();
 }
 

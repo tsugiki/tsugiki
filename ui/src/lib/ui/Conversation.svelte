@@ -1,8 +1,14 @@
 <script lang="ts">
   import { SvelteSet } from "svelte/reactivity";
-  import type { CommitReference, Reference } from "$lib/data/bindings";
   import { counted } from "$lib/state/counted";
-  import type { HiddenReason, IssueComment, IssueContent, IssueEvent } from "$lib/state/issue-view.svelte";
+  import type {
+    CommitReference,
+    HiddenReason,
+    IssueComment,
+    IssueContent,
+    IssueEvent,
+    Reference,
+  } from "$lib/state/issue-view.svelte";
   import type { PullRequestContent, Review, ReviewState, ThreadLine } from "$lib/state/pr-view.svelte";
   import { REASONS } from "./hidden";
   import { followLink, linkTitle } from "./link-tooltip";
@@ -92,6 +98,9 @@
   const replies = (count: number) => counted(count, "reply", "replies");
 </script>
 
+<!-- eslint-disable svelte/no-navigation-without-resolve -- The links open in the system browser through
+     followLink, and none moves the window. -->
+
 {#snippet body(id: string, html: string, hidden: HiddenReason | null)}
   {#if hidden === null}
     <RenderedHtml {html} {onlink} />
@@ -143,27 +152,27 @@
 {#snippet eventLine(event: IssueEvent)}
   <b>{event.actor ?? "deleted user"}</b>
   {#if event.kind === "cross-referenced"}
-    {` mentioned this in `}{@render reference(event.reference)}
+    mentioned this in {@render reference(event.reference)}
   {:else if event.kind === "referenced"}
-    {` added a commit that references this: `}{@render commit(event.commit)}
+    added a commit that references this: {@render commit(event.commit)}
   {:else if event.kind === "connected"}
-    {` connected this to `}{@render reference(event.reference)}
+    connected this to {@render reference(event.reference)}
   {:else if event.kind === "disconnected"}
-    {` disconnected this from `}{@render reference(event.reference)}
+    disconnected this from {@render reference(event.reference)}
   {:else if event.kind === "labeled"}
-    {` added the ${event.label} label`}
+    added the {event.label} label
   {:else if event.kind === "unlabeled"}
-    {` removed the ${event.label} label`}
+    removed the {event.label} label
   {:else if event.kind === "assigned"}
-    {` assigned ${event.assignee ?? "deleted user"}`}
+    assigned {event.assignee ?? "deleted user"}
   {:else if event.kind === "unassigned"}
-    {` unassigned ${event.assignee ?? "deleted user"}`}
+    unassigned {event.assignee ?? "deleted user"}
   {:else if event.kind === "closed"}
-    {event.completed ? " closed this as completed" : " closed this as not planned"}
+    {event.completed ? "closed this as completed" : "closed this as not planned"}
   {:else if event.kind === "reopened"}
-    {` reopened this`}
+    reopened this
   {:else}
-    {` renamed this from "${event.previous_title}"`}
+    renamed this from "{event.previous_title}"
   {/if}
   <span class="muted" title={stampOf(event.created_at)}>{` · ${ago(event.created_at, now)}`}</span>
 {/snippet}

@@ -2,6 +2,7 @@ use serde_json::{Value, json};
 use std::sync::mpsc::Receiver;
 
 use super::*;
+use crate::facts::labels::Label;
 use crate::github::testing::{RATE_LIMIT, Scripted, answer, github};
 use crate::login::Login;
 use crate::testing::{cpython, moment};
@@ -120,6 +121,42 @@ fn an_issue_github_doesnt_have_is_not_found() {
 
     assert_eq!(problem.kind, ErrorKind::NotFound);
     assert!(problem.message.contains("#7"), "{}", problem.message);
+}
+
+#[test]
+fn a_reference_whose_commit_is_gone_shows_nothing_and_an_unknown_close_reason_is_completed() {
+    let (github, _asked) = answering(&json!({
+        "id": "I_7",
+        "bodyHTML": "",
+        "createdAt": "2026-11-01T09:00:00Z",
+        "comments": { "totalCount": 0, "nodes": [] },
+        "events": {
+            "totalCount": 3,
+            "nodes": [
+                {
+                    "__typename": "ReferencedEvent",
+                    "createdAt": "2026-11-02T09:00:00Z",
+                    "actor": { "login": "some-author" },
+                    "commit": null,
+                },
+                {
+                    "__typename": "ClosedEvent",
+                    "createdAt": "2026-11-03T09:00:00Z",
+                    "actor": { "login": "some-author" },
+                    "stateReason": "A_REASON_GITHUB_ADDS_LATER",
+                },
+            ],
+        },
+    }));
+
+    let content = github.issue_content(&cpython(), 7).unwrap();
+
+    assert_eq!(content.events.len(), 1);
+    assert_eq!(
+        content.events[0].kind,
+        IssueEventKind::Closed { completed: true }
+    );
+    assert_eq!(content.earlier_events, 2);
 }
 
 #[test]

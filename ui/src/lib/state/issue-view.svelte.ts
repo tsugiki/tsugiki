@@ -1,17 +1,23 @@
 // The Issue on show in the Detail pane.
 import {
   commands,
+  type CommitReference as CommitReferenceData,
   type HiddenReason as HiddenReasonData,
   type IssueComment_Serialize,
   type IssueContent_Serialize,
   type IssueEvent_Serialize,
   type IssueView_Serialize,
+  type Reference as ReferenceData,
 } from "$lib/data/bindings";
 import { DetailState } from "./detail-view.svelte";
 
 export type IssueComment = IssueComment_Serialize;
 /** Why someone hid a comment on GitHub. */
 export type HiddenReason = HiddenReasonData;
+/** A PR or an Issue an event names, or the PR a hand link connected. */
+export type Reference = ReferenceData;
+/** A commit an event names. */
+export type CommitReference = CommitReferenceData;
 /** One event on an Issue, between the comments. */
 export type IssueEvent = IssueEvent_Serialize;
 /** The description, recent comments and events of an Issue or a PR. */

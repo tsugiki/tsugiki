@@ -27,9 +27,9 @@ pub struct FetchedReferences {
 }
 
 #[derive(Deserialize)]
-struct NamedRepository {
+pub(super) struct NamedRepository {
     #[serde(rename = "nameWithOwner")]
-    name_with_owner: RepositoryName,
+    pub(super) name_with_owner: RepositoryName,
 }
 
 #[derive(Deserialize)]

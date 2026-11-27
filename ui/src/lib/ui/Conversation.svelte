@@ -12,6 +12,7 @@
   import type { PullRequestContent, Review, ReviewState, ThreadLine } from "$lib/state/pr-view.svelte";
   import { REASONS } from "./hidden";
   import { followLink, linkTitle } from "./link-tooltip";
+  import PersonLink from "./PersonLink.svelte";
   import RenderedHtml from "./RenderedHtml.svelte";
   import { stampOf } from "./time";
   import { ago } from "./workbench-row";
@@ -23,11 +24,14 @@
     now,
     onlink,
     onthread,
+    onperson = () => {},
   }: {
     content: IssueContent | PullRequestContent;
     now: Date;
     onlink: (address: string) => void;
     onthread?: (id: string) => void;
+    /** Opens the person Filter for a clicked name (#472). */
+    onperson?: (login: string) => void;
   } = $props();
 
   // `key` is unique on this screen. `id` names the comment or Review through a read that brings more, which
@@ -115,7 +119,9 @@
 {/snippet}
 
 <!-- A Review's author, its state as a chip, then the rest: the words read as one line, as before. -->
-{#snippet reviewLine(review: Review)}<b>{review.author ?? "deleted user"}</b>
+{#snippet reviewLine(review: Review)}<b
+    >{#if review.author}<PersonLink login={review.author} onopen={onperson} />{:else}deleted user{/if}</b
+  >
   <span class={["chip", review.state.toLowerCase()]}>{DID[review.state]}</span><span
     class="muted"
     title={stampOf(review.submitted_at)}>{reviewRest(review)}</span
@@ -200,9 +206,13 @@
     {#if entry.kind === "comment"}
       <article>
         <header>
-          <b>{entry.comment.author ?? "deleted user"}</b><span
-            class="muted"
-            title={stampOf(entry.comment.created_at)}>{` · ${ago(entry.comment.created_at, now)}`}</span
+          <b
+            >{#if entry.comment.author}<PersonLink
+                login={entry.comment.author}
+                onopen={onperson}
+              />{:else}deleted user{/if}</b
+          ><span class="muted" title={stampOf(entry.comment.created_at)}
+            >{` · ${ago(entry.comment.created_at, now)}`}</span
           >
         </header>
         <div class="body">{@render body(entry.id, entry.comment.body_html, entry.comment.hidden)}</div>

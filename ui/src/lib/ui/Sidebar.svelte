@@ -12,6 +12,10 @@
     reviewRequests,
     staleReviews,
     filters,
+    person,
+    onopenperson = () => {},
+    oncloseperson = () => {},
+    onsaveperson = () => {},
     pinned,
     selected,
     onselect,
@@ -28,6 +32,15 @@
     reviewRequests: number;
     staleReviews: number;
     filters: FilterLine[];
+    /** The person Filter a clicked name opened, unsaved, with the search it saves as once the core spells it
+     * (#472). */
+    person?: { login: string; query?: string | undefined } | undefined;
+    /** Opens the person Filter again, which sends its search to GitHub anew (#472). */
+    onopenperson?: (login: string) => void;
+    /** Closes the person Filter, which leaves the Sidebar (#472). */
+    oncloseperson?: () => void;
+    /** Opens the Save as Filter dialog for the person Filter, with its login and query (#472). */
+    onsaveperson?: ((draft: { name: string; query: string }) => void) | undefined;
     /** The count of Pinned issues that Need attention (#489). */
     pinned: number;
     selected: SidebarView;
@@ -77,7 +90,7 @@
   <button aria-current={current({ kind: "archived" })} onclick={() => onselect({ kind: "archived" })}>
     <span>Archived</span>
   </button>
-  {#if filters.length > 0}
+  {#if filters.length > 0 || person}
     <h2 class="small-heading">Filters</h2>
   {/if}
   <!-- Two Filters may share a search, so a search can't be the key. -->
@@ -93,6 +106,32 @@
       <small>{filter.problem}</small>
     {/if}
   {/each}
+  <!-- The person Filter a clicked name opened, marked unsaved, with Save and a way to close it (#472). -->
+  {#if person}
+    {@const login = person.login}
+    {@const query = person.query}
+    <div class="unsaved">
+      <button
+        class="person"
+        aria-current={current({ kind: "person", login })}
+        onclick={() => onopenperson(login)}
+      >
+        <span>{login}</span>
+        <span class="mark">unsaved</span>
+      </button>
+      {#if query}
+        <button
+          class="act"
+          aria-label="Save as Filter"
+          title="Save as Filter"
+          onclick={() => onsaveperson({ name: login, query })}>Save</button
+        >
+      {/if}
+      <button class="act" aria-label="Close the unsaved Filter" title="Close" onclick={oncloseperson}
+        >×</button
+      >
+    </div>
+  {/if}
   <h2 class="small-heading">Pinned</h2>
   <button aria-current={current({ kind: "pinned" })} onclick={() => onselect({ kind: "pinned" })}>
     <span>Pinned issues</span>
@@ -184,5 +223,31 @@
   /* What went wrong with the Filter above. */
   small {
     padding: 0 8px 4px;
+  }
+
+  /* The unsaved person Filter's line, with Save and Close beside it (#472). */
+  .unsaved {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+  }
+
+  .unsaved .person {
+    flex: 1;
+    min-width: 0;
+  }
+
+  /* The mark that says the Filter is unsaved, small and muted, as the count of a Filter sits. */
+  .mark {
+    font-size: 11px;
+    font-weight: 400;
+    color: var(--fg-muted);
+  }
+
+  .act {
+    flex: none;
+    padding: 2px 4px;
+    font-size: 11px;
+    color: var(--fg-muted);
   }
 </style>

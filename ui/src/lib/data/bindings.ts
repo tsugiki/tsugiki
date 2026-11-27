@@ -4656,7 +4656,12 @@ export type WorkbenchView = { kind: "whole" } | { kind: "filter"; query: FilterQ
 /**  The Archived items, the last archived first (#491). */
 { kind: "archived" } | 
 /**  The Pinned issues (#489). */
-{ kind: "pinned" };
+{ kind: "pinned" } | 
+/**
+ *  The temporary Filter a clicked name opens (#472): what the person authored, open, as a typed search
+ *  finds it.
+ */
+{ kind: "person"; login: Login };
 
 /**  A Repository's Workbench or one of its views, with what the Sidebar shows beside it. */
 export type Workbench_Deserialize = {
@@ -4679,6 +4684,11 @@ export type Workbench_Deserialize = {
 	/**  The count of Pinned issues on the Workbench that Need attention (#489). */
 	pinned: number,
 	filters: FilterLine_Deserialize[],
+	/**
+	 *  The search a person Filter runs, spelled out, which its Save as Filter dialog takes (#472). Nothing in
+	 *  every other view.
+	 */
+	filter_query?: FilterQuery | null,
 };
 
 /**  A Repository's Workbench or one of its views, with what the Sidebar shows beside it. */
@@ -4702,6 +4712,11 @@ export type Workbench_Serialize = {
 	/**  The count of Pinned issues on the Workbench that Need attention (#489). */
 	pinned: number,
 	filters: FilterLine_Serialize[],
+	/**
+	 *  The search a person Filter runs, spelled out, which its Save as Filter dialog takes (#472). Nothing in
+	 *  every other view.
+	 */
+	filter_query: FilterQuery | null,
 };
 
 /**  Where the user's Review of a PR stands, which its row shows in place of GitHub's review state. */

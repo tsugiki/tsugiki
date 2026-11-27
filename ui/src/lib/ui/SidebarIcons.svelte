@@ -38,6 +38,8 @@
     reviewRequests,
     staleReviews,
     filters,
+    person,
+    onopenperson = () => {},
     pinned,
     selected,
     onselect,
@@ -52,6 +54,10 @@
     reviewRequests: number;
     staleReviews: number;
     filters: FilterLine[];
+    /** The person Filter a clicked name opened, unsaved (#472). */
+    person?: { login: string } | undefined;
+    /** Opens the person Filter again, which sends its search to GitHub anew (#472). */
+    onopenperson?: (login: string) => void;
     /** The count of Pinned issues that Need attention (#489). */
     pinned: number;
     selected: SidebarView;
@@ -121,6 +127,19 @@
       filter.problem,
     )}
   {/each}
+  <!-- The unsaved person Filter, which the full Sidebar marks and offers Save and Close (#472). -->
+  {#if person}
+    {@const login = person.login}
+    <button
+      class="entry"
+      aria-current={currentView(selected, { kind: "person", login })}
+      aria-label={`${login}, unsaved`}
+      title={`${login} (unsaved)`}
+      onclick={() => onopenperson(login)}
+    >
+      <svg viewBox="0 0 16 16" aria-hidden="true"><path d={ICONS.filter} /></svg>
+    </button>
+  {/if}
   <span class="rule"></span>
   {@render entry(ICONS.pinned, "Pinned issues", { kind: "pinned" }, pinned)}
   <span class="grow"></span>

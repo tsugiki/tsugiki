@@ -3,6 +3,8 @@
 use serde::{Deserialize, Serialize};
 use specta::Type;
 
+use crate::login::Login;
+
 /// Text in `settings.toml` that means nothing when blank, so a blank one stops at the file's boundary.
 macro_rules! never_blank {
     ($name:ident, $what:literal) => {
@@ -54,6 +56,12 @@ never_blank!(FilterQuery, "A Filter's query");
 impl FilterQuery {
     pub fn as_str(&self) -> &str {
         &self.0
+    }
+
+    /// The search a person Filter runs for what `login` authored, open (#472). It names its state, so it
+    /// reads as written, and the same text keys the answer GitHub gives it.
+    pub(crate) fn person(login: &Login) -> Self {
+        Self(format!("is:open author:{}", login.as_str()))
     }
 
     /// `text` with Tsugiki's additions spelled out: `is:open` unless it names a state (#464), with the spaces

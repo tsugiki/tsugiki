@@ -63,6 +63,7 @@
   import { issueIcon, prIcon, type Octicon } from "./octicons";
   import type { PaletteAction, PaletteName } from "./Palette.svelte";
   import PaneEdge from "./PaneEdge.svelte";
+  import PersonLink from "./PersonLink.svelte";
   import PrDetail from "./PrDetail.svelte";
   import Sidebar from "./Sidebar.svelte";
   import SidebarIcons from "./SidebarIcons.svelte";
@@ -74,7 +75,6 @@
     detailWords,
     headline,
     offersMarkSeen,
-    peopleOf,
     preview,
     summary,
     treeCount,
@@ -84,6 +84,8 @@
 
   /** How far ↑ or ↓ scrolls the Detail pane while the list is hidden, in CSS pixels, as a browser does. */
   const LINE = 40;
+  /** What separates two names in a row's people, with the space Svelte would trim at a block's edge. */
+  const NAME_SEPARATOR = ", ";
   /** The view of every PR's diff, unified or side by side, which `Ctrl+Alt+U` switches. */
   const diffView = new DiffViewChoice();
   /** How the user laid out the panes, which stays the same from one Repository to the next. */
@@ -97,6 +99,7 @@
     stale_reviews: "No Review of yours is stale.",
     archived: "Nothing archived. E archives the item under the cursor.",
     inbox: "Nothing open here yet. The first sync lists the open Issues and PRs as it finds them.",
+    person: "Nothing by this person yet. GitHub may still be answering.",
     /** Names the key that pins as the user bound it, or none while it has none (#489). The words hold too
      * when each pin is Muted, which the view leaves out. */
     get pinned() {
@@ -112,6 +115,7 @@
     onpick,
     onsettings,
     onsavefilter,
+    onsaveperson,
     keysActive = true,
     diffFiles = "all",
     diffPeek = "inline",
@@ -125,6 +129,8 @@
     onsettings: () => void;
     /** Opens the Save as Filter dialog for the Inbox's search, with its name and query (#471). */
     onsavefilter: (draft: { name: string; query: string }) => void;
+    /** Opens the Save as Filter dialog for the person Filter, with its login and query (#472). */
+    onsaveperson?: ((draft: { name: string; query: string }) => void) | undefined;
     keysActive?: boolean;
     /** Whether each PR's Files tab opens on all its files or one at a time, as `[diff] files` says. */
     diffFiles?: FilesMode;
@@ -204,7 +210,8 @@
   /** Asks the core to fill the Inbox's placeholders that the list shows, and only those (#466): one the user
    * never scrolls to costs no request. */
   function fillPlaceholdersNearScreen() {
-    if (workbench.shown.kind !== "inbox" || !list) return;
+    const kind = workbench.shown.kind;
+    if ((kind !== "inbox" && kind !== "person") || !list) return;
     const view = list.getBoundingClientRect();
     const numbers: number[] = [];
     for (const placeholder of list.querySelectorAll<HTMLElement>("[data-placeholder]")) {
@@ -1050,8 +1057,11 @@
   }
 
   /** Whether the view selected keeps its own order, and so has no switch of order: the Inbox, the latest
-   * update first, and Archived, the last archived first. */
-  const ownOrder = () => workbench.selected.kind === "inbox" || workbench.selected.kind === "archived";
+   * update first, Archived, the last archived first, and a person Filter, GitHub's order once it answers. */
+  const ownOrder = () => {
+    const kind = workbench.selected.kind;
+    return kind === "inbox" || kind === "archived" || kind === "person";
+  };
 
   /** Whether the list greys the row of `row`: in the Inbox, each row a Muted author wrote that it shows
    * (#825). */
@@ -1094,6 +1104,27 @@
     void workbench.select(view);
     void panes.show("list");
   }
+
+  /** Opens the person Filter for `login`, from a click on their name anywhere on the screen (#472). */
+  function openPerson(login: string) {
+    void workbench.openPerson(login);
+    void panes.show("list");
+  }
+
+  /** Opens the person Filter from its line in the strip of icons, bringing the full Sidebar back, as a
+   * click on another entry there does (#472, #587). */
+  function openPersonInFull(login: string) {
+    void workbench.openPerson(login);
+    void reshapeSidebar(() => panes.showFullSidebarAndList());
+  }
+
+  /** The unsaved person Filter the Sidebar lists, with the search it saves as once the core spells it
+   * (#472). */
+  const personLine = $derived(
+    workbench.person === undefined
+      ? undefined
+      : { login: workbench.person.login, query: workbench.personDraft?.query },
+  );
 
   /** The names the list's switch gives each order. */
   const ORDERS: Record<ListOrder, string> = { attention: "By attention ⇅", last_update: "By last update ⇅" };
@@ -1636,7 +1667,22 @@
   }}
     <li class={["item", { attention: item.attention !== null }]}>
       <div class={["row", { greyed: greyed(item) }]} data-row={lineName(stop)}>
-        <span class="people">{peopleOf(item)}</span>
+        <span class="people">
+          {#if item.kind === "issue"}
+            {#if item.people.length === 0}
+              —
+            {:else}
+              {#each item.people as login, index (login)}{#if index > 0}{NAME_SEPARATOR}{/if}<PersonLink
+                  {login}
+                  onopen={openPerson}
+                />{/each}
+            {/if}
+          {:else if item.author}
+            <PersonLink login={item.author} onopen={openPerson} />
+          {:else}
+            deleted user
+          {/if}
+        </span>
         <span class="headline">
           {#if item.kind === "issue" && item.pull_requests.length > 0}
             <button
@@ -1775,6 +1821,8 @@
         reviewRequests={workbench.reviewRequests}
         staleReviews={workbench.staleReviews}
         filters={workbench.filters}
+        person={workbench.person}
+        onopenperson={openPersonInFull}
         pinned={workbench.pinned}
         selected={workbench.selected}
         onselect={showViewInFull}
@@ -1791,6 +1839,10 @@
         reviewRequests={workbench.reviewRequests}
         staleReviews={workbench.staleReviews}
         filters={workbench.filters}
+        person={personLine}
+        onopenperson={openPerson}
+        oncloseperson={() => void workbench.closePerson()}
+        {onsaveperson}
         pinned={workbench.pinned}
         selected={workbench.selected}
         onselect={showView}
@@ -1903,7 +1955,7 @@
       {:else if workbench.items}
         <!-- The Inbox can hold every open item the cache does, so the browser draws only its rows on
              screen. -->
-        <ul class={{ lazy: workbench.shown.kind === "inbox" }}>
+        <ul class={{ lazy: workbench.shown.kind === "inbox" || workbench.shown.kind === "person" }}>
           {#each workbench.items as item (item.number)}
             {@render listed(item)}
           {/each}
@@ -1958,6 +2010,7 @@
         onmute={muteByButton}
         onmuteauthor={muteAuthorByButton}
         onpin={(view) => void togglePin({ number: view.number, pinned: view.pinned })}
+        onperson={openPerson}
         onopenpr={(number) => {
           open({ number, kind: "pull_request", issue: issue.number });
         }}
@@ -1979,6 +2032,7 @@
         onarchive={archivePrByButton}
         onmute={mutePrByButton}
         onmuteauthor={muteAuthorPrByButton}
+        onperson={openPerson}
         marks={!detailMuted()}
         focusable={panes.hidden("list") || focusedView === pr}
       >

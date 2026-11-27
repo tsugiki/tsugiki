@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/svelte";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/svelte";
 import { expect, it, vi } from "vitest";
 import type { IssueContent, IssueEvent } from "$lib/state/issue-view.svelte";
 import type { PullRequestContent, Review, ThreadLine } from "$lib/state/pr-view.svelte";
@@ -88,6 +88,29 @@ it("gives a comment's and a Review's time the date and time in a tooltip", () =>
   ]);
 });
 
+it("opens the person Filter from a Review's author, and does nothing unless the page listens", async () => {
+  const content = reviewed([review({ author: "review-author" })], {
+    comments: [
+      {
+        id: 1,
+        author: "comment-author",
+        created_at: "2026-11-04T09:00:00Z",
+        body_html: "<p>Hi</p>",
+        hidden: null,
+      },
+    ],
+  });
+  const onperson = vi.fn();
+  const first = render(Conversation, { content, now: NOW, onlink: vi.fn(), onperson });
+
+  await fireEvent.click(within(first.container).getByRole("button", { name: "review-author" }));
+  expect(onperson).toHaveBeenCalledExactlyOnceWith("review-author");
+  first.unmount();
+
+  render(Conversation, { content, now: NOW, onlink: vi.fn() });
+  await fireEvent.click(screen.getByRole("button", { name: "comment-author" }));
+});
+
 it("puts a Review's state in a chip, green for an approval and red for changes requested", () => {
   const container = shown(reviewed([review({ state: "APPROVED" }), review({ state: "CHANGES_REQUESTED" })]));
 
@@ -166,7 +189,7 @@ it("opens a thread from its place, for a PR", async () => {
 
 it("links every thread to Files, an Outdated one and one on the whole file too", () => {
   const moved = { kind: "line", side: "RIGHT", line: null, original: 7 } as const;
-  shown(
+  const container = shown(
     reviewed([
       review({
         threads: [
@@ -180,7 +203,7 @@ it("links every thread to Files, an Outdated one and one on the whole file too",
     vi.fn(),
   );
 
-  expect(screen.getAllByRole("button").map((place) => place.textContent)).toEqual([
+  expect([...container.querySelectorAll("button.place")].map((place) => place.textContent)).toEqual([
     "Lib/ast.py:7",
     "Lib/ast.py:7",
     "Lib/ast.py",

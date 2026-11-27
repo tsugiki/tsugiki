@@ -107,7 +107,11 @@ export const treeRows = (entries: TreeEntry[]): WorkbenchRow[] =>
 type Line = { stop: Stop; title: string };
 
 /** The key of view `view`, which keeps its own unfolded Issues. */
-const keyOf = (view: SidebarView) => (view.kind === "filter" ? `filter ${view.query}` : view.kind);
+const keyOf = (view: SidebarView) => {
+  if (view.kind === "filter") return `filter ${view.query}`;
+  if (view.kind === "person") return `person ${view.login}`;
+  return view.kind;
+};
 
 /** Whether two keys name the same item. */
 const sameKey = (a: ItemKey, b: ItemKey) => a.kind === b.kind && a.number === b.number;
@@ -182,6 +186,11 @@ export class WorkbenchState {
   showMuted = $state<ShowMuted>("off");
   /** The text of the Inbox's search box (#464). */
   search = $state("");
+  /** The temporary person Filter a clicked name opens (#472), until the user saves or closes it. */
+  person = $state<{ login: string }>();
+  /** The search the person Filter saves as, as the core spells it, once it has answered about the person on
+   * show (#472). */
+  #personQuery = $state<string>();
   /** Whether the search the last answer read needs GitHub, so the Inbox lists no local rows (#464). */
   needsGitHub = $state(false);
   /** How many results the search's answer listed of how many it reaches, past GitHub's 1,000 (#465). */
@@ -343,10 +352,42 @@ export class WorkbenchState {
     return { name, query: this.#filterQuery.query };
   }
 
+  /**
+   * Opens the person Filter for `login` (#472): the Sidebar lists it unsaved, the list shows its cached
+   * matches at once, and Tsugiki sends its search to GitHub again, as it does each time the Filter opens. A
+   * click on another person replaces the one before.
+   */
+  async openPerson(login: string) {
+    this.person = { login };
+    this.#personQuery = undefined;
+    await this.select({ kind: "person", login });
+    // The core spelled the query in the answer for this view. A failed read offers no Save, and sends
+    // nothing.
+    const query = this.#personQuery;
+    if (query !== undefined) await commands.searchInbox(this.#repository, query);
+  }
+
+  /** Closes the temporary person Filter (#472): the Sidebar lists it no more, and the list shows the
+   * Workbench while it showed the person. */
+  async closePerson() {
+    const closing = this.person !== undefined && this.selected.kind === "person";
+    this.person = undefined;
+    this.#personQuery = undefined;
+    if (closing) await this.select({ kind: "whole" });
+  }
+
+  /** The person Filter's draft for the Save as Filter dialog (#472): the login as its name, and the query
+   * the core spelled, once its answer about the person on show has arrived. */
+  get personDraft(): { name: string; query: string } | undefined {
+    const person = this.person;
+    const query = this.#personQuery;
+    return person === undefined || query === undefined ? undefined : { name: person.login, query };
+  }
+
   /** Saves the Inbox's search as a Filter named `name` that searches `query`, opens it in place of the Inbox,
    * and clears the box (#471). Answers the core's reason when it refuses one, as a name the Repository's
    * Filters already use. The Filter's first search runs at once, and its view lists the items as they
-   * land. */
+   * land. A person Filter saved this way stops being unsaved (#472). */
   async saveFilter(name: string, query: string): Promise<string | undefined> {
     const problem = await problemIn(commands.saveFilter(this.#repository, name, query));
     if (problem !== undefined) return problem;
@@ -355,6 +396,8 @@ export class WorkbenchState {
     this.#clearSearchTimer();
     this.needsGitHub = false;
     this.truncated = null;
+    this.person = undefined;
+    this.#personQuery = undefined;
     await this.select({ kind: "filter", query });
     return undefined;
   }
@@ -443,6 +486,7 @@ export class WorkbenchState {
     if (selected.kind === "stale_reviews") return "Stale reviews";
     if (selected.kind === "archived") return "Archived";
     if (selected.kind === "pinned") return "Pinned issues";
+    if (selected.kind === "person") return selected.login;
     return this.filters.find((filter) => filter.query === selected.query)?.name ?? selected.query;
   }
 
@@ -943,6 +987,7 @@ export class WorkbenchState {
       this.staleReviews = answer.data.stale_reviews;
       this.pinned = answer.data.pinned;
       this.filters = answer.data.filters;
+      if (view.kind === "person") this.#personQuery = answer.data.filter_query ?? undefined;
     }
     if (list?.status === "ok") {
       this.showMuted = list.data.show_muted;

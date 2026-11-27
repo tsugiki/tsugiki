@@ -1863,6 +1863,149 @@ describe("WorkbenchState's Inbox", () => {
     state.stop();
   });
 
+  it("opens a person's Filter and sends its search to GitHub", async () => {
+    catchChanged();
+    const person = { kind: "person" as const, login: "octocat" };
+    vi.mocked(commands.workbench).mockResolvedValue(
+      workbenchPage([], { filter_query: "is:open author:octocat" }),
+    );
+    vi.mocked(commands.searchInbox).mockResolvedValue(done);
+    const state = new WorkbenchState("python/cpython");
+    await state.load();
+
+    await state.openPerson("octocat");
+
+    expect(commands.workbench).toHaveBeenLastCalledWith("python/cpython", person);
+    expect(commands.searchInbox).toHaveBeenCalledExactlyOnceWith("python/cpython", "is:open author:octocat");
+    expect(state.person).toEqual({ login: "octocat" });
+    expect(state.selected).toEqual(person);
+    expect(state.title).toBe("octocat");
+    expect(state.personDraft).toEqual({ name: "octocat", query: "is:open author:octocat" });
+    state.stop();
+  });
+
+  it("offers no Save, and sends nothing to GitHub, while the person's answer is not in", async () => {
+    catchChanged();
+    vi.mocked(commands.workbench).mockResolvedValue(refused("disk gone"));
+    const state = new WorkbenchState("python/cpython");
+    await state.load();
+
+    await state.openPerson("octocat");
+
+    expect(state.person).toEqual({ login: "octocat" });
+    expect(state.personDraft).toBeUndefined();
+    expect(commands.searchInbox).not.toHaveBeenCalled();
+    state.stop();
+  });
+
+  it("offers no Save when the core answers a person's view without a query", async () => {
+    catchChanged();
+    vi.mocked(commands.workbench).mockResolvedValue(workbenchPage([]));
+    const state = new WorkbenchState("python/cpython");
+    await state.load();
+
+    await state.openPerson("octocat");
+
+    expect(state.person).toEqual({ login: "octocat" });
+    expect(state.personDraft).toBeUndefined();
+    expect(commands.searchInbox).not.toHaveBeenCalled();
+    state.stop();
+  });
+
+  it("replaces one person's Filter with another clicked name", async () => {
+    catchChanged();
+    vi.mocked(commands.workbench).mockResolvedValue(
+      workbenchPage([], { filter_query: "is:open author:octocat" }),
+    );
+    const state = new WorkbenchState("python/cpython");
+    await state.load();
+    await state.openPerson("octocat");
+
+    vi.mocked(commands.workbench).mockResolvedValue(
+      workbenchPage([], { filter_query: "is:open author:hubot" }),
+    );
+    await state.openPerson("hubot");
+
+    expect(state.person).toEqual({ login: "hubot" });
+    expect(state.selected).toEqual({ kind: "person", login: "hubot" });
+    expect(commands.workbench).toHaveBeenLastCalledWith("python/cpython", {
+      kind: "person",
+      login: "hubot",
+    });
+    state.stop();
+  });
+
+  it("closes a person's Filter and shows the Workbench again", async () => {
+    catchChanged();
+    vi.mocked(commands.workbench).mockResolvedValue(
+      workbenchPage([], { filter_query: "is:open author:octocat" }),
+    );
+    const state = new WorkbenchState("python/cpython");
+    await state.load();
+    await state.openPerson("octocat");
+
+    await state.closePerson();
+
+    expect(state.person).toBeUndefined();
+    expect(state.personDraft).toBeUndefined();
+    expect(state.selected).toEqual(whole);
+    expect(commands.workbench).toHaveBeenLastCalledWith("python/cpython", whole);
+    state.stop();
+  });
+
+  it("drops the person Filter's line without asking again when the list has left it", async () => {
+    catchChanged();
+    vi.mocked(commands.workbench).mockResolvedValue(
+      workbenchPage([], { filter_query: "is:open author:octocat" }),
+    );
+    const state = new WorkbenchState("python/cpython");
+    await state.load();
+    await state.openPerson("octocat");
+    await state.select(whole);
+    const asked = vi.mocked(commands.workbench).mock.calls.length;
+
+    await state.closePerson();
+
+    expect(state.person).toBeUndefined();
+    expect(state.selected).toEqual(whole);
+    expect(vi.mocked(commands.workbench).mock.calls.length).toBe(asked);
+    state.stop();
+  });
+
+  it("closes nothing when no person has been opened", async () => {
+    catchChanged();
+    vi.mocked(commands.workbench).mockResolvedValue(answer());
+    const state = new WorkbenchState("python/cpython");
+    await state.load();
+    const asked = vi.mocked(commands.workbench).mock.calls.length;
+
+    await state.closePerson();
+
+    expect(state.person).toBeUndefined();
+    expect(state.personDraft).toBeUndefined();
+    expect(state.selected).toEqual(whole);
+    expect(vi.mocked(commands.workbench).mock.calls.length).toBe(asked);
+    state.stop();
+  });
+
+  it("stops a person's Filter being unsaved once it is saved", async () => {
+    catchChanged();
+    vi.mocked(commands.workbench).mockResolvedValue(
+      workbenchPage([], { filter_query: "is:open author:octocat" }),
+    );
+    vi.mocked(commands.saveFilter).mockResolvedValueOnce(done);
+    const state = new WorkbenchState("python/cpython");
+    await state.load();
+    await state.openPerson("octocat");
+
+    const problem = await state.saveFilter("octocat", "is:open author:octocat");
+
+    expect(problem).toBeUndefined();
+    expect(state.person).toBeUndefined();
+    expect(state.selected).toEqual({ kind: "filter", query: "is:open author:octocat" });
+    state.stop();
+  });
+
   it("offers no Save until the Inbox's answer for the text arrives, nor once that answer fails", async () => {
     catchChanged();
     vi.mocked(commands.workbench).mockResolvedValue(answer());

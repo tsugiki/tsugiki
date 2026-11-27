@@ -116,13 +116,20 @@ const shown = async (
   onmute = vi.fn(),
   onmuteauthor = vi.fn(),
   onpin = vi.fn(),
+  onperson?: (login: string) => void,
 ) => {
   core.issue.mockResolvedValue(ok(answer));
   const state = new IssueViewState("python/cpython", 7);
   await state.load();
   const issue = state;
   const on = { onopenpr, onmark, onarchive, onmute, onmuteauthor, onpin };
-  render(IssueDetail, { repository: "python/cpython", issue, now: NOW, ...on });
+  render(IssueDetail, {
+    repository: "python/cpython",
+    issue,
+    now: NOW,
+    ...on,
+    ...(onperson === undefined ? {} : { onperson }),
+  });
   state.stop();
   return state;
 };
@@ -143,6 +150,18 @@ it("shows the title and author, the description and the recent comments", async 
   const headers = [...document.querySelectorAll("article > header")].map((header) => header.textContent);
   expect(headers).toEqual(["some-reviewer · 2h ago", "deleted user · 1h ago"]);
   expect(screen.getByText("3 earlier comments are on GitHub.")).toBeTruthy();
+});
+
+it("opens the person Filter from the Issue's author, and does nothing unless the page listens", async () => {
+  const onperson = vi.fn();
+  await shown(view, vi.fn(), vi.fn(), vi.fn(), vi.fn(), vi.fn(), vi.fn(), onperson);
+
+  await fireEvent.click(screen.getByRole("button", { name: "issue-author" }));
+  expect(onperson).toHaveBeenCalledExactlyOnceWith("issue-author");
+  cleanup();
+
+  await shown(view);
+  await fireEvent.click(screen.getByRole("button", { name: "issue-author" }));
 });
 
 it("offers Mark Seen in its header while something is new or it is Marked unseen, and Mark Unseen otherwise", async () => {

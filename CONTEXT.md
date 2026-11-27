@@ -136,7 +136,8 @@ browses: its search still runs, and its view lists what it found. The view lists
 a mail client's search finds archived mail: an **Archived** item in its place, marked Archived, and the
 **Muted** items and those of **Muted authors** at the end, folded behind a line such as "Show 4 muted". Its
 count in the Sidebar leaves both out, and neither goes on the Workbench. Clicking a person opens an unsaved
-Filter for what they authored, which the user can save or close.
+Filter for that person's Issues and the Issues their PRs fix, which the user can save under the login or
+close.
 _Avoid_: Query, section
 
 **Inbox**:

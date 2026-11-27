@@ -125,13 +125,6 @@ export const headline = (item: { number: number; title: string }) => `#${String(
 
 const prCount = (count: number) => counted(count, "PR", "PRs");
 
-/** An item's first line: the people an Issue involves, a dash once they have all gone, or a PR's author. */
-export function peopleOf(item: ListedItem): string {
-  if (item.kind === "placeholder") return "";
-  if (item.kind !== "issue") return item.author ?? "deleted user";
-  return item.people.length > 0 ? item.people.join(", ") : "—";
-}
-
 /** How many PRs an Issue's tree holds, Backports included. */
 export const treeCount = (issue: IssueItem) => prCount(treeRows(issue.pull_requests).length);
 

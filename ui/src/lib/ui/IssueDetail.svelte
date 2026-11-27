@@ -10,6 +10,7 @@
   import HideButtons from "./HideButtons.svelte";
   import MarkButton from "./MarkButton.svelte";
   import { issueIcon, prIcon, type Octicon } from "./octicons";
+  import PersonLink from "./PersonLink.svelte";
   import ReadOnlyNote from "./ReadOnlyNote.svelte";
   import StateIcon from "./StateIcon.svelte";
   import StateWords from "./StateWords.svelte";
@@ -26,6 +27,7 @@
     onmute,
     onmuteauthor,
     onpin,
+    onperson = () => {},
     focusable = false,
     header,
     repositoryState,
@@ -46,6 +48,8 @@
     onmuteauthor: (view: IssueView) => void;
     /** Pin, or Unpin on a Pinned issue, as the header's ★ offers for the view on show (#488). */
     onpin: (view: IssueView) => void;
+    /** Opens the person Filter for a clicked name (#472). */
+    onperson?: (login: string) => void;
     /** Whether the pane takes the focus itself: while the Issue list is hidden, and while the list shows
      * after a click in its controls or a press of F6. Otherwise a click on its background drops the focus to
      * the page, which the list's keys take, so Enter still opens the row under the cursor. */
@@ -172,7 +176,13 @@
           {headline(view)}
         </button>
       </h2>
-      <p class="byline"><span title={by.title}><b>{by.who}</b>{by.words}</span>{restOfLine(view)}</p>
+      <p class="byline">
+        <span title={by.title}
+          ><b
+            >{#if view.author}<PersonLink login={view.author} onopen={onperson} />{:else}{by.who}{/if}</b
+          >{by.words}</span
+        >{restOfLine(view)}
+      </p>
       <div class="meta">
         {#if view.labels.length > 0}
           <ul class="labels" role="list" aria-label="Labels">
@@ -205,7 +215,9 @@
                   title={entry.title}
                   onclick={openPr(entry.number)}>{@render numbered(entry)}</button
                 >
-                <small class="who">{entry.author ?? "deleted user"}</small>
+                <small class="who"
+                  >{#if entry.author}<PersonLink login={entry.author} onopen={onperson} />{:else}deleted user{/if}</small
+                >
                 <StateWords row={entry} />
               </span>
               {#if entry.kind === "pr" && entry.backports.length > 0}
@@ -267,7 +279,12 @@
       {/if}
 
       {#if view.content}
-        <Conversation content={view.content} {now} onlink={(address) => void links.openLink(address)} />
+        <Conversation
+          content={view.content}
+          {now}
+          {onperson}
+          onlink={(address) => void links.openLink(address)}
+        />
       {:else}
         <p class="byline">{UNREAD[issue.failedRead ?? "reading"]}</p>
       {/if}

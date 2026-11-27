@@ -575,6 +575,9 @@
         onsavefilter={(draft) => {
           saveFilterDraft = draft;
         }}
+        onsaveperson={(draft) => {
+          saveFilterDraft = draft;
+        }}
         {keysActive}
         diffFiles={settings.diffFiles}
         diffPeek={settings.diffPeek}

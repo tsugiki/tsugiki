@@ -142,6 +142,7 @@ const shown = async (
     onarchive?: (view: PrView) => void;
     onmute?: (view: PrView) => void;
     onmuteauthor?: (view: PrView) => void;
+    onperson?: (login: string) => void;
     marks?: boolean;
   } = {},
 ) => {
@@ -160,6 +161,7 @@ const shown = async (
     onmute: buttons.onmute ?? vi.fn(),
     onmuteauthor: buttons.onmuteauthor ?? vi.fn(),
     marks: buttons.marks ?? true,
+    ...(buttons.onperson === undefined ? {} : { onperson: buttons.onperson }),
   });
   return state;
 };
@@ -186,7 +188,7 @@ it("opens on the Conversation: the title and author, the description, comments a
 
   expect(screen.getByRole("region", { name: "PR view" })).toBeTruthy();
   expect(screen.getByRole("heading", { level: 2 }).textContent).toContain("#11 gh-10: Fix the crash");
-  expect(screen.getByText("pr-author").tagName).toBe("B");
+  expect(screen.getByRole("button", { name: "pr-author" }).closest("b")).toBeTruthy();
   expect(screen.getByRole("tab", { name: "Conversation" }).getAttribute("aria-selected")).toBe("true");
   expect(screen.getByRole("tab", { name: "Files" }).getAttribute("aria-selected")).toBe("false");
   expect(screen.getByText("The description").tagName).toBe("P");
@@ -195,6 +197,18 @@ it("opens on the Conversation: the title and author, the description, comments a
   );
   expect(headers).toEqual(["some-reviewer · 2h ago", "some-reviewer approved at 0123abc · 1h ago"]);
   expect(screen.getByText("2 earlier comments are on GitHub.")).toBeTruthy();
+});
+
+it("opens the person Filter from the PR's author, and does nothing unless the page listens", async () => {
+  const onperson = vi.fn();
+  await shown(view, 10, vi.fn(), vi.fn(), new PanesState(), { onperson });
+
+  await fireEvent.click(screen.getByRole("button", { name: "pr-author" }));
+  expect(onperson).toHaveBeenCalledExactlyOnceWith("pr-author");
+  cleanup();
+
+  await shown(view, 10);
+  await fireEvent.click(screen.getByRole("button", { name: "pr-author" }));
 });
 
 it("says over the title which Issue the PR is under, where it goes and when it changed", async () => {

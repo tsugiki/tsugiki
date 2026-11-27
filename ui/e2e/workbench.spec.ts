@@ -11,7 +11,7 @@ import {
   workbenchRow,
 } from "../src/lib/testing/fixtures.ts";
 import { grabEdge, home, own, repository } from "./fixtures.ts";
-import { changeAnswer, emitFromCore, mockCore } from "./mock-core.ts";
+import { changeAnswer, callsOf, emitFromCore, mockCore } from "./mock-core.ts";
 import { themes } from "./themes.ts";
 
 const mine = { name: "Mine", query: "is:open author:@me", on_workbench: true, count: 1, problem: null };
@@ -194,6 +194,34 @@ test("the Sidebar lists the Filters, and selecting one shows its Issues", async 
   await expect(page.getByRole("listitem")).toHaveCount(1);
   await expect(page.getByRole("listitem")).toContainText("#157178 GH-156425: Clear GC frame on early return");
   await expect(sidebar.getByRole("button", { name: "Mine 1" })).toHaveAttribute("aria-current", "true");
+});
+
+test("a name in a row opens the person Filter, listed unsaved until it is saved or closed", async ({
+  page,
+}) => {
+  const query = "is:open author:issue-author";
+  await mockCore(page, {
+    home,
+    workbench: workbenchPage([review], { count: 1, filter_query: query }),
+  });
+  await page.goto("/");
+  const sidebar = page.getByRole("navigation", { name: "Sidebar" });
+
+  await page.getByRole("button", { name: "issue-author" }).click();
+
+  const unsaved = sidebar.getByRole("button", { name: "issue-author unsaved" });
+  await expect(unsaved).toHaveAttribute("aria-current", "true");
+  await expect.poll(() => callsOf(page, "searchInbox")).toBe(1);
+
+  await sidebar.getByRole("button", { name: "Save as Filter" }).click();
+  const dialog = page.getByRole("dialog", { name: "Save as Filter" });
+  await expect(dialog.getByLabel("Name")).toHaveValue("issue-author");
+  await expect(dialog.getByLabel("Query")).toHaveValue(query);
+  await dialog.getByRole("button", { name: "Cancel" }).click();
+
+  await sidebar.getByRole("button", { name: "Close the unsaved Filter" }).click();
+  await expect(unsaved).toHaveCount(0);
+  await expect(sidebar.getByRole("button", { name: "Workbench 1" })).toHaveAttribute("aria-current", "true");
 });
 
 test("the Sidebar's Pinned issues lists the pins, and an unpin takes the row away and lowers the count", async ({

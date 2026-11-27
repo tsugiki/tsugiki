@@ -35,6 +35,7 @@ use time::{Duration, OffsetDateTime};
 use super::attention::summed;
 use super::backports::plant;
 use super::links::placed;
+use super::search::{Index, IssueOpen, Search, narrowed, narrowed_by, rank_of};
 use super::trees::Trees;
 use super::{
     Hidden, ListedItem, Placeholder, PrTree, TreeEntry, Unpin, WorkbenchItem, WorkbenchRow,
@@ -44,7 +45,7 @@ use crate::conventions::Conventions;
 use crate::error::Error;
 use crate::facts::WorkFacts;
 use crate::facts::activity::{ItemKey, ShowMuted};
-use crate::facts::inbox_search::{InboxSearch, RowKind};
+use crate::facts::inbox_search::InboxSearch;
 use crate::facts::issues::{IssuePlace, IssueState};
 use crate::facts::pull_requests::{PrLinks, PrState};
 use crate::filters::FilterQuery;
@@ -52,10 +53,6 @@ use crate::login::Login;
 use crate::repository_settings::RepositorySettings;
 use crate::store::{Snapshot, StoreReader, Updates};
 use crate::work::{Cause, Causes};
-
-mod search;
-
-use search::{Search, SearchRow};
 
 /// How far back from now the first page reaches.
 const LATEST: Duration = Duration::days(2);
@@ -232,7 +229,14 @@ impl Inbox {
         let filter_query = search.filter_query();
         let facts = snapshot.work_facts()?;
         let causes = Causes::of(&facts, repository.conventions);
-        let rows = Index::of(&facts, &snapshot.brought_back()?);
+        let brought_back = snapshot.brought_back()?;
+        let rows = Index::of(&facts, |issue| {
+            if lists_issue(issue.state, issue.number, &brought_back) {
+                IssueOpen::Open
+            } else {
+                IssueOpen::Closed
+            }
+        });
         let grouped = candidates_of(facts, repository, &BTreeSet::new(), &causes);
         // An item keeps the place its whole tree gives it, before Show muted and the search drop rows.
         let places: BTreeMap<ItemKey, InboxCursor> = (grouped.iter())
@@ -274,7 +278,14 @@ impl Inbox {
         let filter_query = search.filter_query();
         let facts = snapshot.work_facts()?;
         let causes = Causes::of(&facts, repository.conventions);
-        let rows = Index::of(&facts, &snapshot.brought_back()?);
+        let brought_back = snapshot.brought_back()?;
+        let rows = Index::of(&facts, |issue| {
+            if lists_issue(issue.state, issue.number, &brought_back) {
+                IssueOpen::Open
+            } else {
+                IssueOpen::Closed
+            }
+        });
         let grouped = candidates_of(facts, repository, &BTreeSet::new(), &causes);
         // An item keeps the place its whole tree gives it, before Show muted and the answer drop rows.
         let places: BTreeMap<ItemKey, InboxCursor> = (grouped.iter())
@@ -296,8 +307,7 @@ impl Inbox {
         })
         .collect();
         for (position, hit) in answer.hits.iter().enumerate() {
-            let held = rows.issues.contains_key(&hit.number)
-                || rows.pull_requests.contains_key(&hit.number);
+            let held = rows.holds(hit.number);
             if held {
                 continue;
             }
@@ -392,85 +402,6 @@ fn shown(grouped: Vec<WorkbenchItem>, show: ShowMuted, causes: &Causes) -> Vec<L
         .collect()
 }
 
-/// The cached Issues and PRs a search reads, by number (#464).
-struct Index {
-    issues: BTreeMap<u32, SearchRow>,
-    pull_requests: BTreeMap<u32, SearchRow>,
-}
-
-impl Index {
-    fn of(facts: &WorkFacts, brought_back: &BTreeSet<u32>) -> Self {
-        Self {
-            issues: (facts.issues.iter())
-                .map(|issue| (issue.number, SearchRow::issue(issue, brought_back)))
-                .collect(),
-            pull_requests: (facts.pull_requests.iter())
-                .map(|pr| (pr.number, SearchRow::pull_request(pr)))
-                .collect(),
-        }
-    }
-
-    /// The row of the PR `number`, which the Inbox draws under an Issue or on its own.
-    fn pull_request(&self, number: u32) -> Option<&SearchRow> {
-        self.pull_requests.get(&number)
-    }
-}
-
-/// `item` with only the rows `search` finds in the cache, or nothing when it finds none.
-fn narrowed(item: WorkbenchItem, search: &Search, rows: &Index) -> Option<WorkbenchItem> {
-    narrowed_by(item, &|kind, number| match kind {
-        RowKind::Issue => (rows.issues.get(&number)).is_some_and(|row| search.finds(row)),
-        RowKind::PullRequest => rows
-            .pull_request(number)
-            .is_some_and(|row| search.finds(row)),
-    })
-}
-
-/// Where GitHub put the first result `item` holds, or nothing when it holds none that GitHub returned.
-fn rank_of(item: &WorkbenchItem, positions: &BTreeMap<u32, usize>) -> Option<usize> {
-    (item.keys().into_iter())
-        .filter_map(|key| positions.get(&key.number()).copied())
-        .min()
-}
-
-/// `item` with only the rows `finds` keeps, or nothing when it keeps none. An Issue's header, and a PR's
-/// over the Backports beneath it, stays over the rows that match beneath it, even when it doesn't match
-/// itself, so a matching PR stays in its Issue's fold (#464).
-fn narrowed_by(item: WorkbenchItem, finds: &dyn Fn(RowKind, u32) -> bool) -> Option<WorkbenchItem> {
-    match item {
-        WorkbenchItem::Issue(mut issue) => {
-            let header = finds(RowKind::Issue, issue.number);
-            issue.pull_requests = (issue.pull_requests.into_iter())
-                .filter_map(|entry| match entry {
-                    TreeEntry::Pr(mut tree) => {
-                        let top = finds(RowKind::PullRequest, tree.row.number);
-                        tree.backports
-                            .retain(|backport| finds(RowKind::PullRequest, backport.row.number));
-                        (top || !tree.backports.is_empty()).then_some(TreeEntry::Pr(tree))
-                    }
-                    TreeEntry::Backport(backport) => {
-                        finds(RowKind::PullRequest, backport.row.number)
-                            .then_some(TreeEntry::Backport(backport))
-                    }
-                })
-                .collect();
-            (header || !issue.pull_requests.is_empty()).then_some(WorkbenchItem::Issue(issue))
-        }
-        WorkbenchItem::StandalonePr(mut tree) => {
-            let top = finds(RowKind::PullRequest, tree.row.number);
-            tree.backports
-                .retain(|backport| finds(RowKind::PullRequest, backport.row.number));
-            (top || !tree.backports.is_empty()).then_some(WorkbenchItem::StandalonePr(tree))
-        }
-        WorkbenchItem::StandaloneBackport(backport) => {
-            finds(RowKind::PullRequest, backport.row.number)
-                .then_some(WorkbenchItem::StandaloneBackport(backport))
-        }
-        // A placeholder is already a result, with no rows to narrow (#465).
-        WorkbenchItem::Placeholder(_) => Some(item),
-    }
-}
-
 /// Whether the Inbox lists an Issue of `state` at `number`: an open one, or one a PR that opened on it
 /// brought back.
 fn lists_issue(state: Option<IssueState>, number: u32, brought_back: &BTreeSet<u32>) -> bool {
@@ -561,7 +492,7 @@ impl ListedItem {
 
 impl WorkbenchItem {
     /// The key of each row the item shows: its Issue, if it has one, then each PR.
-    fn keys(&self) -> Vec<ItemKey> {
+    pub(super) fn keys(&self) -> Vec<ItemKey> {
         let issue = match self {
             Self::Issue(issue) => Some(ItemKey::Issue {
                 number: issue.number,

@@ -3,7 +3,7 @@ import type {
   InboxCursor_Serialize as InboxCursor,
   ListedItem_Serialize as ListedItem,
 } from "../src/lib/data/bindings.ts";
-import { inboxPage, placeholderItem, workbenchPage, workbenchRow } from "../src/lib/testing/fixtures.ts";
+import { inboxPage, ok, placeholderItem, workbenchPage, workbenchRow } from "../src/lib/testing/fixtures.ts";
 import { home, palette, repository } from "./fixtures.ts";
 import { changeAnswer, callsOf, emitFromCore, mockCore } from "./mock-core.ts";
 
@@ -148,6 +148,35 @@ test("Enter sends the whole search to GitHub, and its rows show with a placehold
   await expect(page.locator(".list").getByRole("status")).toHaveText(
     "1,000 of 1,712 shown. Narrow the search, or save it as a Filter.",
   );
+});
+
+test("fills a placeholder only once the list scrolls to it, and asks for it once", async ({ page }) => {
+  await page.setViewportSize({ width: 1200, height: 600 });
+  const placeholder = placeholderItem(4242, "pull_request");
+  await mockCore(page, {
+    home,
+    workbench,
+    inbox: pageOf([...issues(60, 1), placeholder], false),
+    // The core handles the one placeholder, so the window keeps it quiet.
+    fillInboxPlaceholders: ok([4242]),
+  });
+  await page.goto("/");
+  await openInbox(page);
+  await expect(page.getByRole("button", { name: "#60 Issue 60" })).toBeVisible();
+  const filled = () => callsOf(page, "fillInboxPlaceholders");
+
+  // The placeholder is far below the screen, so it costs no request until the list scrolls to it.
+  await expect.poll(filled).toBe(0);
+  await scrollToEnd(page);
+  await expect.poll(filled).toBe(1);
+  await expect(page.getByText("PR not in the cache yet")).toBeInViewport();
+
+  // Scrolling back over it asks GitHub nothing again.
+  await page.locator(".list").evaluate((list) => {
+    list.scrollTop = 0;
+  });
+  await scrollToEnd(page);
+  await expect.poll(filled).toBe(1);
 });
 
 test("saves the search as a Filter, which opens in place of the Inbox with the box cleared", async ({

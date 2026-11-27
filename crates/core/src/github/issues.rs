@@ -10,6 +10,7 @@ use serde_json::json;
 use time::OffsetDateTime;
 
 use super::activity::{IssueTimelineWire, issue_activity};
+use super::item::alias;
 use super::labels::{LabelWire, label_names};
 use super::pull_requests::{Nodes, PageRequest, Person, RateLimit};
 use super::references::{REFERENCE_FIELDS, ReferenceTimeline};
@@ -120,7 +121,8 @@ pub(super) fn query_by_number(operation: &str, numbers: &[u32], fields: &str) ->
         .iter()
         .map(|number| {
             format!(
-                "i{number}: issueOrPullRequest(number: {number}) {{ __typename ... on Issue {{ {fields} }} }}"
+                "{}: issueOrPullRequest(number: {number}) {{ __typename ... on Issue {{ {fields} }} }}",
+                alias(*number)
             )
         })
         .collect();
@@ -298,8 +300,7 @@ impl GitHub {
             numbers,
             size,
         } = read;
-        let alias = |number: &u32| format!("i{number}");
-        let aliases: Vec<String> = numbers.iter().map(alias).collect();
+        let aliases: Vec<String> = numbers.iter().map(|number| alias(*number)).collect();
         let refusable = |field: &str| aliases.iter().any(|asked| asked == field);
         let ((data, refused), asked_for): ((Data<T>, Vec<Refused>), usize) = self.read_at_size(
             size.min(numbers.len()),
@@ -318,8 +319,8 @@ impl GitHub {
         let mut issueless = Vec::new();
         let mut refused_numbers = Vec::new();
         for number in numbers.iter().take(asked_for) {
-            let alias = alias(number);
-            if let Some(refusal) = refused.iter().find(|refusal| refusal.field == alias) {
+            let field = alias(*number);
+            if let Some(refusal) = refused.iter().find(|refusal| refusal.field == field) {
                 log::warn!("GitHub wouldn't give Issue {number}: {}", refusal.message);
                 refused_numbers.push(*number);
                 continue;
@@ -327,7 +328,7 @@ impl GitHub {
             // GitHub follows an Issue transferred to another repository, and answers with the number it has
             // there. `read` lets a null through only with GitHub's NOT_FOUND for it, which can change: the
             // Issue a PR names can be opened later, or one GitHub hid be restored.
-            match answers.remove(&alias) {
+            match answers.remove(&field) {
                 Some(Some(Numbered::Issue(issue))) if issue.number() == *number => {
                     issues.push(issue)
                 }

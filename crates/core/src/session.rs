@@ -400,6 +400,15 @@ impl Keeper {
             SessionMessage::Search { repository, text } => {
                 telling.to_github(GitHubMessage::Search { repository, text });
             }
+            SessionMessage::FillPlaceholders {
+                repository,
+                numbers,
+                reply,
+            } => telling.to_github(GitHubMessage::FillPlaceholders {
+                repository,
+                numbers,
+                reply,
+            }),
             SessionMessage::FilterSearch { repository, query } => {
                 telling.to_github(GitHubMessage::FilterSearch { repository, query });
             }

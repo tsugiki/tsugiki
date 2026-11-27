@@ -9,6 +9,7 @@
 
 use tsugiki_token::testing::{gh_alone, gh_prints};
 
+use super::item::alias;
 use super::*;
 use crate::facts::pull_requests::NodeId;
 use crate::read_only::WritableRepository;
@@ -285,6 +286,34 @@ pub fn pull_request_answer(pull_request: Value, rate: &str) -> Result<Reply, Unr
 /// that GitHub now names `asked`.
 pub fn item_answer(asked: &RepositoryName, item: Value) -> Result<Reply, Unreachable> {
     answer(item_data(asked, item), RATE_LIMIT)
+}
+
+/// GitHub's answer to `FetchItems`, which found `items` under each number and names the Repository `asked`
+/// (#466). A `Value::Null` names a number GitHub has nothing under.
+pub fn items_answer(asked: &RepositoryName, items: &[(u32, Value)]) -> Result<Reply, Unreachable> {
+    answer(items_data(asked, items), RATE_LIMIT)
+}
+
+/// GitHub's answer to `FetchItems` that refuses number `number` alone (#466), and finds nothing under the
+/// others.
+pub fn items_refused(asked: &RepositoryName, number: u32) -> Result<Reply, Unreachable> {
+    erring(
+        items_data(asked, &[(number, Value::Null)]),
+        (
+            "FORBIDDEN",
+            "Resource not accessible by personal access token",
+        ),
+        json!(["repository", alias(number)]),
+    )
+}
+
+/// The data of an answer to `FetchItems` in `asked` with `items`, each under `i<number>`.
+fn items_data(asked: &RepositoryName, items: &[(u32, Value)]) -> Value {
+    let mut repository = json!({ "nameWithOwner": asked.to_string() });
+    for (number, item) in items {
+        repository[alias(*number).as_str()] = item.clone();
+    }
+    json!({ "repository": repository })
 }
 
 /// The data of an answer to `FetchItem` in `asked` with `item`.

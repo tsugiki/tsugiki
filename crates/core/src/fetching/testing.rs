@@ -15,6 +15,9 @@ pub(crate) fn named(message: SessionMessage) -> String {
         SessionMessage::Refresh => "refresh".to_owned(),
         SessionMessage::FetchUnstored { item, .. } => format!("fetch #{}", item.number),
         SessionMessage::Search { text, .. } => format!("search {text}"),
+        SessionMessage::FillPlaceholders { numbers, .. } => {
+            format!("fill placeholders {numbers:?}")
+        }
         SessionMessage::FilterSearch { query, .. } => format!("filter search {}", query.as_str()),
         SessionMessage::SettingsChanged(save) => match save.by() {
             SavedBy::HandEdit => format!("settings of {}", save.saved().name),

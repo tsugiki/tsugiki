@@ -122,13 +122,13 @@ pub enum WorkbenchItem {
     StandalonePr(PrTree),
     /// A Backport with no Issue and no Origin PR to sit under.
     StandaloneBackport(BackportRow),
-    /// A result a search on GitHub found that the cache lacks, in its place in the list until a later ticket
-    /// fills it (#465).
+    /// A result a search on GitHub found that the cache lacks, in its place in the list until the user
+    /// scrolls to it and a fetch fills it (#465, #466).
     Placeholder(Placeholder),
 }
 
 /// A result a search on GitHub found that the cache lacks (#465). The Inbox shows its number and whether it
-/// is an Issue or a PR; a later ticket fetches what it says as the user scrolls to it.
+/// is an Issue or a PR; as the user scrolls to it, a fill fetches what it says (#466).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
 pub struct Placeholder {
     pub number: u32,

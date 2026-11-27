@@ -79,7 +79,7 @@ pub(super) fn save(
 }
 
 /// Stores `issues` as `save` does, inside the caller's transaction.
-fn save_in(
+pub(super) fn save_in(
     connection: &Connection,
     repository: &RepositoryName,
     issues: &[IssueFacts],

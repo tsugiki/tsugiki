@@ -1,6 +1,7 @@
 use super::*;
 use crate::error::ErrorKind;
 use crate::facts::labels::Label;
+use crate::github::item::alias;
 use crate::github::testing::{
     RATE_LIMIT, Scripted, answer, erring, github, issue_node, not_found, replied, reply_ok,
 };
@@ -161,7 +162,8 @@ fn a_closed_issue_keeps_how_it_closed_as_github_draws_it() {
     };
     let mut reopened = issue_node(6);
     reopened["stateReason"] = json!("REOPENED");
-    let mut repository = json!({ "i6": reopened });
+    let mut repository = json!({});
+    repository[alias(6).as_str()] = reopened;
     for (number, reason) in [
         (7, json!("COMPLETED")),
         (8, json!("NOT_PLANNED")),
@@ -169,7 +171,7 @@ fn a_closed_issue_keeps_how_it_closed_as_github_draws_it() {
         (10, Value::Null),
         (11, json!("A_REASON_FROM_LATER")),
     ] {
-        repository[format!("i{number}")] = closed(number, reason);
+        repository[alias(number).as_str()] = closed(number, reason);
     }
     let (script, _asked) = Scripted::new(vec![in_repository(&repository)]);
 

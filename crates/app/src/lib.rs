@@ -1189,6 +1189,7 @@ pub fn specta_builder<R: tauri::Runtime>() -> Builder<R> {
             slow_commands::workbench,
             slow_commands::inbox,
             search_inbox,
+            slow_commands::fill_inbox_placeholders,
             slow_commands::issue,
             slow_commands::repository_state,
             slow_commands::repository_sync,

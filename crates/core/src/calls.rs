@@ -182,6 +182,23 @@ impl Calls {
         }
     }
 
+    /// Fetches the placeholders `numbers` of the Inbox, which the user scrolled to, in batches of 50, and
+    /// keeps them in the cache (#466). The `changed` event follows, and the Inbox then draws their rows in
+    /// the placeholders' places. Answers the numbers the core handled, so the window asks again for the rest.
+    /// A number the core handled is asked for once, and one it couldn't handle comes back for a later ask.
+    /// Placeholders the user never scrolled to cost no request.
+    pub fn fill_inbox_placeholders(
+        &self,
+        repository: RepositoryName,
+        numbers: Vec<u32>,
+    ) -> Result<Vec<u32>, Error> {
+        if numbers.is_empty() {
+            Ok(Vec::new())
+        } else {
+            self.fetching.fill_placeholders(repository, numbers)
+        }
+    }
+
     /// Saves a Filter named `name` that searches `query` at the end of `repository`'s Filters, off the
     /// Workbench, and starts its first whole search at once, ahead of the sync's next step (#471). A name the
     /// Repository's Filters already use is refused. The dialog opens `query` with Tsugiki's additions spelled

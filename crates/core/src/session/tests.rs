@@ -20,8 +20,9 @@ use crate::github::points::HourPoints;
 use crate::github::replay::Replayer;
 use crate::github::testing::{
     Canned, RATE_LIMIT, SIGNED_IN, Scripted, answer, answered, dated, fetched_nodes, filter_page,
-    github, issue_item, item_answer, item_missing, page_info, pr_content, pr_item, pr_node,
-    pull_request_answer, reply_ok, search_page, signed_in_as,
+    github, issue_item, item_answer, item_missing, items_answer, items_refused, page_info,
+    pr_content, pr_item, pr_node, pull_request_answer, replied, reply_ok, search_page,
+    signed_in_as,
 };
 use crate::github::{Reply, Request, Transport, Unreachable};
 use crate::login::Login;
@@ -677,6 +678,233 @@ fn a_search_github_refuses_is_logged_and_keeps_no_answer() {
     ]);
 
     assert!(after_searching("session-search-refused", access, "fix").is_none());
+}
+
+/// Waits until GitHub is asked for the placeholders' facts, so the thread has answered before the session
+/// stops.
+fn wait_for_placeholders(asked: &Receiver<(String, Value)>) {
+    loop {
+        let (operation, _) = asked.recv_timeout(PLENTY).expect("the fill reaches GitHub");
+        if operation == "FetchItems" {
+            return;
+        }
+    }
+}
+
+#[test]
+fn placeholders_the_user_scrolls_to_are_fetched_once_and_kept() {
+    let answer = items_answer(&gcmon(), &[(7, issue_item(7, &gcmon())), (8, pr_item(8))]);
+    let (access, asked) = scripted(vec![signed_in(), answer]);
+    let (folders, folder) = temp_folders("session-fill-placeholders");
+    let (board, changes) = changes_board();
+    let session = Session::start(board, Ok(folders.clone()), reaching(access), HOURLY);
+
+    let handled = session
+        .fetching()
+        .fill_placeholders(gcmon(), vec![7, 8])
+        .unwrap();
+    assert_eq!(handled, [7, 8], "both placeholders were handled");
+    wait_for_placeholders(&asked);
+    let change = changes
+        .recv_timeout(PLENTY)
+        .expect("the fill tells the window");
+    assert_eq!(change.items, [7, 8]);
+
+    // The same placeholders again, and one the store now holds, ask GitHub nothing.
+    let again = session
+        .fetching()
+        .fill_placeholders(gcmon(), vec![7, 8])
+        .unwrap();
+    assert_eq!(again, [7, 8], "the core still says it handled both");
+    session.stop(PLENTY);
+
+    assert_eq!(
+        asked.try_iter().count(),
+        0,
+        "the fill's numbers are asked of GitHub once"
+    );
+    let db = OpenStore::of(folders.database(), folder);
+    let facts = db.reader.work_facts(&gcmon()).unwrap();
+    assert!(facts.issues.iter().any(|issue| issue.number == 7));
+    assert!(facts.pull_requests.iter().any(|pr| pr.number == 8));
+    db.close();
+}
+
+#[test]
+fn a_fill_whose_first_batch_github_shrank_asks_for_the_rest() {
+    // A 502 makes the client ask again for half the batch, and the fill then takes the numbers the answer
+    // didn't cover (#466).
+    let (access, asked) = scripted(vec![
+        signed_in(),
+        replied(502, "bad gateway"),
+        items_answer(&gcmon(), &[(7, issue_item(7, &gcmon()))]),
+        items_answer(&gcmon(), &[(8, pr_item(8))]),
+    ]);
+    let (folders, folder) = temp_folders("session-fill-shrunk");
+    let (board, _seen) = watched_board();
+    let session = Session::start(board, Ok(folders.clone()), reaching(access), HOURLY);
+
+    let handled = session
+        .fetching()
+        .fill_placeholders(gcmon(), vec![7, 8])
+        .unwrap();
+    assert_eq!(
+        handled,
+        [7, 8],
+        "the tail is asked for once the first batch shrinks"
+    );
+    let asked_again = (asked.try_iter())
+        .filter(|(operation, _)| operation == "FetchItems")
+        .count();
+    assert_eq!(
+        asked_again, 3,
+        "the 502 asks for the batch again, then the tail on its own"
+    );
+    session.stop(PLENTY);
+
+    let db = OpenStore::of(folders.database(), folder);
+    let facts = db.reader.work_facts(&gcmon()).unwrap();
+    assert!(facts.issues.iter().any(|issue| issue.number == 7));
+    assert!(facts.pull_requests.iter().any(|pr| pr.number == 8));
+    db.close();
+}
+
+#[test]
+fn a_fill_github_refuses_one_number_for_handles_it_and_asks_nothing_more_for_it() {
+    let (access, asked) = scripted(vec![signed_in(), items_refused(&gcmon(), 7)]);
+    let (folders, folder) = temp_folders("session-fill-refused");
+    let (board, _seen) = watched_board();
+    let session = Session::start(board, Ok(folders.clone()), reaching(access), HOURLY);
+
+    let handled = session
+        .fetching()
+        .fill_placeholders(gcmon(), vec![7, 8])
+        .unwrap();
+    wait_for_placeholders(&asked);
+    session.stop(PLENTY);
+
+    assert_eq!(
+        handled,
+        [7, 8],
+        "a refused number is handled, as a missing one is"
+    );
+    let db = OpenStore::of(folders.database(), folder);
+    assert!(db.reader.work_facts(&gcmon()).unwrap().issues.is_empty());
+    db.close();
+}
+
+#[test]
+fn a_fill_github_cant_answer_keeps_the_placeholders() {
+    let (access, asked) = scripted(vec![signed_in(), Err(Unreachable::Offline)]);
+    let (folders, folder) = temp_folders("session-fill-offline");
+    let (board, _seen) = watched_board();
+    let session = Session::start(board, Ok(folders.clone()), reaching(access), HOURLY);
+
+    let handled = session
+        .fetching()
+        .fill_placeholders(gcmon(), vec![7])
+        .unwrap();
+    assert!(
+        handled.is_empty(),
+        "GitHub answered nothing, so nothing was handled"
+    );
+    wait_for_placeholders(&asked);
+    session.stop(PLENTY);
+
+    let db = OpenStore::of(folders.database(), folder);
+    assert!(db.reader.work_facts(&gcmon()).unwrap().issues.is_empty());
+    db.close();
+}
+
+#[test]
+fn a_placeholder_github_has_nothing_under_isnt_fetched_again() {
+    // GitHub has nothing under 7, so the store keeps no item and a second scroll would ask again without the
+    // thread's own record of what it answered (#466).
+    let (access, asked) = scripted(vec![
+        signed_in(),
+        items_answer(&gcmon(), &[(7, Value::Null)]),
+        gcmon_issue_page(),
+    ]);
+    let (folders, _folder) = temp_folders("session-fill-missing");
+    let (board, _seen) = watched_board();
+    let session = Session::start(board, Ok(folders.clone()), reaching(access), HOURLY);
+
+    let handled = session
+        .fetching()
+        .fill_placeholders(gcmon(), vec![7])
+        .unwrap();
+    assert_eq!(
+        handled,
+        [7],
+        "an answer with no item still handled the number"
+    );
+    wait_for_placeholders(&asked);
+    // The search's answer proves the fill's turn is over, so the next call is not racing it.
+    session.fetching().search(gcmon(), "fix".to_owned());
+    wait_for_search(&asked);
+    let again = session
+        .fetching()
+        .fill_placeholders(gcmon(), vec![7])
+        .unwrap();
+    assert_eq!(again, [7]);
+    session.stop(PLENTY);
+
+    assert_eq!(
+        asked.try_iter().count(),
+        0,
+        "the batch is not fetched twice, though the store holds nothing of it"
+    );
+}
+
+#[test]
+fn a_fill_with_no_token_asks_nothing_and_the_window_asks_again_later() {
+    let access = GitHubAccess {
+        transport: Box::new(Canned(Err(Unreachable::Offline))),
+        token_from: NO_GH,
+    };
+    let (folders, _folder) = temp_folders("session-fill-no-token");
+    let (board, _seen) = watched_board();
+    let session = Session::start(board, Ok(folders), reaching(access), HOURLY);
+
+    let handled = session
+        .fetching()
+        .fill_placeholders(gcmon(), vec![7])
+        .unwrap();
+    session.stop(PLENTY);
+
+    assert!(
+        handled.is_empty(),
+        "no token asks nothing, so the window asks again once there is one"
+    );
+}
+
+#[test]
+fn a_fill_the_store_cant_keep_is_a_problem_and_leaves_the_numbers_to_ask_again() {
+    let (mut board, _seen) = watched_board();
+    let answer = items_answer(&gcmon(), &[(7, issue_item(7, &gcmon()))]);
+    let access = replying(vec![signed_in(), answer]);
+    let github = connect_alone(&mut quiet_board(), &empty_store(), access).unwrap();
+    let read = Reading {
+        github: &github,
+        queue: &unheard_refreshes(),
+        syncs: &Syncs::default(),
+    };
+
+    let filled = fill_placeholders(
+        &mut board,
+        &Store::stopped(),
+        &read,
+        Placeholders {
+            repository: &gcmon(),
+            numbers: &[7],
+        },
+    );
+
+    assert!(
+        filled.handled.is_empty(),
+        "the store kept nothing, so the window asks again"
+    );
+    assert!(filled.problem.is_some(), "the status bar says why");
 }
 
 #[test]
@@ -1811,6 +2039,15 @@ fn named_for_github(message: GitHubMessage) -> String {
             SessionMessage::FetchUnstored { item, reply }
         }
         GitHubMessage::Search { repository, text } => SessionMessage::Search { repository, text },
+        GitHubMessage::FillPlaceholders {
+            repository,
+            numbers,
+            reply,
+        } => SessionMessage::FillPlaceholders {
+            repository,
+            numbers,
+            reply,
+        },
         GitHubMessage::FilterSearch { repository, query } => {
             SessionMessage::FilterSearch { repository, query }
         }

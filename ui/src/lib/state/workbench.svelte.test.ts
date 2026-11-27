@@ -9,6 +9,7 @@ import {
   done,
   inboxPage,
   listedIssue,
+  ok,
   placeholderItem,
   refused,
   workbenchPage,
@@ -32,6 +33,7 @@ vi.mock("$lib/data/bindings", () => ({
     workbench: vi.fn(),
     inbox: vi.fn(),
     searchInbox: vi.fn(),
+    fillInboxPlaceholders: vi.fn(),
     markSeen: vi.fn(),
     markUnseen: vi.fn(),
     archive: vi.fn(),
@@ -1945,6 +1947,58 @@ describe("WorkbenchState's Inbox", () => {
     expect(state.seenOf(stop)).toBeUndefined();
     expect(state.muteAuthorOf(stop)).toBeUndefined();
     expect(state.hidingBy(stop)).toBeUndefined();
+    state.stop();
+  });
+
+  it("fills the placeholders the list shows, each number once, as scrolling back over one asks nothing", async () => {
+    catchChanged();
+    vi.mocked(commands.workbench).mockResolvedValue(answer());
+    const placeholder = placeholderItem(4242, "pull_request");
+    vi.mocked(commands.inbox).mockResolvedValue(inboxPage([placeholder, item(3)]));
+    vi.mocked(commands.fillInboxPlaceholders).mockResolvedValue(ok([4242]));
+    const state = await showingInbox();
+
+    await state.fillPlaceholders([4242, 4242]);
+    expect(commands.fillInboxPlaceholders).toHaveBeenCalledExactlyOnceWith("python/cpython", [4242]);
+
+    // Scrolling back over the placeholder asks nothing more.
+    await state.fillPlaceholders([4242]);
+    expect(commands.fillInboxPlaceholders).toHaveBeenCalledOnce();
+    state.stop();
+  });
+
+  it("asks again for a placeholder the core couldn't handle", async () => {
+    catchChanged();
+    vi.mocked(commands.workbench).mockResolvedValue(answer());
+    vi.mocked(commands.inbox).mockResolvedValue(inboxPage([placeholderItem(4242, "pull_request"), item(3)]));
+    vi.mocked(commands.fillInboxPlaceholders).mockResolvedValueOnce(ok([]));
+    const state = await showingInbox();
+
+    await state.fillPlaceholders([4242]);
+    expect(commands.fillInboxPlaceholders).toHaveBeenCalledExactlyOnceWith("python/cpython", [4242]);
+
+    // The core handled none, as when it couldn't reach GitHub, so a later scroll asks again.
+    vi.mocked(commands.fillInboxPlaceholders).mockResolvedValueOnce(ok([4242]));
+    await state.fillPlaceholders([4242]);
+    expect(commands.fillInboxPlaceholders).toHaveBeenLastCalledWith("python/cpython", [4242]);
+    expect(commands.fillInboxPlaceholders).toHaveBeenCalledTimes(2);
+    state.stop();
+  });
+
+  it("asks again for a placeholder whose fill the core refused", async () => {
+    catchChanged();
+    vi.mocked(commands.workbench).mockResolvedValue(answer());
+    vi.mocked(commands.inbox).mockResolvedValue(inboxPage([placeholderItem(4242, "pull_request"), item(3)]));
+    vi.mocked(commands.fillInboxPlaceholders).mockResolvedValueOnce(refused("no database"));
+    const state = await showingInbox();
+
+    // The refusal says nothing was handled, so a later scroll asks again.
+    await state.fillPlaceholders([4242]);
+    expect(commands.fillInboxPlaceholders).toHaveBeenCalledExactlyOnceWith("python/cpython", [4242]);
+
+    vi.mocked(commands.fillInboxPlaceholders).mockResolvedValueOnce(ok([4242]));
+    await state.fillPlaceholders([4242]);
+    expect(commands.fillInboxPlaceholders).toHaveBeenCalledTimes(2);
     state.stop();
   });
 

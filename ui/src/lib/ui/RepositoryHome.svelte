@@ -39,6 +39,7 @@
     type ListedItem,
     type MuteAuthor,
     type Pin,
+    type SaveSource,
     type Seen,
     type Stop,
     type SidebarView,
@@ -84,7 +85,7 @@
 
   /** How far ↑ or ↓ scrolls the Detail pane while the list is hidden, in CSS pixels, as a browser does. */
   const LINE = 40;
-  /** What separates two names in a row's people, with the space Svelte would trim at a block's edge. */
+  /** The separator between two names in a row's people, with the space Svelte trims at a block's edge. */
   const NAME_SEPARATOR = ", ";
   /** The view of every PR's diff, unified or side by side, which `Ctrl+Alt+U` switches. */
   const diffView = new DiffViewChoice();
@@ -207,8 +208,8 @@
       void workbench.readOlder();
     }
   }
-  /** Asks the core to fill the Inbox's placeholders that the list shows, and only those (#466): one the user
-   * never scrolls to costs no request. */
+  /** Asks the core to fill the list's placeholders that it shows, and only those (#466): one the user doesn't
+   * scroll to costs no request. */
   function fillPlaceholdersNearScreen() {
     const kind = workbench.shown.kind;
     if ((kind !== "inbox" && kind !== "person") || !list) return;
@@ -377,10 +378,11 @@
     if (next instanceof PrViewState) showFileView(next, fileView);
   }
 
-  /** Saves the Inbox's search as a Filter named `name` that searches `query`, and answers the core's reason
-   * when it refuses one (#471). The page's dialog calls it, and closes once it answers nothing. */
-  export function saveFilter(name: string, query: string): Promise<string | undefined> {
-    return workbench.saveFilter(name, query);
+  /** Saves the draft `source` names as a Filter named `name` that searches `query`, and answers the core's
+   * reason when it refuses one (#471, #472). The page's dialog calls it, and closes once it answers
+   * nothing. */
+  export function saveFilter(name: string, query: string, source: SaveSource): Promise<string | undefined> {
+    return workbench.saveFilter(name, query, source);
   }
 
   /** Opens the Issue or PR `number` that quick open found (#557), on its line in the list if the list has

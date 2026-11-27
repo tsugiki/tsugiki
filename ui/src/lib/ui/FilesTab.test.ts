@@ -118,6 +118,7 @@ const ready = (
   });
 
 const onlink = vi.fn();
+const onperson = vi.fn();
 const NOW = new Date("2026-11-04T12:00:00Z");
 
 /** A HUD that times nothing, as these tests don't look at the jumps. */
@@ -144,7 +145,7 @@ const shown = async (
   );
   files.followReview(review);
   await files.load();
-  render(FilesTab, { files, now: NOW, onlink });
+  render(FilesTab, { files, now: NOW, onlink, onperson });
   return files;
 };
 
@@ -324,7 +325,7 @@ it("says why it can't show the files", async () => {
   core.pullRequestFiles.mockResolvedValue({ status: "error", error: { message: "The mirror has no main" } });
   const files = new PrFilesState("python/cpython", 11, new PanesState(), untimed);
   await files.load();
-  render(FilesTab, { files, now: NOW, onlink });
+  render(FilesTab, { files, now: NOW, onlink, onperson });
 
   expect(screen.getByRole("alert").textContent).toBe(
     "Tsugiki can't show this PR's files: The mirror has no main",
@@ -1257,7 +1258,7 @@ const shownOne = async (answer: PrFiles) => {
     "one",
   );
   await files.load();
-  render(FilesTab, { files, now: NOW, onlink });
+  render(FilesTab, { files, now: NOW, onlink, onperson });
   return files;
 };
 
@@ -2390,7 +2391,7 @@ it("scrolls a peek that opens on the last rows on screen into view, once, as it 
   const again = await scrolledBack();
   // The diff drawn again, as the Files tab shows again, leaves that peek where it is.
   cleanup();
-  render(FilesTab, { files, now: NOW, onlink });
+  render(FilesTab, { files, now: NOW, onlink, onperson });
   await tick();
   const drawnAgain = diff().scrollTop;
   // A peek on a collapsed file has no place to scroll to.

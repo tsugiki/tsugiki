@@ -1833,7 +1833,7 @@ describe("WorkbenchState's Inbox", () => {
     expect(state.searchDraft).toEqual({ name: "label:bug", query: "label:bug is:open" });
 
     vi.mocked(commands.saveFilter).mockResolvedValueOnce(done);
-    const problem = await state.saveFilter("Bugs", "label:bug is:open");
+    const problem = await state.saveFilter("Bugs", "label:bug is:open", "search");
 
     expect(problem).toBeUndefined();
     expect(commands.saveFilter).toHaveBeenCalledWith("python/cpython", "Bugs", "label:bug is:open");
@@ -1855,7 +1855,7 @@ describe("WorkbenchState's Inbox", () => {
 
     const refusal = "a/b already has a Filter named Bugs. Choose another name.";
     vi.mocked(commands.saveFilter).mockResolvedValueOnce(refused(refusal));
-    const problem = await state.saveFilter("Bugs", "label:bug is:open");
+    const problem = await state.saveFilter("Bugs", "label:bug is:open", "search");
 
     expect(problem).toBe(refusal);
     expect(state.search).toBe("label:bug");
@@ -1998,11 +1998,77 @@ describe("WorkbenchState's Inbox", () => {
     await state.load();
     await state.openPerson("octocat");
 
-    const problem = await state.saveFilter("octocat", "is:open author:octocat");
+    const problem = await state.saveFilter("octocat", "is:open author:octocat", "person");
 
     expect(problem).toBeUndefined();
     expect(state.person).toBeUndefined();
     expect(state.selected).toEqual({ kind: "filter", query: "is:open author:octocat" });
+    state.stop();
+  });
+
+  it("saves a person's Filter without clearing the Inbox's search box", async () => {
+    catchChanged();
+    vi.mocked(commands.workbench).mockResolvedValue(
+      workbenchPage([], { filter_query: "is:open author:octocat" }),
+    );
+    paging({ latest: page([]) });
+    const state = await showingInbox();
+    await state.setSearch("label:bug");
+    await state.openPerson("octocat");
+    vi.mocked(commands.saveFilter).mockResolvedValueOnce(done);
+
+    await state.saveFilter("octocat", "is:open author:octocat", "person");
+
+    expect(state.search).toBe("label:bug");
+    expect(state.person).toBeUndefined();
+    state.stop();
+  });
+
+  it("saves the Inbox's search without closing a waiting person Filter", async () => {
+    catchChanged();
+    vi.mocked(commands.workbench).mockResolvedValue(
+      workbenchPage([], { filter_query: "is:open author:octocat" }),
+    );
+    paging({ latest: inboxPage([], null, "off", false, null, "label:bug is:open") });
+    const state = await showingInbox();
+    await state.openPerson("octocat");
+    await state.select(inbox);
+    await state.setSearch("label:bug");
+    vi.mocked(commands.saveFilter).mockResolvedValueOnce(done);
+
+    await state.saveFilter("Bugs", "label:bug is:open", "search");
+
+    expect(state.search).toBe("");
+    expect(state.person).toEqual({ login: "octocat" });
+    expect(state.personDraft).toEqual({ name: "octocat", query: "is:open author:octocat" });
+    state.stop();
+  });
+
+  it("sends each quick click's own search, not the one a later click asked for", async () => {
+    catchChanged();
+    let answerAlice!: (value: Awaited<ReturnType<typeof commands.workbench>>) => void;
+    const alice = new Promise<Awaited<ReturnType<typeof commands.workbench>>>((resolve) => {
+      answerAlice = resolve;
+    });
+    vi.mocked(commands.workbench)
+      .mockResolvedValueOnce(answer())
+      .mockReturnValueOnce(alice)
+      .mockResolvedValueOnce(workbenchPage([], { filter_query: "is:open author:bob" }));
+    vi.mocked(commands.searchInbox).mockResolvedValue(done);
+    const state = new WorkbenchState("python/cpython");
+    await state.load();
+
+    const openingAlice = state.openPerson("alice");
+    await state.openPerson("bob");
+    answerAlice(workbenchPage([], { filter_query: "is:open author:alice" }));
+    await openingAlice;
+
+    expect(vi.mocked(commands.searchInbox).mock.calls).toEqual([
+      ["python/cpython", "is:open author:bob"],
+      ["python/cpython", "is:open author:alice"],
+    ]);
+    expect(state.person).toEqual({ login: "bob" });
+    expect(state.personDraft).toEqual({ name: "bob", query: "is:open author:bob" });
     state.stop();
   });
 

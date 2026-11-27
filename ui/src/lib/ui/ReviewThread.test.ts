@@ -19,24 +19,28 @@ const thread = (changes: Partial<DiffThread> = {}): DiffThread => ({
 const shown = (shown: DiffThread, folded = false, now = NOW) => {
   const ontoggle = vi.fn();
   const onlink = vi.fn();
-  render(ReviewThread, { thread: shown, folded, now, ontoggle, onlink });
-  return { ontoggle, onlink };
+  const onperson = vi.fn();
+  render(ReviewThread, { thread: shown, folded, now, ontoggle, onlink, onperson });
+  return { ontoggle, onlink, onperson };
 };
 
-const head = () => screen.getAllByRole("button")[0];
+/** The thread's first line, which names who started it. */
+const head = () => document.querySelector<HTMLElement>(".head") as HTMLElement;
+/** The chevron that folds the thread. */
+const toggle = () => screen.getAllByRole("button")[0] as HTMLElement;
 
 it("gives a comment's time its date and time in a tooltip", () => {
   shown(thread());
 
-  expect(screen.getByText("some-reviewer · 2h ago").getAttribute("title")).toBe(
-    stampOf("2026-11-04T10:00:00Z"),
-  );
+  const by = document.querySelector("article .by") as HTMLElement;
+  expect(by.textContent).toBe("some-reviewer · 2h ago");
+  expect(by.getAttribute("title")).toBe(stampOf("2026-11-04T10:00:00Z"));
 });
 
 it("says the time since with a clock a day on", () => {
   shown(thread(), false, new Date("2026-11-05T12:00:00Z"));
 
-  expect(screen.getByText("some-reviewer · 1d ago")).toBeTruthy();
+  expect(document.querySelector("article .by")?.textContent).toBe("some-reviewer · 1d ago");
 });
 
 it("shows who started a thread and its comments, oldest first, and folds on a click on its first line", async () => {
@@ -44,23 +48,35 @@ it("shows who started a thread and its comments, oldest first, and folds on a cl
     thread({ comments: [comment(), comment({ author: null, body_html: "<p>It reads better</p>" })] }),
   );
 
-  expect(head()?.textContent).toBe("▾some-reviewer · 2 comments");
-  expect(head()?.getAttribute("aria-expanded")).toBe("true");
+  expect(head().textContent).toBe("▾some-reviewer · 2 comments");
+  expect(toggle().getAttribute("aria-expanded")).toBe("true");
   expect([...document.querySelectorAll("article .by")].map((by) => by.textContent)).toEqual([
     "some-reviewer · 2h ago",
     "deleted user · 2h ago",
   ]);
   expect(screen.getByText("It reads better")).toBeTruthy();
-  await fireEvent.click(head() as HTMLElement);
+  await fireEvent.click(toggle());
   expect(ontoggle).toHaveBeenCalledOnce();
+});
+
+it("opens the person Filter from a thread's first comment, each comment after it, and the head", async () => {
+  const { onperson } = shown(
+    thread({ comments: [comment(), comment({ author: null, body_html: "<p>It reads better</p>" })] }),
+  );
+
+  const names = screen.getAllByRole("button", { name: "some-reviewer" });
+  expect(names).toHaveLength(2);
+  for (const name of names) await fireEvent.click(name);
+
+  expect(onperson.mock.calls).toEqual([["some-reviewer"], ["some-reviewer"]]);
 });
 
 it("shows a folded thread as its first line, marked Resolved", () => {
   shown(thread({ resolution: "resolved", later_comments: 2 }), true);
 
-  expect(head()?.textContent).toBe("▸some-reviewer · 3 commentsResolved");
-  expect(head()?.getAttribute("aria-label")).toBe("some-reviewer · 3 comments, Resolved");
-  expect(head()?.getAttribute("aria-expanded")).toBe("false");
+  expect(head().textContent).toBe("▸some-reviewer · 3 commentsResolved");
+  expect(toggle().getAttribute("aria-label")).toBe("some-reviewer · 3 comments, Resolved");
+  expect(toggle().getAttribute("aria-expanded")).toBe("false");
   expect(document.querySelector("article")).toBeNull();
 });
 
@@ -111,7 +127,12 @@ it("says when a thread is on the whole file, Outdated, outside the diff or on a 
   ];
   for (const at of places) shown(thread({ at, resolution: "resolved" }), true);
 
-  expect(screen.getAllByRole("button").map((button) => button.getAttribute("aria-label"))).toEqual([
+  expect(
+    screen
+      .getAllByRole("button")
+      .map((button) => button.getAttribute("aria-label"))
+      .filter((label) => label !== null),
+  ).toEqual([
     "some-reviewer · 1 comment, On the file, Resolved",
     "some-reviewer · 1 comment, Outdated, Resolved",
     "some-reviewer · 1 comment, Line 80, outside the diff, Resolved",

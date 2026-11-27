@@ -59,6 +59,11 @@ and `gh issue view <blocker> --json closedByPullRequestsReferences` names the PR
 of the ticket, or moved the code the ticket names, tell the user and fill in the "What a blocker built"
 section of [builder.md](builder.md). A ticket its blockers finished goes back to the user, not to a builder.
 
+A ticket that builds a view, reader or query path may duplicate machinery the code already has: #472's person
+view repeated the Inbox's typed search, and the user rejected it after the build. Check each such ticket
+against the existing machinery, and raise one that duplicates it with the user before a builder starts, so
+the build reuses the existing path.
+
 Done when the user has agreed to the wave's tickets, each open and with no open blocker outside the wave,
 and has heard what their merged blockers already built.
 
@@ -99,6 +104,7 @@ with the change to ask for, and the rule in AGENTS.md it follows where there is 
 - Flags out of step: one value whose variants carry their data (make invalid states unrepresentable).
 - Code that guesses which async answer belongs to which action: remove the guess.
 - A second queue or scheduler beside one the code already has: fold its work into the existing one.
+- A second view or reader beside machinery the code already has: route the ticket through the existing one.
 - An owner's data reaching another thread out of save order: the owner sends it (one writer, many readers).
 - A ticket that only moves code, with bugs main has too: keep main's behaviour and file a ticket for them.
 - Code working around an answer it didn't read in full: read it where it enters (parse at the boundary).

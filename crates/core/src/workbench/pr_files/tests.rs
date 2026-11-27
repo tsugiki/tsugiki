@@ -395,7 +395,7 @@ fn a_thread_tsugiki_read_in_the_conversation_sits_under_its_line() {
         (placed[0]["id"].clone(), placed[0]["at"].clone()),
         (
             serde_json::json!("TSome(12)"),
-            serde_json::json!({ "kind": "row", "row": row })
+            serde_json::json!({ "kind": "row", "row": row, "side": "RIGHT" })
         )
     );
     assert_eq!(

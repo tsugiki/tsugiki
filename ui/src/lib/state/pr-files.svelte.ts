@@ -177,15 +177,17 @@ type Asked = { peek: Omit<Peek, "lookup" | "layout">; path: string; line: number
 type TabAt = { kind: "landed"; page: Page; place: number | undefined; end: boolean } | { kind: "scrolled" };
 
 /** The lookup of the word `pick` picked in the code of a file at `place`, for a peek under `at` that names
- * the peeks of `trail` before it: in the peek's code (#447), or in the file view's (#457). */
+ * the peeks of `trail` before it: in the peek's code (#447), or in the file view's (#457). `column` is the
+ * half of a side-by-side row the peek stays in, if the word was picked in the diff. */
 function askedIn(
   at: Peek["at"],
   place: RepositoryHit["place"],
   pick: CodePick,
   trail?: readonly Crumb[],
+  column: Column = null,
 ): Asked {
   return {
-    peek: { at, symbol: pick.word, side: place.side, commit: place.commit, ...(trail && { trail }) },
+    peek: { at, symbol: pick.word, side: place.side, commit: place.commit, column, ...(trail && { trail }) },
     path: place.path,
     line: pick.line,
     column: pick.start,
@@ -345,7 +347,8 @@ export class PrFilesState {
   #lengths = new SvelteMap<number, number>();
   /** The threads the user folded or opened, against how each starts: open, or folded once resolved. */
   #flipped = new SvelteSet<string>();
-  /** The places of each open thread the tab has measured, by its id. */
+  /** The places of each open thread the tab has measured, by its id and the view it was drawn in: a thread
+   * side by side is as wide as its column, so it wraps and takes more places than in the unified view. */
   #measured = new SvelteMap<string, number>();
   /** The thread to move to once the diff comes, as one opened from the Conversation before it did. */
   #revealing: string | undefined;
@@ -664,14 +667,21 @@ export class PrFilesState {
     if (id !== undefined && !this.#flipped.delete(id)) this.#flipped.add(id);
   }
 
-  /** Notes that open thread `id` takes `places` places, as the tab measured it. */
+  /** Notes that open thread `id`, as the view on show draws it, takes `places` places. */
   measured(id: string, places: number) {
-    if (this.#measured.get(id) !== places) this.#measured.set(id, places);
+    const key = this.#key(id);
+    if (this.#measured.get(key) !== places) this.#measured.set(key, places);
   }
 
-  /** The places thread `thread`, at `at` among the threads, takes: one when folded. */
+  /** The places thread `thread`, at `at` among the threads, takes in the view on show: one when folded. */
   #places(thread: DiffThread, at: number): number {
-    return this.folded(at) ? 1 : (this.#measured.get(thread.id) ?? guessPlaces(thread));
+    return this.folded(at) ? 1 : (this.#measured.get(this.#key(thread.id)) ?? guessPlaces(thread));
+  }
+
+  /** The key an open thread `id`'s measurement goes under, in the view on show, which lays it out at a
+   * height of its own. */
+  #key(id: string): string {
+    return `${this.shownAs}:${id}`;
   }
 
   /** Moves to thread `id`, open, and opens the collapsed file it is in, showing that file's page one file at
@@ -1391,7 +1401,15 @@ export class PrFilesState {
     if (pick === undefined || !file) return undefined;
     const commit = pick.side === "base" ? view.base : view.head;
     return {
-      peek: { at: pick.at, symbol: pick.word, side: pick.side, commit },
+      peek: {
+        at: pick.at,
+        symbol: pick.word,
+        side: pick.side,
+        commit,
+        // A word picked in the unified view has no half of the row, so the peek takes its line's commit's
+        // column, which a followed word then keeps (#1080).
+        column: pick.column ?? (pick.side === "base" ? "left" : "right"),
+      },
       path: pick.side === "base" ? (file.old_path ?? file.path) : file.path,
       line: pick.line,
       column: pick.start,
@@ -1552,10 +1570,11 @@ export class PrFilesState {
       symbol: peek.symbol,
       side: peek.side,
       commit: peek.commit,
+      column: peek.column,
       lookup: { state: "answered", answer: { state: "found", hits: shown.hits } },
       code: shown.code,
     };
-    const asked = askedIn(peek.at, hit.place, pick, [...(peek.trail ?? []), crumb]);
+    const asked = askedIn(peek.at, hit.place, pick, [...(peek.trail ?? []), crumb], peek.column);
     const looked = await this.#lookUp(
       (looking) => {
         this.#peek = looking;

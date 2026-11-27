@@ -6,7 +6,7 @@ import type { Answer, DiffPeek, Hit, Index_Deserialize, ServerName, Waiting } fr
 import type { LaidThread } from "./diff-layout";
 import type { ViewLine } from "./file-view.svelte";
 import type { HitCode } from "./hit-code.svelte";
-import type { PickedLine, Side } from "./pick";
+import type { PickedLine, Column, Side } from "./pick";
 import { problemWords, SERVERS } from "./server-words";
 
 /** What a lookup found: nothing yet, the server's answer, or why it failed. While it looks, the core says
@@ -116,6 +116,10 @@ export interface Peek {
   symbol: string;
   side: Side;
   commit: string;
+  /** The column of the side-by-side view the peek stays in: the half the word was picked in, or, for a word
+   * picked in the unified view, the column of its line's commit. Null in the file view, which draws no
+   * columns. */
+  column: Column;
   lookup: Lookup;
   code?: HitCode;
   /** The server that answered builds its index, so the answer may miss what the index doesn't hold yet. */
@@ -129,7 +133,7 @@ export interface Peek {
  * a peek that shows a hit's code has a word picked to follow, so each crumb has hits and the code of the one
  * it showed. It has no line that says its server indexes: the core watches the index for the newest lookup
  * alone, so nothing would update that line or take it away. */
-export type Crumb = Pick<Peek, "at" | "layout" | "symbol" | "side" | "commit"> & {
+export type Crumb = Pick<Peek, "at" | "layout" | "symbol" | "side" | "commit" | "column"> & {
   lookup: { state: "answered"; answer: Extract<Answer, { state: "found" }> };
   code: HitCode;
 };

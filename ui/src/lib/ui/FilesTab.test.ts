@@ -628,7 +628,7 @@ it("offers to show the lines each gap leaves out, and draws them highlighted onc
 it("opens the lines around a thread on a line no hunk shows, with buttons for those hidden around them", async () => {
   setUpGapped();
   const threads = [
-    diffThread("T1", { kind: "outside", file: 0, line: 80, head_line: 80 }, "open"),
+    diffThread("T1", { kind: "outside", file: 0, line: 80, head_line: 80, side: "RIGHT" }, "open"),
     diffThread("T2", { kind: "gone", path: "Lib/old.py", code: null }, "open"),
   ];
   await shown(ready(gapped.length, { files: [gappedFile], threads }));
@@ -860,6 +860,92 @@ it("draws a change's removed rows beside its added ones side by side, and contex
   // As wide as the tab, which jsdom makes 0 wide, and as far again as a side's longest line runs past
   // its half.
   expect(spacer.style.minWidth).toBe("calc(0px + max(0px, 9ch - 0px + 56px))");
+});
+
+it("keeps a thread on a line in its side's column side by side, and the whole width otherwise", async () => {
+  core.pullRequestRows.mockResolvedValue(ok(changed));
+  const choice = sideBySide();
+  const threads = [
+    diffThread("whole", { kind: "file", file: 0 }, "resolved"),
+    diffThread("left", { kind: "row", row: 3, side: "LEFT" }, "resolved"),
+    diffThread("right", { kind: "row", row: 6, side: "RIGHT" }, "resolved"),
+  ];
+  await shown(ready(changed.length, { files: [changedFile], threads }), choice);
+  await vi.waitFor(() => {
+    expect(lines()[0]).toBe("▾a.py+2 −3");
+  });
+
+  const [whole, left, right] = threadBoxes().map((box) => box.classList);
+  expect([whole?.contains("left"), whole?.contains("right")]).toEqual([false, false]);
+  expect([left?.contains("left"), left?.contains("right")]).toEqual([true, false]);
+  expect([right?.contains("left"), right?.contains("right")]).toEqual([false, true]);
+
+  // The unified view takes the whole width, whichever side GitHub stores the thread on.
+  choice.toggle();
+  await vi.waitFor(() => {
+    expect(screen.getByRole("region", { name: "Diff" })).toBeTruthy();
+  });
+  expect(
+    threadBoxes().map((box) => box.classList.contains("left") || box.classList.contains("right")),
+  ).toEqual([false, false, false]);
+});
+
+it("keeps the Definition peek in the column of the side the word was picked in, side by side", async () => {
+  core.pullRequestRows.mockResolvedValue(ok(changed));
+  core.definitions.mockResolvedValue(ok({ state: "found", hits: [] }));
+  const choice = sideBySide();
+  const files = await shown(ready(changed.length, { files: [changedFile] }), choice);
+  await vi.waitFor(() => {
+    expect(lines()[0]).toBe("▾a.py+2 −3");
+  });
+
+  // Row 6 is the context line "d", on both sides, so a pick on either half names its column.
+  await clickAt(codeOf(6, 0), 2);
+  const left = files.peekDefinition();
+  await tick();
+  expect(peekBox()?.classList).toContain("left");
+  expect(peekBox()?.classList).not.toContain("right");
+  await left;
+
+  await clickAt(codeOf(6, 1), 2);
+  const right = files.peekDefinition();
+  await tick();
+  expect(peekBox()?.classList).toContain("right");
+  expect(peekBox()?.classList).not.toContain("left");
+  await right;
+
+  // The unified view takes the whole width.
+  choice.toggle();
+  await vi.waitFor(() => {
+    expect(screen.getByRole("region", { name: "Diff" })).toBeTruthy();
+  });
+  expect(peekBox()?.classList).not.toContain("left");
+  expect(peekBox()?.classList).not.toContain("right");
+});
+
+it("puts a peek picked in the unified view in its line's commit's column when the view switches", async () => {
+  core.pullRequestRows.mockResolvedValue(ok(changed));
+  core.definitions.mockResolvedValue(ok({ state: "found", hits: [] }));
+  const choice = new DiffViewChoice();
+  const files = await shown(ready(changed.length, { files: [changedFile] }), choice);
+  await vi.waitFor(() => {
+    expect(lines()[0]).toBe("▾a.py+2 −3");
+  });
+
+  // Row 6 is the added line "B", on the head, so a pick made unified has no column until the switch.
+  await clickAt(codeOf(6), 2);
+  const looking = files.peekDefinition();
+  await tick();
+  expect(peekBox()?.classList).not.toContain("left");
+  expect(peekBox()?.classList).not.toContain("right");
+  await looking;
+
+  choice.toggle();
+  await vi.waitFor(() => {
+    expect(screen.getByRole("region", { name: "Side-by-side diff" })).toBeTruthy();
+  });
+  expect(peekBox()?.classList).toContain("right");
+  expect(peekBox()?.classList).not.toContain("left");
 });
 
 it("draws the lines a gap left out on both sides, side by side", async () => {

@@ -29,19 +29,22 @@ pub struct DiffThread {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum Placement {
-    /// Under the diff's row `row`, which shows its line.
-    Row { row: u32 },
+    /// Under the diff's row `row`, which shows its line, on `side`: `LEFT` or `RIGHT`, whose column of the
+    /// side-by-side view holds the thread.
+    Row { row: u32, side: Side },
     /// At the top of file `file`, as it is on the whole file, above the file's Outdated threads.
     File { file: u32 },
     /// At the top of file `file`, as the code under it has changed since, with the code it was written
     /// against.
     Outdated { file: u32, code: Option<ThreadCode> },
     /// Under line `head_line` of file `file` at the head, which no hunk shows, so the gap or the end of the
-    /// file around it opens to show it. `line` is the line as the thread's side counts it.
+    /// file around it opens to show it. `line` is the line as the thread's side counts it, and `side` which
+    /// column of the side-by-side view holds the thread.
     Outside {
         file: u32,
         line: u32,
         head_line: u32,
+        side: Side,
     },
     /// After the last file, on file `path`, which the diff no longer holds, with the code it was written
     /// against.
@@ -102,7 +105,7 @@ pub(super) fn notes(files: &[DiffFile], threads: &[DiffThread]) -> Vec<FileNotes
     let mut notes = vec![FileNotes::default(); files.len()];
     for thread in threads {
         let file = match &thread.at {
-            Placement::Row { row } => files.iter().rposition(|file| file.row <= *row),
+            Placement::Row { row, .. } => files.iter().rposition(|file| file.row <= *row),
             Placement::File { file }
             | Placement::Outdated { file, .. }
             | Placement::Outside { file, .. } => usize::try_from(*file).ok(),
@@ -160,7 +163,7 @@ fn placement(diff: &Diff, thread: &ThreadLine) -> (Order, Placement) {
         Subject::Line { .. } => return outdated(),
     };
     if let Some(row) = row_of(diff, rows.clone(), side, line) {
-        return ((row, 2, 0, String::new()), Placement::Row { row });
+        return ((row, 2, 0, String::new()), Placement::Row { row, side });
     }
     // A line in no row, no gap and not after the last hunk has nowhere to show, so it counts as Outdated.
     let Some((row, rank, head_line)) = outside(file, rows.end, side, line) else {
@@ -170,6 +173,7 @@ fn placement(diff: &Diff, thread: &ThreadLine) -> (Order, Placement) {
         file: index,
         line,
         head_line,
+        side,
     };
     ((row, rank, head_line, String::new()), at)
 }

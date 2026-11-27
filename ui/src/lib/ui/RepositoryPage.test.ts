@@ -260,6 +260,8 @@ describe("a Repository's Filters in Settings", () => {
   const filter = (at: number) => screen.getByRole("group", { name: `Filter ${at}` });
   const field = (at: number, name: "Name" | "Search") =>
     within(filter(at)).getByRole<HTMLInputElement>("textbox", { name });
+  const box = (at: number) =>
+    within(filter(at)).getByRole<HTMLInputElement>("checkbox", { name: "On the Workbench" });
   const press = (at: number, name: string) => {
     fireEvent.click(within(filter(at)).getByRole("button", { name }));
   };
@@ -297,6 +299,32 @@ describe("a Repository's Filters in Settings", () => {
     await vi.waitFor(() => {
       expect(shown()[0]).toEqual(["Bugs", "label:bug"]);
     });
+  });
+
+  it("shows each Filter's switch as the files hold it, and saves a changed one with the rest", async () => {
+    const dialog = read();
+    show("python/cpython", dialog);
+
+    expect([box(1).checked, box(2).checked]).toEqual([true, false]);
+    await fireEvent.click(box(2));
+
+    await vi.waitFor(() => {
+      expect(dialog.filters.changes).toEqual([
+        {
+          repository: "python/cpython",
+          read: [
+            { name: "Bugs", query: "label:bug", on_workbench: true },
+            { name: "Docs", query: "label:docs", on_workbench: false },
+          ],
+          filters: [
+            { name: "Bugs", query: "label:bug", was: "label:bug" },
+            { name: "Docs", query: "label:docs", was: "label:docs", on_workbench: true },
+          ],
+        },
+      ]);
+    });
+    await fireEvent.click(box(2));
+    expect(dialog.filters.changes).toEqual([]);
   });
 
   it("edits a name and a search in place, deletes a Filter, and turns a row with a blank one red", async () => {

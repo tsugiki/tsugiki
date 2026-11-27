@@ -1156,34 +1156,44 @@ export type DiffThreads_Serialize =
 
 /**
  *  A Filter as a Repository's page leaves it. `was` is the search it had when the dialog read the files,
- *  which finds its table in the file, so each key the page doesn't show, such as `on_workbench`, stays with
- *  it through a new name, a new search or a move. It is none for a Filter Add filter added, which the file
- *  gets with its name and search alone, so it is off the Workbench (#819).
+ *  which finds its table in the file, so each key the page doesn't show stays with it through a new name, a
+ *  new search or a move. It is none for a Filter Add filter added, which the file gets with its name and
+ *  search alone, so it is off the Workbench (#819, #535).
  */
 export type EditedFilter = EditedFilter_Serialize | EditedFilter_Deserialize;
 
 /**
  *  A Filter as a Repository's page leaves it. `was` is the search it had when the dialog read the files,
- *  which finds its table in the file, so each key the page doesn't show, such as `on_workbench`, stays with
- *  it through a new name, a new search or a move. It is none for a Filter Add filter added, which the file
- *  gets with its name and search alone, so it is off the Workbench (#819).
+ *  which finds its table in the file, so each key the page doesn't show stays with it through a new name, a
+ *  new search or a move. It is none for a Filter Add filter added, which the file gets with its name and
+ *  search alone, so it is off the Workbench (#819, #535).
  */
 export type EditedFilter_Deserialize = {
 	name: FilterName,
 	query: FilterQuery,
 	was?: FilterQuery | null,
+	/**
+	 *  The "On the Workbench" switch the page leaves, or none when the page didn't change it: then the
+	 *  Filter's key stays as the user wrote it, and one Add filter added keeps none, so it is off (#1017).
+	 */
+	on_workbench?: OnWorkbench | null,
 };
 
 /**
  *  A Filter as a Repository's page leaves it. `was` is the search it had when the dialog read the files,
- *  which finds its table in the file, so each key the page doesn't show, such as `on_workbench`, stays with
- *  it through a new name, a new search or a move. It is none for a Filter Add filter added, which the file
- *  gets with its name and search alone, so it is off the Workbench (#819).
+ *  which finds its table in the file, so each key the page doesn't show stays with it through a new name, a
+ *  new search or a move. It is none for a Filter Add filter added, which the file gets with its name and
+ *  search alone, so it is off the Workbench (#819, #535).
  */
 export type EditedFilter_Serialize = {
 	name: FilterName,
 	query: FilterQuery,
 	was: FilterQuery | null,
+	/**
+	 *  The "On the Workbench" switch the page leaves, or none when the page didn't change it: then the
+	 *  Filter's key stays as the user wrote it, and one Add filter added keeps none, so it is off (#1017).
+	 */
+	on_workbench: OnWorkbench | null,
 };
 
 /**  Whether a search has ended, and how. */

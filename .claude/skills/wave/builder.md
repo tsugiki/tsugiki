@@ -28,6 +28,8 @@ label it carries. Follow `AGENTS.md`, with these changes for a wave:
   them after the review, so a run before it is spent twice.
 - Run `just quick` before you report the build and after each round of fixes: it takes seconds, and it
   catches the formatting a review would otherwise spend a finding on.
+- Run `just lint` before you report the build and after each round of fixes too: neither `just quick` nor
+  `just preflight` runs ESLint, so a lint rule fails CI's `eslint` job while every local gate is green.
 - Run tests in the foreground with a `timeout`, not in the background: a background run that ends can leave
   you waiting on it with nothing running.
 - Read a gate's own exit code: never pipe `just preflight` through `tail`, since a pipeline reports the last

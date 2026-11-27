@@ -62,4 +62,6 @@ built at the same time.
 ## Wave log
 ```
 
+`just waves` reads this table back, so keep the `## Waves` heading and the `Wave` and `Tickets` columns.
+
 Write it as [SKILL.md](SKILL.md) says.

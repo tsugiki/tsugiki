@@ -1,15 +1,10 @@
 // `just next` lists the open tickets of the earliest open milestone that has any, the release being built,
 // so a session can pick its next ticket in one step. A ticket prints under the blockers it has in the
 // milestone, and the ones ready for an agent come first: `tickets.ts` holds that order.
-import { execFileSync } from "node:child_process";
-
 import { BLOCKED_BY, type BlockedBy, cutWarning, openBlockers } from "./blockers.ts";
 import { byVersion } from "./releasing.ts";
+import { gh } from "./run.ts";
 import { type Ticket, ticketLines } from "./tickets.ts";
-
-function gh(...args: string[]): string {
-  return execFileSync("gh", args, { encoding: "utf8" });
-}
 
 interface Milestone {
   number: number;

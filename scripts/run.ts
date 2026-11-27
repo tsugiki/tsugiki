@@ -1,4 +1,4 @@
-// The scripts' helpers for running commands and git, and for stopping with a message for the maintainer.
+// The scripts' helpers for running commands, git and gh, and for stopping with a message for the maintainer.
 import { execFileSync } from "node:child_process";
 
 /** Prints `message` and exits with 1. */
@@ -14,6 +14,11 @@ export function run(failed: string, command: string, ...args: string[]): string 
   } catch {
     stop(failed);
   }
+}
+
+/** Runs the `gh` CLI and returns its output, which can run past Node's default buffer of 1 MiB. */
+export function gh(...args: string[]): string {
+  return execFileSync("gh", args, { encoding: "utf8", maxBuffer: 2 ** 28 });
 }
 
 /** Runs a command and returns its output, or `undefined` when it fails, without printing its message. */

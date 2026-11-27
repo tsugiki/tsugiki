@@ -59,6 +59,12 @@ next:
 tree *tickets:
     node scripts/print-tree.ts {{tickets}}
 
+# Read a milestone's `## Waves` table back: `just waves` prints every wave of the release being built, and
+# `just waves 2` that wave. `just waves 2 0.3.7` reads that wave of the milestone named. `--bodies` adds each
+# ticket's title, state, labels and body, and `--json` prints the same for an agent.
+waves *args:
+    node scripts/print-waves.ts {{args}}
+
 # Run the app with hot reload
 dev:
     npm run dev

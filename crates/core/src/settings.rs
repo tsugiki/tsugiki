@@ -43,6 +43,7 @@ mod saving;
 const REPOSITORIES: &str = "repositories";
 const FILTERS: &str = "filters";
 const QUERY: &str = "query";
+const ON_WORKBENCH: &str = "on_workbench";
 const READ_ONLY: &str = "read_only";
 const RECENT: &str = "recent";
 /// The keys of an entry in `recent`.
@@ -181,14 +182,18 @@ pub struct RepositoryFilters {
 }
 
 /// A Filter as a Repository's page leaves it. `was` is the search it had when the dialog read the files,
-/// which finds its table in the file, so each key the page doesn't show, such as `on_workbench`, stays with
-/// it through a new name, a new search or a move. It is none for a Filter Add filter added, which the file
-/// gets with its name and search alone, so it is off the Workbench (#819).
+/// which finds its table in the file, so each key the page doesn't show stays with it through a new name, a
+/// new search or a move. It is none for a Filter Add filter added, whose table the file gets with its name
+/// and search alone, or with `on_workbench = true` when the user switched it on (#819, #535, #1017).
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Type)]
 pub struct EditedFilter {
     pub name: FilterName,
     pub query: FilterQuery,
     pub was: Option<FilterQuery>,
+    /// The "On the Workbench" switch the page leaves, or none when the page didn't change it: then the
+    /// Filter's key stays as the user wrote it, and one Add filter added keeps none, so it is off (#1017).
+    #[serde(default)]
+    pub on_workbench: Option<OnWorkbench>,
 }
 
 impl SettingsChanges {
@@ -2092,7 +2097,11 @@ impl TomlEdit<'_, Settings> {
         }
         let (repository, in_file) =
             self.repository_with_all_filters(name, Showing::Settings, Afterwards::OpenSettings)?;
-        if in_file == left {
+        let wants: Vec<Option<OnWorkbench>> =
+            (filters.iter()).map(|filter| filter.on_workbench).collect();
+        // The file says what the page leaves, so a second Apply after one whose answer the window missed
+        // succeeds: its names and searches, and each switch the page changed.
+        if in_file == left && switches_as_wanted(repository.get_mut(FILTERS), &wants) {
             return Ok(());
         }
         let read: Vec<(String, String)> = (change.read.iter())
@@ -2333,6 +2342,7 @@ fn add_filter(repository: &mut dyn TableLike, filter: &Filter) {
         name: filter.name.clone(),
         query: filter.query.clone(),
         was: None,
+        on_workbench: None,
     };
     match repository.get_mut(FILTERS) {
         Some(Item::Value(Value::Array(list))) if !list.is_empty() => {
@@ -2420,6 +2430,7 @@ fn block_filters(blocks: Vec<Table>, edits: &[EditedFilter]) -> ArrayOfTables {
     for (at, edit) in edits.iter().enumerate() {
         let mut filter = claim(&mut kept, edit).unwrap_or_default();
         put_name_and_search(&mut filter, edit);
+        put_switch(&mut filter, edit);
         // A block past the old ones' places follows the block before it.
         filter.set_position(places.get(at).copied().flatten());
         filters.push(filter);
@@ -2443,11 +2454,19 @@ fn put_inline_filters(list: &mut Array, edits: &[EditedFilter]) {
         let filter = match claim(&mut kept, edit) {
             Some(mut filter) => {
                 put_name_and_search(&mut filter, edit);
+                // A key added at the end would follow the space before the `}`, so it moves to the new last
+                // value, as `read_only` does. It is a Filter whose switch stays that this leaves be.
+                let closing = closing_space(&filter);
+                put_switch(&mut filter, edit);
+                if let Some(closing) = closing {
+                    keep_closing_space(&mut filter, closing);
+                }
                 filter
             }
             None => {
                 let mut added = InlineTable::new();
                 put_name_and_search(&mut added, edit);
+                put_switch(&mut added, edit);
                 added.fmt();
                 added
             }
@@ -2478,6 +2497,39 @@ fn put_name_and_search(filter: &mut dyn TableLike, edit: &EditedFilter) {
     }
 }
 
+/// Gives `filter` the "On the Workbench" switch of `edit`, when the page changed it and the file says
+/// other, keeping a comment the user wrote on the key. A Filter switched off says so, as `switch_filter`
+/// writes it, and it leaves the key as the user wrote it otherwise. A block keeps its last key's trailing
+/// comment, which an inline table's `put_inline_filters` moves around the new key.
+fn put_switch(filter: &mut dyn TableLike, edit: &EditedFilter) {
+    let Some(wanted) = edit.on_workbench else {
+        return;
+    };
+    if switch_of(&*filter) == wanted {
+        return;
+    }
+    merge_value(
+        filter,
+        ON_WORKBENCH,
+        &toml_edit::value(bool::from(wanted)),
+        None,
+    );
+}
+
+/// The "On the Workbench" switch `filter` says: a Filter without the key is off.
+fn switch_of(filter: &dyn TableLike) -> OnWorkbench {
+    (filter.get(ON_WORKBENCH).and_then(Item::as_bool)).map_or(OnWorkbench::Off, OnWorkbench::from)
+}
+
+/// Whether the Filters of `filters`, in their order, say the switch each `wants` gives it. A `None` leaves
+/// the file's key be, so it never stops an Apply.
+fn switches_as_wanted(filters: Option<&mut Item>, wants: &[Option<OnWorkbench>]) -> bool {
+    let held =
+        (filters.map(tables_of).unwrap_or_default().into_iter()).map(|filter| switch_of(&*filter));
+    held.zip(wants)
+        .all(|(held, wanted)| wanted.is_none_or(|wanted| held == wanted))
+}
+
 /// Sets `on_workbench` on the first Filter of `filters` that searches `query`, the one the settings read,
 /// keeping a comment the user wrote on it, and says whether there was one. A Filter switched off says so,
 /// so a hand edit finds the key.
@@ -2490,7 +2542,7 @@ fn switch_filter(filters: &mut Item, query: &FilterQuery, on: OnWorkbench) -> bo
     };
     merge_value(
         filter,
-        "on_workbench",
+        ON_WORKBENCH,
         &toml_edit::value(bool::from(on)),
         None,
     );

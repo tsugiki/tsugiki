@@ -1975,6 +1975,64 @@ fn apply_keeps_filters_written_inline_inline() {
 }
 
 #[test]
+fn apply_switches_a_filter_in_an_inline_list_on() {
+    let (mut files, folders, _root) = settings_saying(
+        "filters-inline-switch",
+        "repositories = [{ name = \"a/b\", filters = [{ name = \"Bugs\", query = \"label:bug\" }] }]\n",
+    );
+
+    files
+        .apply(filters_of(
+            &files.loaded().settings,
+            "a/b",
+            vec![edited_on(
+                "Bugs",
+                "label:bug",
+                Some("label:bug"),
+                OnWorkbench::On,
+            )],
+        ))
+        .unwrap();
+    let after = fs::read_to_string(folders.settings_file()).unwrap();
+
+    assert_eq!(
+        after,
+        "repositories = [{ name = \"a/b\", filters = [{ name = \"Bugs\", query = \"label:bug\", \
+         on_workbench = true }] }]\n"
+    );
+    assert_eq!(
+        read_filters(&files),
+        [("Bugs".to_owned(), "label:bug".to_owned(), true)]
+    );
+}
+
+#[test]
+fn apply_adds_a_filter_to_an_inline_list_switched_on() {
+    let (mut files, folders, _root) = settings_saying(
+        "filters-inline-added-switch",
+        "repositories = [{ name = \"a/b\", filters = [{ name = \"Bugs\", query = \"label:bug\" }] }]\n",
+    );
+
+    files
+        .apply(filters_of(
+            &files.loaded().settings,
+            "a/b",
+            vec![
+                edited("Bugs", "label:bug", Some("label:bug")),
+                edited_on("Mine", "author:@me", None, OnWorkbench::On),
+            ],
+        ))
+        .unwrap();
+    let after = fs::read_to_string(folders.settings_file()).unwrap();
+
+    assert_eq!(
+        after,
+        "repositories = [{ name = \"a/b\", filters = [{ name = \"Bugs\", query = \"label:bug\" },{ \
+         name = \"Mine\", query = \"author:@me\", on_workbench = true }] }]\n"
+    );
+}
+
+#[test]
 fn apply_keeps_an_inline_list_in_a_block_inline_one_per_line() {
     let before = "\
 [[repositories]]

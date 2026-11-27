@@ -11,7 +11,8 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
 - Each Filter has an "On the Workbench" switch, `on_workbench` in `settings.toml`, off unless the file says
   so ([#819](https://github.com/tsugiki/tsugiki/issues/819)). The Filter's view has it beside its name, and a
   change there saves it at once. A change made while another saves waits for it, then saves the switch as
-  the user last set it, and the switch stays in focus throughout. The items of a Filter switched off
+  the user last set it, and the switch stays in focus throughout. The Repository's page in Settings has it
+  beside each Filter too, and saves a change there with Apply (#1017). The items of a Filter switched off
   stay out of the Workbench and out of **Reach**: Tsugiki fetches no head and reads ahead no Conversation for
   them. The sync still runs its search, so its view lists what it found, its **Matched PRs** first. In an
   Issue view, a PR any Filter found, switched on or off, stays out of the fold.

@@ -184,7 +184,7 @@ pub struct RepositoryFilters {
 /// A Filter as a Repository's page leaves it. `was` is the search it had when the dialog read the files,
 /// which finds its table in the file, so each key the page doesn't show stays with it through a new name, a
 /// new search or a move. It is none for a Filter Add filter added, which the file gets with its name and
-/// search alone, so it is off the Workbench (#819, #535).
+/// search alone, so it is off the Workbench unless the user switched it on (#819, #535, #1017).
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Type)]
 pub struct EditedFilter {
     pub name: FilterName,
@@ -2531,10 +2531,14 @@ fn switch_of(filter: &dyn TableLike) -> OnWorkbench {
 /// Whether the Filters of `filters`, in their order, say the switch each `wants` gives it. A `None` leaves
 /// the file's key be, so it never stops an Apply.
 fn switches_as_wanted(filters: Option<&mut Item>, wants: &[Option<OnWorkbench>]) -> bool {
-    let held =
-        (filters.map(tables_of).unwrap_or_default().into_iter()).map(|filter| switch_of(&*filter));
-    held.zip(wants)
-        .all(|(held, wanted)| wanted.is_none_or(|wanted| held == wanted))
+    let held: Vec<OnWorkbench> = (filters.map(tables_of).unwrap_or_default().into_iter())
+        .map(|filter| switch_of(&*filter))
+        .collect();
+    held.len() == wants.len()
+        && held
+            .iter()
+            .zip(wants)
+            .all(|(held, wanted)| wanted.is_none_or(|wanted| *held == wanted))
 }
 
 /// Sets `on_workbench` on the first Filter of `filters` that searches `query`, the one the settings read,

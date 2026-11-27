@@ -5,6 +5,14 @@ fn from_toml(text: &str) -> Result<Filter, toml_edit::de::Error> {
 }
 
 #[test]
+fn a_person_s_search_names_them_as_the_author_and_open() {
+    assert_eq!(
+        FilterQuery::person("octocat").as_str(),
+        "is:open author:octocat"
+    );
+}
+
+#[test]
 fn a_repository_starts_with_mine_on_the_workbench_and_involved_off_it() {
     let queries: Vec<(String, String, OnWorkbench)> = Filter::starters()
         .into_iter()

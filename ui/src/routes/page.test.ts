@@ -371,39 +371,6 @@ it("saves the Inbox search as a Filter from its Save dialog, then opens it with 
   });
 });
 
-it("saves a person Filter from its Save dialog under the login", async () => {
-  core.home.mockResolvedValue(gcmonHome);
-  core.workbench.mockResolvedValue(
-    workbenchPage([listedIssue(7, { title: "It crashes", people: ["octocat"] })], {
-      count: 1,
-      filter_query: "is:open author:octocat",
-    }),
-  );
-  core.searchInbox.mockResolvedValue(done);
-  core.saveFilter.mockResolvedValue(done);
-  render(Page);
-  await fireEvent.click(await screen.findByRole("button", { name: "octocat" }));
-
-  await fireEvent.click(await screen.findByRole("button", { name: "Save as Filter" }));
-
-  const dialog = await screen.findByRole("dialog", { name: "Save as Filter" });
-  const name = within(dialog).getByRole("textbox", { name: "Name" }) as HTMLInputElement;
-  const query = within(dialog).getByRole("textbox", { name: "Query" }) as HTMLInputElement;
-  expect([name.value, query.value]).toEqual(["octocat", "is:open author:octocat"]);
-  await fireEvent.click(within(dialog).getByRole("button", { name: "Save" }));
-
-  await vi.waitFor(() => {
-    expect(core.saveFilter).toHaveBeenCalledExactlyOnceWith(
-      "some-maintainer/gcmon",
-      "octocat",
-      "is:open author:octocat",
-    );
-  });
-  await vi.waitFor(() => {
-    expect(screen.queryByRole("button", { name: "octocat unsaved" })).toBeNull();
-  });
-});
-
 it("keeps the Save dialog open and says why the core refused the Filter's name", async () => {
   core.home.mockResolvedValue(gcmonHome);
   core.inbox.mockResolvedValue(inboxPage([]));

@@ -8,6 +8,11 @@ import * as __TAURI_EVENT from "@tauri-apps/api/event";
 export const commands = {
 	about: () => __TAURI_INVOKE<About>("about"),
 	/**
+	 *  The typed search clicking the person `login` runs (#472), as the core spells it, for the window to put in
+	 *  the Inbox's search box. This waits on nothing.
+	 */
+	personQuery: (login: string) => typedError<string, Error_Serialize>(__TAURI_INVOKE("person_query", { login })),
+	/**
 	 *  Opens WebView2's DevTools for the window that asks, from the palette (#460). Only a development build
 	 *  has DevTools: a release turns the browser's keys off and refuses here too (ADR 0013).
 	 */
@@ -4666,12 +4671,7 @@ export type WorkbenchView = { kind: "whole" } | { kind: "filter"; query: FilterQ
 /**  The Archived items, the last archived first (#491). */
 { kind: "archived" } | 
 /**  The Pinned issues (#489). */
-{ kind: "pinned" } | 
-/**
- *  The temporary Filter a clicked name opens (#472): what the person authored, open, as a typed search
- *  finds it.
- */
-{ kind: "person"; login: Login };
+{ kind: "pinned" };
 
 /**  A Repository's Workbench or one of its views, with what the Sidebar shows beside it. */
 export type Workbench_Deserialize = {
@@ -4694,11 +4694,6 @@ export type Workbench_Deserialize = {
 	/**  The count of Pinned issues on the Workbench that Need attention (#489). */
 	pinned: number,
 	filters: FilterLine_Deserialize[],
-	/**
-	 *  The search a person Filter runs, spelled out, which its Save as Filter dialog takes (#472). Empty in
-	 *  another view.
-	 */
-	filter_query?: FilterQuery | null,
 };
 
 /**  A Repository's Workbench or one of its views, with what the Sidebar shows beside it. */
@@ -4722,11 +4717,6 @@ export type Workbench_Serialize = {
 	/**  The count of Pinned issues on the Workbench that Need attention (#489). */
 	pinned: number,
 	filters: FilterLine_Serialize[],
-	/**
-	 *  The search a person Filter runs, spelled out, which its Save as Filter dialog takes (#472). Empty in
-	 *  another view.
-	 */
-	filter_query: FilterQuery | null,
 };
 
 /**  Where the user's Review of a PR stands, which its row shows in place of GitHub's review state. */

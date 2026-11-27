@@ -76,10 +76,6 @@ export const byMutedAuthor = (row: { mute_author: MuteAuthor }) => row.mute_auth
 /** A line of the Sidebar whose items the list shows: a view of the Workbench, or the Inbox (#822). */
 export type SidebarView = WorkbenchView | { kind: "inbox" };
 
-/** The view a Save as Filter draft came from: the Inbox's search (#471) or a person Filter (#472). Saving
- * clears the state of the one it came from, and of that one alone. */
-export type SaveSource = "search" | "person";
-
 /** How long a pause in typing the Inbox's search box sends it to GitHub (#465). */
 export const SEARCH_PAUSE_MS = 1000;
 
@@ -111,11 +107,7 @@ export const treeRows = (entries: TreeEntry[]): WorkbenchRow[] =>
 type Line = { stop: Stop; title: string };
 
 /** The key of view `view`, which keeps its own unfolded Issues. */
-const keyOf = (view: SidebarView) => {
-  if (view.kind === "filter") return `filter ${view.query}`;
-  if (view.kind === "person") return `person ${view.login}`;
-  return view.kind;
-};
+const keyOf = (view: SidebarView) => (view.kind === "filter" ? `filter ${view.query}` : view.kind);
 
 /** Whether two keys name the same item. */
 const sameKey = (a: ItemKey, b: ItemKey) => a.kind === b.kind && a.number === b.number;
@@ -190,13 +182,6 @@ export class WorkbenchState {
   showMuted = $state<ShowMuted>("off");
   /** The text of the Inbox's search box (#464). */
   search = $state("");
-  /** The temporary person Filter a clicked name opens (#472), until the user saves or closes it. */
-  person = $state<{ login: string }>();
-  /** The search the person Filter saves as, as the core spells it, for the person the user opened, until it
-   * is saved or closed (#472). */
-  #personQuery = $state<string>();
-  /** The click that asked for the person Filter on show, which alone sends its search (#472). */
-  #personAsked = 0;
   /** Whether the search the last answer read needs GitHub, so the Inbox lists no local rows (#464). */
   needsGitHub = $state(false);
   /** How many results the search's answer listed of how many it reaches, past GitHub's 1,000 (#465). */
@@ -297,9 +282,7 @@ export class WorkbenchState {
     await this.#ask();
   }
 
-  /** Shows `view` in the list, and answers the query a person view's answer spelled (#472), or nothing for
-   * another view. */
-  async select(view: SidebarView): Promise<string | undefined> {
+  async select(view: SidebarView) {
     this.selected = view;
     // A change of view is neither a user action nor a core change (#1052): an answer to an action made in
     // the view left behind moves nothing.
@@ -315,7 +298,7 @@ export class WorkbenchState {
       this.truncated = null;
       this.#filterQuery = undefined;
     }
-    return await this.#ask();
+    await this.#ask();
   }
 
   /** Narrows the Inbox to `text`, which the cache reads (#464), and asks on each key. An empty box brings
@@ -351,6 +334,15 @@ export class WorkbenchState {
     this.#searchTimer = undefined;
   }
 
+  /** Opens the Inbox on the typed search that lists what `login` authored (#472): the box holds the query the
+   * core spells, and the Inbox lists it as it lists any typed search. */
+  async openPerson(login: string) {
+    const spelled = await ask(commands.personQuery(login));
+    if (spelled.status === "error") return;
+    this.search = spelled.data;
+    await this.select({ kind: "inbox" });
+  }
+
   /** The Save as Filter dialog's draft: the box's text as its name, and the query with Tsugiki's additions
    * spelled out once the answer for the text on show has arrived (#471). Nothing while that answer waits or
    * failed, as the text alone doesn't say what the Filter would search. */
@@ -360,72 +352,18 @@ export class WorkbenchState {
     return { name, query: this.#filterQuery.query };
   }
 
-  /**
-   * Opens the person Filter for `login` (#472): the Sidebar lists it unsaved, the list shows its cached
-   * matches at once, and Tsugiki sends its search to GitHub again, as it does each time the Filter opens. A
-   * click on another person replaces the one before.
-   *
-   * Only the click that still owns the view sends a search. An answer a newer click overtook, or one that
-   * lands after the user closed the Filter or the window stopped, spells a query for nobody (#472).
-   */
-  async openPerson(login: string) {
-    const asked = (this.#personAsked += 1);
-    this.person = { login };
-    this.#personQuery = undefined;
-    const query = await this.select({ kind: "person", login });
-    if (query === undefined || !this.#ownsPerson(asked, login)) return;
-    await commands.searchInbox(this.#repository, query);
-  }
-
-  /** Whether the person `login` the *`asked`*'th click opened still owns the view on show, so its answer
-   * sends the search it spelled (#472). */
-  #ownsPerson(asked: number, login: string): boolean {
-    return (
-      asked === this.#personAsked &&
-      !this.#stopped &&
-      this.person?.login === login &&
-      this.selected.kind === "person" &&
-      this.selected.login === login
-    );
-  }
-
-  /** Closes the temporary person Filter (#472): the Sidebar lists it no more, and the list shows the
-   * Workbench while it showed the person. */
-  async closePerson() {
-    const closing = this.person !== undefined && this.selected.kind === "person";
-    this.#personAsked += 1;
-    this.person = undefined;
-    this.#personQuery = undefined;
-    if (closing) await this.select({ kind: "whole" });
-  }
-
-  /** The person Filter's draft for the Save as Filter dialog (#472): the login as its name, and the query
-   * the core spelled, for the person the user opened, until it is saved or closed. */
-  get personDraft(): { name: string; query: string } | undefined {
-    const person = this.person;
-    const query = this.#personQuery;
-    return person === undefined || query === undefined ? undefined : { name: person.login, query };
-  }
-
-  /**
-   * Saves the draft named `name` that searches `query` as a Filter, opens it in place of the view on show,
-   * and clears the state `source` names: the Inbox's box (#471), or the unsaved person Filter (#472).
-   * Answers the core's reason when it refuses one, as a name the Repository's Filters already use. The
-   * Filter's first search runs at once, and its view lists the items as they land.
-   */
-  async saveFilter(name: string, query: string, source: SaveSource): Promise<string | undefined> {
+  /** Saves the Inbox's search as a Filter named `name` that searches `query`, opens it in place of the Inbox,
+   * and clears the box (#471). Answers the core's reason when it refuses one, as a name the Repository's
+   * Filters already use. The Filter's first search runs at once, and its view lists the items as they
+   * land. */
+  async saveFilter(name: string, query: string): Promise<string | undefined> {
     const problem = await problemIn(commands.saveFilter(this.#repository, name, query));
     if (problem !== undefined) return problem;
-    if (source === "search") {
-      this.search = "";
-      this.#searchAsked = "";
-      this.#clearSearchTimer();
-      this.needsGitHub = false;
-      this.truncated = null;
-    } else {
-      this.person = undefined;
-      this.#personQuery = undefined;
-    }
+    this.search = "";
+    this.#searchAsked = "";
+    this.#clearSearchTimer();
+    this.needsGitHub = false;
+    this.truncated = null;
     await this.select({ kind: "filter", query });
     return undefined;
   }
@@ -514,7 +452,6 @@ export class WorkbenchState {
     if (selected.kind === "stale_reviews") return "Stale reviews";
     if (selected.kind === "archived") return "Archived";
     if (selected.kind === "pinned") return "Pinned issues";
-    if (selected.kind === "person") return selected.login;
     return this.filters.find((filter) => filter.query === selected.query)?.name ?? selected.query;
   }
 
@@ -980,20 +917,18 @@ export class WorkbenchState {
     return question === this.#lastQuestion && !this.#stopped;
   }
 
-  /** Asks for the view `selected` names, and answers the query a person view spelled (#472), or nothing for
-   * another view. A question about the Inbox reads it, so it waits its turn among the Inbox's reads. */
-  async #ask(): Promise<string | undefined> {
+  /** Asks for the view `selected` names. A question about the Inbox reads it, so it waits its turn among
+   * the Inbox's reads. */
+  async #ask() {
     this.#lastQuestion += 1;
     const question = this.#lastQuestion;
     const view = this.selected;
     const order = this.#order();
     if (view.kind === "inbox") {
-      await this.#inOrder(async () => {
-        await this.#answer(question, view, order);
-      });
-      return undefined;
+      await this.#inOrder(() => this.#answer(question, view, order));
+    } else {
+      await this.#answer(question, view, order);
     }
-    return this.#answer(question, view, order);
   }
 
   /**
@@ -1002,26 +937,21 @@ export class WorkbenchState {
    * of the Inbox that reaches as far down as the pages on show did: the first page while the list shows
    * another view. A question that a newer one followed while it waited its turn asks nothing.
    */
-  async #answer(question: number, view: SidebarView, order: ListOrder): Promise<string | undefined> {
-    if (!this.#current(question)) return undefined;
+  async #answer(question: number, view: SidebarView, order: ListOrder) {
+    if (!this.#current(question)) return;
     const inbox = view.kind === "inbox";
     const search = this.search.trim();
     const [answer, list] = await Promise.all([
       ask(hud.timed(() => commands.workbench(this.#repository, inbox ? { kind: "whole" } : view))),
       inbox ? this.#inboxPage(this.#againPage()) : undefined,
     ]);
-    // The query this view's answer spelled, which belongs to the question that asked for it, not to the one
-    // on show when it lands: a click that a newer question overtook still sends its own search (#472).
-    const personQuery =
-      view.kind === "person" && answer.status === "ok" ? (answer.data.filter_query ?? undefined) : undefined;
-    if (!this.#current(question)) return personQuery;
+    if (!this.#current(question)) return;
     if (answer.status === "ok") {
       this.count = answer.data.count;
       this.reviewRequests = answer.data.review_requests;
       this.staleReviews = answer.data.stale_reviews;
       this.pinned = answer.data.pinned;
       this.filters = answer.data.filters;
-      if (view.kind === "person") this.#personQuery = personQuery;
     }
     if (list?.status === "ok") {
       this.showMuted = list.data.show_muted;
@@ -1047,7 +977,6 @@ export class WorkbenchState {
     }
     const failed = [answer, listed].find((one) => one.status === "error");
     this.error = failed?.error.message;
-    return personQuery;
   }
 
   /** Puts `items` on show, with `muted` folded at their end, the answer for `view` in `order`, with the

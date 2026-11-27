@@ -66,6 +66,16 @@ fn about() -> tsugiki_core::About {
     tsugiki_core::about(&version(), Build::CURRENT)
 }
 
+/// The typed search clicking the person `login` runs (#472), as the core spells it, for the window to put in
+/// the Inbox's search box. This waits on nothing.
+#[tauri::command]
+#[specta::specta]
+fn person_query(login: &str) -> Result<String, Error> {
+    let login = Login::parse(login)
+        .ok_or_else(|| Error::new(ErrorKind::Internal, "The name doesn't name one person."))?;
+    Ok(FilterQuery::person(login.as_str()).as_str().to_owned())
+}
+
 /// Opens WebView2's DevTools for the window that asks, from the palette (#460). Only a development build
 /// has DevTools: a release turns the browser's keys off and refuses here too (ADR 0013).
 #[tauri::command]
@@ -1123,6 +1133,7 @@ pub fn specta_builder<R: tauri::Runtime>() -> Builder<R> {
     Builder::<R>::new()
         .commands(collect_commands![
             about,
+            person_query,
             // Specta reads the types through `Wry`, and Tauri's handler takes the builder's runtime.
             open_devtools::<tauri::Wry>,
             status,

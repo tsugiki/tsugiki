@@ -90,7 +90,6 @@ export const workbenchPage = <Item, Filter = never>(
     stale_reviews?: number;
     pinned?: number;
     filters?: Filter[];
-    filter_query?: string | null;
   } = {},
 ) =>
   ok({
@@ -101,7 +100,6 @@ export const workbenchPage = <Item, Filter = never>(
     stale_reviews: more.stale_reviews ?? 0,
     pinned: more.pinned ?? 0,
     filters: more.filters ?? ([] as Filter[]),
-    filter_query: more.filter_query ?? null,
   });
 
 /** PR `number`'s row, open and unreviewed, its CI passed, seen, with what `overrides` says instead. */

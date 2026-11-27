@@ -140,32 +140,3 @@ it("draws no rule over the Filters while there are none, and one over the Pinned
 
   expect([withFilters, none.container.querySelectorAll(".rule").length]).toEqual([3, 2]);
 });
-
-it("adds the unsaved person Filter to the strip, and a click opens it again", async () => {
-  const onopenperson = vi.fn();
-  render(SidebarIcons, {
-    ...strip,
-    filters: [],
-    person: { login: "octocat" },
-    selected: { kind: "person", login: "octocat" },
-    onopenperson,
-  });
-
-  const icon = button("octocat, unsaved");
-  expect([icon.title, icon.getAttribute("aria-current")]).toEqual(["octocat (unsaved)", "true"]);
-
-  await fireEvent.click(icon);
-  expect(onopenperson).toHaveBeenCalledExactlyOnceWith("octocat");
-});
-
-it("does nothing at a click on the unsaved person Filter unless the page says", async () => {
-  render(SidebarIcons, {
-    ...strip,
-    filters: [],
-    person: { login: "octocat" },
-    selected: whole,
-  });
-
-  await fireEvent.click(button("octocat, unsaved"));
-  expect(button("octocat, unsaved").getAttribute("aria-current")).toBeNull();
-});

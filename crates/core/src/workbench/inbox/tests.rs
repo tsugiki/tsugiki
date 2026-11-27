@@ -1383,26 +1383,6 @@ fn a_brought_back_closed_issue_is_open_to_a_search_as_it_is_to_the_inbox() {
 }
 
 #[test]
-fn a_search_leaves_out_a_closed_issue_that_nothing_brought_back() {
-    let world = ViewWorld::new("inbox-search-closed");
-    let mut closed = issue_at(1, ago(60));
-    closed.state = Some(IssueState::Closed);
-    closed.title = "Fix the parser".to_owned();
-    let mut open = issue_at(2, ago(5));
-    open.title = "Fix the docs".to_owned();
-    world.has(vec![], vec![closed, open]);
-
-    let found = searched(&world, "is:open fix");
-    world.finish();
-
-    assert_eq!(
-        outline(&found),
-        [("issue", 2, vec![])],
-        "a closed Issue nothing brought back is closed to is:open, though the cache holds it"
-    );
-}
-
-#[test]
 fn a_search_keeps_the_state_the_inbox_judged_of_the_whole_tree() {
     let world = ViewWorld::new("inbox-search-archived");
     let mut archived = issue_at(1, ago(5));
@@ -1706,33 +1686,6 @@ fn an_answer_lists_the_cached_rows_it_returned_in_github_s_order_and_drops_the_o
     );
     assert!(!listed.needs_github);
     assert_eq!(listed.truncated, None);
-}
-
-#[test]
-fn an_answer_leaves_out_a_closed_issue_that_nothing_brought_back() {
-    let world = ViewWorld::new("inbox-answer-closed");
-    let mut closed = issue_at(1, ago(5));
-    closed.state = Some(IssueState::Closed);
-    world.has(vec![], vec![closed, issue_at(2, ago(3))]);
-    keep_answer(
-        &world,
-        "is:issue review:approved",
-        InboxSearch {
-            hits: vec![found(2, RowKind::Issue, ago(3))],
-            total: 1,
-            cut_off: false,
-        },
-    );
-
-    let listed = searched(&world, "is:issue review:approved");
-    world.finish();
-
-    assert_eq!(
-        outline(&listed),
-        [("issue", 2, vec![])],
-        "GitHub's answer decides, so the closed Issue the cache holds and it left out is dropped"
-    );
-    assert!(!listed.needs_github);
 }
 
 #[test]

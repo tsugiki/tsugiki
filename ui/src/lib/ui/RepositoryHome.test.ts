@@ -8,7 +8,7 @@ import { keyTarget } from "./keys";
 import type { Peek, PeekLayout } from "$lib/state/peek";
 import { PrFilesState, type FilesMode } from "$lib/state/pr-files.svelte";
 import { PrViewState } from "$lib/state/pr-view.svelte";
-import type { ListedItem, MuteAuthor } from "$lib/state/workbench.svelte";
+import type { MuteAuthor } from "$lib/state/workbench.svelte";
 import {
   diffFile,
   done,
@@ -44,6 +44,7 @@ const core = vi.hoisted(() => ({
   inbox: vi.fn(),
   searchInbox: vi.fn(),
   fillInboxPlaceholders: vi.fn(),
+  personQuery: vi.fn(),
   issue: vi.fn(),
   openIssue: vi.fn(),
   pullRequest: vi.fn(),
@@ -98,6 +99,7 @@ vi.mock("$lib/data/bindings", async () => {
       inbox: core.inbox,
       searchInbox: core.searchInbox,
       fillInboxPlaceholders: core.fillInboxPlaceholders,
+      personQuery: core.personQuery,
       issue: core.issue,
       openIssue: core.openIssue,
       pullRequest: core.pullRequest,
@@ -542,79 +544,47 @@ it("shows a Filter's Issues when the user selects it, with the Sidebar's counts"
   expect(screen.getByRole("button", { name: "Mine 1" }).getAttribute("aria-current")).toBe("true");
 });
 
-it("opens the person Filter for a clicked name, lists it unsaved, and closes it from the Sidebar", async () => {
-  const onsaveperson = vi.fn();
-  core.workbench.mockImplementation(async (_repository: string, view: { kind: string }) =>
-    workbenchPage([issue], {
-      count: 1,
-      filter_query: view.kind === "person" ? "is:open author:issue-author" : null,
-    }),
-  );
+it("puts the query a clicked name runs in the Inbox's box and opens the Inbox (#472)", async () => {
+  const query = "is:open author:issue-author";
+  core.personQuery.mockResolvedValue(ok(query));
+  core.workbench.mockResolvedValue(workbenchPage([issue], { count: 1 }));
   core.searchInbox.mockResolvedValue(done);
+  core.inbox.mockResolvedValue(inboxPage([issue], null, "off", false, null, query));
   render(RepositoryHome, {
     name: "python/cpython",
     onpick: () => {},
     onsettings: () => {},
     onsavefilter: () => {},
-    onsaveperson,
   });
 
   await fireEvent.click(await screen.findByRole("button", { name: "issue-author" }));
+
+  expect((screen.getByRole("searchbox", { name: "Search the Inbox" }) as HTMLInputElement).value).toBe(query);
+  expect(await screen.findByRole("heading", { name: "Inbox" })).toBeTruthy();
   await vi.waitFor(() => {
-    expect(core.searchInbox).toHaveBeenCalledExactlyOnceWith("python/cpython", "is:open author:issue-author");
+    expect(core.searchInbox).toHaveBeenCalledExactlyOnceWith("python/cpython", query);
   });
-
-  expect(core.workbench).toHaveBeenLastCalledWith("python/cpython", {
-    kind: "person",
-    login: "issue-author",
-  });
-  const sidebar = within(screen.getByRole("navigation", { name: "Sidebar" }));
-  expect(sidebar.getByRole("button", { name: "issue-author unsaved" }).getAttribute("aria-current")).toBe(
-    "true",
-  );
-
-  await fireEvent.click(sidebar.getByRole("button", { name: "Save as Filter" }));
-  expect(onsaveperson).toHaveBeenCalledExactlyOnceWith({
-    name: "issue-author",
-    query: "is:open author:issue-author",
-  });
-
-  await fireEvent.click(sidebar.getByRole("button", { name: "Close the unsaved Filter" }));
-  await vi.waitFor(() => {
-    expect(sidebar.queryByRole("button", { name: /unsaved/ })).toBeNull();
-  });
-  expect(core.workbench).toHaveBeenLastCalledWith("python/cpython", { kind: "whole" });
+  expect(await screen.findByRole("button", { name: "#112564 GIL drop during collection" })).toBeTruthy();
 });
 
-it("opens the person Filter from the strip of icons and brings the full Sidebar back", async () => {
-  core.paneLayout.mockResolvedValue({ ...DEFAULT_LAYOUT, sidebar_icons: true });
-  core.workbench.mockImplementation(async (_repository: string, view: { kind: string }) =>
-    workbenchPage([issue], {
-      count: 1,
-      filter_query: view.kind === "person" ? "is:open author:issue-author" : null,
-    }),
-  );
+it("saves the search a clicked name put in the box as a Filter (#472)", async () => {
+  const query = "is:open author:issue-author";
+  const onsavefilter = vi.fn();
+  core.personQuery.mockResolvedValue(ok(query));
+  core.workbench.mockResolvedValue(workbenchPage([issue], { count: 1 }));
   core.searchInbox.mockResolvedValue(done);
+  core.inbox.mockResolvedValue(inboxPage([issue], null, "off", false, null, query));
   render(RepositoryHome, {
     name: "python/cpython",
     onpick: () => {},
     onsettings: () => {},
-    onsavefilter: () => {},
+    onsavefilter,
   });
 
   await fireEvent.click(await screen.findByRole("button", { name: "issue-author" }));
-  await vi.waitFor(() => {
-    expect(core.searchInbox).toHaveBeenCalledTimes(1);
-  });
+  await fireEvent.click(await screen.findByRole("button", { name: "Save" }));
 
-  await fireEvent.click(screen.getByRole("button", { name: "issue-author, unsaved" }));
-
-  const sidebar = within(screen.getByRole("navigation", { name: "Sidebar" }));
-  await vi.waitFor(() => {
-    expect(core.searchInbox).toHaveBeenCalledTimes(2);
-  });
-  expect(sidebar.getByRole("button", { name: "issue-author unsaved" })).toBeTruthy();
-  expect(screen.getByRole("button", { name: "Sidebar as Icons" })).toBeTruthy();
+  expect(onsavefilter).toHaveBeenCalledExactlyOnceWith({ name: query, query });
 });
 
 it("marks what Needs attention the way unread mail is, and says why", async () => {
@@ -6626,43 +6596,6 @@ it("fills only the placeholders the user scrolls to, each once, in the Inbox (#4
   });
   await fireEvent.scroll(list as HTMLElement);
   expect(core.fillInboxPlaceholders).toHaveBeenCalledTimes(2);
-});
-
-it("fills a person Filter's placeholders as the user scrolls to them (#472)", async () => {
-  const placeholder = placeholderItem(4242, "issue");
-  core.workbench.mockImplementation(async (_repository: string, view: { kind: string }) => {
-    const items = (view.kind === "person" ? [placeholder] : [issue]) as ListedItem[];
-    return workbenchPage(items, {
-      count: 1,
-      filter_query: view.kind === "person" ? "is:open author:issue-author" : null,
-    });
-  });
-  core.searchInbox.mockResolvedValue(done);
-  core.fillInboxPlaceholders.mockResolvedValue(ok([4242]));
-  render(RepositoryHome, {
-    name: "python/cpython",
-    onpick: () => {},
-    onsettings: () => {},
-    onsavefilter: () => {},
-  });
-  await fireEvent.click(await screen.findByRole("button", { name: "issue-author" }));
-  await screen.findByRole("heading", { name: "issue-author" });
-
-  const list = document.querySelector<HTMLElement>(".list");
-  const shown = document.querySelector<HTMLElement>('[data-placeholder="4242"]');
-  const layOut = vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (
-    this: HTMLElement,
-  ) {
-    if (this === list) return { top: 0, bottom: 100 } as DOMRect;
-    if (this === shown) return { top: 10, bottom: 60 } as DOMRect;
-    return { top: 0, bottom: 0 } as DOMRect;
-  });
-  onTestFinished(() => layOut.mockRestore());
-
-  await fireEvent.scroll(list as HTMLElement);
-  await vi.waitFor(() => {
-    expect(core.fillInboxPlaceholders).toHaveBeenCalledExactlyOnceWith("python/cpython", [4242]);
-  });
 });
 
 it("says how many of GitHub's results a search past 1,000 showed", async () => {

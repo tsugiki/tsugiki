@@ -24,7 +24,6 @@
   import { SettingsState } from "$lib/state/settings.svelte";
   import { isOffline, StatusState } from "$lib/state/status.svelte";
   import { applyTheme, ThemeState } from "$lib/state/theme.svelte";
-  import type { SaveSource } from "$lib/state/workbench.svelte";
   import { tellCoreWhenShown } from "$lib/state/window-shown";
   import AddRepository from "$lib/ui/AddRepository.svelte";
   import { type ChordRun, ChordWait } from "$lib/ui/chord.svelte";
@@ -108,9 +107,8 @@
   let keysHere = $state<KeysHere>();
   /** The Repository whose mirror's question the dialog asks, while it's open. */
   let questionFor = $state<string>();
-  /** The draft the Save as Filter dialog holds, while it's open: the Inbox's search (#471) or the unsaved
-   * person Filter (#472), whose login is the name. */
-  let saveFilterDraft = $state<{ name: string; query: string; source: SaveSource }>();
+  /** The Inbox search the Save as Filter dialog holds, while it's open (#471). */
+  let saveFilterDraft = $state<{ name: string; query: string }>();
   /** Whether a dialog, the palette or a picker is open. Each closes on Esc, so one on top of another would
    * lose what the user typed below, and none opens over another: a control behind one, which a press or Tab
    * can still reach, does nothing. A command run from the palette runs once it has closed. */
@@ -575,10 +573,7 @@
         onpick={openPicker}
         onsettings={openSettings}
         onsavefilter={(draft) => {
-          saveFilterDraft = { ...draft, source: "search" };
-        }}
-        onsaveperson={(draft) => {
-          saveFilterDraft = { ...draft, source: "person" };
+          saveFilterDraft = draft;
         }}
         {keysActive}
         diffFiles={settings.diffFiles}
@@ -649,13 +644,12 @@
   />
 {/if}
 {#if saveFilterDraft !== undefined}
-  {@const source = saveFilterDraft.source}
   <SaveFilterDialog
     name={saveFilterDraft.name}
     query={saveFilterDraft.query}
     onsave={async (name, query) => {
-      // Only the Repository's screen, which is what saved this draft, opens this dialog.
-      return repositoryHome!.saveFilter(name, query, source);
+      // Only the Repository's screen, which is what saved this search, opens this dialog.
+      return repositoryHome!.saveFilter(name, query);
     }}
     onclose={() => {
       saveFilterDraft = undefined;

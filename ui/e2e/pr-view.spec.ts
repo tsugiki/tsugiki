@@ -25,7 +25,7 @@ import {
   own,
   prView,
 } from "./fixtures.ts";
-import { changeAnswer, mockCore } from "./mock-core.ts";
+import { callsOf, changeAnswer, mockCore } from "./mock-core.ts";
 import { themes } from "./themes.ts";
 
 /** PR #10, approved at the head its diff reads from. */
@@ -235,6 +235,7 @@ const threaded = async (page: Page, at: DiffThread["at"], words: string) => {
     themes: ok(themes),
     home,
     workbench: workbenchPage([issue]),
+    personQuery: ok("is:open author:some-reviewer"),
     openIssue: done,
     issue: ok(issueView),
     openPullRequest: done,
@@ -326,11 +327,10 @@ test("a click anywhere on a thread's line folds it, but a click on its author op
   await expect(box).toContainText("Say what it fixes.");
 
   await head.getByRole("button", { name: "some-reviewer", exact: true }).click();
-  const sidebar = page.getByRole("navigation", { name: "Sidebar" });
-  await expect(sidebar.getByRole("button", { name: "some-reviewer unsaved" })).toHaveAttribute(
-    "aria-current",
-    "true",
+  await expect(page.getByRole("searchbox", { name: "Search the Inbox" })).toHaveValue(
+    "is:open author:some-reviewer",
   );
+  await expect.poll(() => callsOf(page, "searchInbox")).toBe(1);
 });
 
 test("an Outdated thread sits at the top of its file with the last lines of its code, all of them on Show more", async ({

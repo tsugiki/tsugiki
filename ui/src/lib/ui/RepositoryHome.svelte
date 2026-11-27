@@ -39,7 +39,6 @@
     type ListedItem,
     type MuteAuthor,
     type Pin,
-    type SaveSource,
     type Seen,
     type Stop,
     type SidebarView,
@@ -100,7 +99,6 @@
     stale_reviews: "No Review of yours is stale.",
     archived: "Nothing archived. E archives the item under the cursor.",
     inbox: "Nothing open here yet. The first sync lists the open Issues and PRs as it finds them.",
-    person: "Nothing by this person yet. GitHub may still be answering.",
     /** Names the key that pins as the user bound it, or none while it has none (#489). The words hold too
      * when each pin is Muted, which the view leaves out. */
     get pinned() {
@@ -116,7 +114,6 @@
     onpick,
     onsettings,
     onsavefilter,
-    onsaveperson,
     keysActive = true,
     diffFiles = "all",
     diffPeek = "inline",
@@ -130,8 +127,6 @@
     onsettings: () => void;
     /** Opens the Save as Filter dialog for the Inbox's search, with its name and query (#471). */
     onsavefilter: (draft: { name: string; query: string }) => void;
-    /** Opens the Save as Filter dialog for the person Filter, with its login and query (#472). */
-    onsaveperson?: ((draft: { name: string; query: string }) => void) | undefined;
     keysActive?: boolean;
     /** Whether each PR's Files tab opens on all its files or one at a time, as `[diff] files` says. */
     diffFiles?: FilesMode;
@@ -208,11 +203,10 @@
       void workbench.readOlder();
     }
   }
-  /** Asks the core to fill the list's placeholders that it shows, and only those (#466): one the user doesn't
-   * scroll to costs no request. */
+  /** Asks the core to fill the Inbox's placeholders that the list shows, and only those (#466): one the user
+   * never scrolls to costs no request. */
   function fillPlaceholdersNearScreen() {
-    const kind = workbench.shown.kind;
-    if ((kind !== "inbox" && kind !== "person") || !list) return;
+    if (workbench.shown.kind !== "inbox" || !list) return;
     const view = list.getBoundingClientRect();
     const numbers: number[] = [];
     for (const placeholder of list.querySelectorAll<HTMLElement>("[data-placeholder]")) {
@@ -378,11 +372,10 @@
     if (next instanceof PrViewState) showFileView(next, fileView);
   }
 
-  /** Saves the draft `source` names as a Filter named `name` that searches `query`, and answers the core's
-   * reason when it refuses one (#471, #472). The page's dialog calls it, and closes once it answers
-   * nothing. */
-  export function saveFilter(name: string, query: string, source: SaveSource): Promise<string | undefined> {
-    return workbench.saveFilter(name, query, source);
+  /** Saves the Inbox's search as a Filter named `name` that searches `query`, and answers the core's reason
+   * when it refuses one (#471). The page's dialog calls it, and closes once it answers nothing. */
+  export function saveFilter(name: string, query: string): Promise<string | undefined> {
+    return workbench.saveFilter(name, query);
   }
 
   /** Opens the Issue or PR `number` that quick open found (#557), on its line in the list if the list has
@@ -1059,11 +1052,8 @@
   }
 
   /** Whether the view selected keeps its own order, and so has no switch of order: the Inbox, the latest
-   * update first, Archived, the last archived first, and a person Filter, GitHub's order once it answers. */
-  const ownOrder = () => {
-    const kind = workbench.selected.kind;
-    return kind === "inbox" || kind === "archived" || kind === "person";
-  };
+   * update first, and Archived, the last archived first. */
+  const ownOrder = () => workbench.selected.kind === "inbox" || workbench.selected.kind === "archived";
 
   /** Whether the list greys the row of `row`: in the Inbox, each row a Muted author wrote that it shows
    * (#825). */
@@ -1107,26 +1097,12 @@
     void panes.show("list");
   }
 
-  /** Opens the person Filter for `login`, from a click on their name anywhere on the screen (#472). */
+  /** Opens the Inbox on the typed search for `login`, from a click on their name anywhere on the screen
+   * (#472). */
   function openPerson(login: string) {
     void workbench.openPerson(login);
     void panes.show("list");
   }
-
-  /** Opens the person Filter from its line in the strip of icons, bringing the full Sidebar back, as a
-   * click on another entry there does (#472, #587). */
-  function openPersonInFull(login: string) {
-    void workbench.openPerson(login);
-    void reshapeSidebar(() => panes.showFullSidebarAndList());
-  }
-
-  /** The unsaved person Filter the Sidebar lists, with the search it saves as once the core spells it
-   * (#472). */
-  const personLine = $derived(
-    workbench.person === undefined
-      ? undefined
-      : { login: workbench.person.login, query: workbench.personDraft?.query },
-  );
 
   /** The names the list's switch gives each order. */
   const ORDERS: Record<ListOrder, string> = { attention: "By attention ⇅", last_update: "By last update ⇅" };
@@ -1823,8 +1799,6 @@
         reviewRequests={workbench.reviewRequests}
         staleReviews={workbench.staleReviews}
         filters={workbench.filters}
-        person={workbench.person}
-        onopenperson={openPersonInFull}
         pinned={workbench.pinned}
         selected={workbench.selected}
         onselect={showViewInFull}
@@ -1841,10 +1815,6 @@
         reviewRequests={workbench.reviewRequests}
         staleReviews={workbench.staleReviews}
         filters={workbench.filters}
-        person={personLine}
-        onopenperson={openPerson}
-        oncloseperson={() => void workbench.closePerson()}
-        {onsaveperson}
         pinned={workbench.pinned}
         selected={workbench.selected}
         onselect={showView}
@@ -1957,7 +1927,7 @@
       {:else if workbench.items}
         <!-- The Inbox can hold every open item the cache does, so the browser draws only its rows on
              screen. -->
-        <ul class={{ lazy: workbench.shown.kind === "inbox" || workbench.shown.kind === "person" }}>
+        <ul class={{ lazy: workbench.shown.kind === "inbox" }}>
           {#each workbench.items as item (item.number)}
             {@render listed(item)}
           {/each}

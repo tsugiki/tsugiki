@@ -116,8 +116,9 @@ export interface Peek {
   symbol: string;
   side: Side;
   commit: string;
-  /** The half of a side-by-side row the word was picked in, whose column the peek stays in (#1080), as the
-   * pick's `column`; null in the unified view and the file view. */
+  /** The column of the side-by-side view the peek stays in: the half the word was picked in, or, for a word
+   * picked in the unified view, the column of its line's commit. Null in the file view, which draws no
+   * columns. */
   column: Column;
   lookup: Lookup;
   code?: HitCode;
@@ -169,13 +170,6 @@ export function peekSized(peek: Peek): boolean {
 export function peekPlaces(peek: Peek, rows: number): number {
   if (peekSized(peek)) return rows;
   return peek.indexing === undefined ? 2 : 3;
-}
-
-/** The column of the side-by-side view the inline peek stays in: the half the word was picked in, or, for a
- * word picked in the unified view, the column of its line's commit, the base's on the left and the head's on
- * the right (#1080). */
-export function peekColumn(peek: Peek): Exclude<Column, null> {
-  return peek.column ?? (peek.side === "base" ? "left" : "right");
 }
 
 /** `threads`, in the order they show, with `peek` among them right under its line, above any thread there.

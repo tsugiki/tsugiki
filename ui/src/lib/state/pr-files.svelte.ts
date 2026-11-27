@@ -669,14 +669,19 @@ export class PrFilesState {
 
   /** Notes that open thread `id`, as the view on show draws it, takes `places` places. */
   measured(id: string, places: number) {
-    const key = `${this.shownAs}:${id}`;
+    const key = this.#key(id);
     if (this.#measured.get(key) !== places) this.#measured.set(key, places);
   }
 
   /** The places thread `thread`, at `at` among the threads, takes in the view on show: one when folded. */
   #places(thread: DiffThread, at: number): number {
-    const key = `${this.shownAs}:${thread.id}`;
-    return this.folded(at) ? 1 : (this.#measured.get(key) ?? guessPlaces(thread));
+    return this.folded(at) ? 1 : (this.#measured.get(this.#key(thread.id)) ?? guessPlaces(thread));
+  }
+
+  /** The key an open thread `id`'s measurement goes under, in the view on show, which lays it out at a
+   * height of its own. */
+  #key(id: string): string {
+    return `${this.shownAs}:${id}`;
   }
 
   /** Moves to thread `id`, open, and opens the collapsed file it is in, showing that file's page one file at
@@ -1396,7 +1401,15 @@ export class PrFilesState {
     if (pick === undefined || !file) return undefined;
     const commit = pick.side === "base" ? view.base : view.head;
     return {
-      peek: { at: pick.at, symbol: pick.word, side: pick.side, commit, column: pick.column },
+      peek: {
+        at: pick.at,
+        symbol: pick.word,
+        side: pick.side,
+        commit,
+        // A word picked in the unified view has no half of the row, so the peek takes its line's commit's
+        // column, which a followed word then keeps (#1080).
+        column: pick.column ?? (pick.side === "base" ? "left" : "right"),
+      },
       path: pick.side === "base" ? (file.old_path ?? file.path) : file.path,
       line: pick.line,
       column: pick.start,

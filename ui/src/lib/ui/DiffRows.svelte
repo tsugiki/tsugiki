@@ -27,7 +27,7 @@
     type PrFilesState,
     type Span,
   } from "$lib/state/pr-files.svelte";
-  import { PEEK_ID, peekColumn, ROW } from "$lib/state/peek";
+  import { PEEK_ID, ROW } from "$lib/state/peek";
   import NewsEntries from "./NewsEntries.svelte";
   import { currentOs, goesToDefinition } from "./keys";
   import PeekBox from "./PeekBox.svelte";
@@ -566,7 +566,7 @@
     {#each diff.layout.threadsIn(first, last) as placed (placed.laid.id)}
       {@const block = placed.laid.block}
       {#if block.kind === "peek"}
-        {@const column = sideBySide ? peekColumn(block.peek) : null}
+        {@const column = sideBySide ? block.peek.column : null}
         <PeekBox
           {diff}
           peek={block.peek}

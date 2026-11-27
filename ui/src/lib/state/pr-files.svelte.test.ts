@@ -3350,7 +3350,8 @@ it("looks up a word picked in the peek's code at the hit's commit, and names the
     symbol: "width",
     side: "base",
     commit: "base",
-    column: null,
+    // The hit is at the base, but the peek's line is at the head, so it stays in the right column.
+    column: "right",
     trail: [first],
   };
   expect(whileLooking).toEqual([{ ...followed, lookup: { state: "looking" } }, "take"]);

@@ -17,10 +17,12 @@ use crate::error::{Error, ErrorKind};
 use crate::facts::issue_content::IssueContent;
 use crate::facts::pull_request_content::PullRequestContent;
 use crate::fetching::{
-    Fetched, Fetching, Headless, Item, ItemFetch, ItemUnfetched, NoHead, ScreenMove,
+    Fetched, Fetching, Headless, Item, ItemFetch, ItemUnfetched, NoHead, PLACEHOLDER_BATCH,
+    ScreenMove,
 };
 use crate::filters::FilterQuery;
 use crate::github::in_flight::{self, AnnounceInFlight, Asking};
+use crate::github::item::Numbered;
 use crate::github::{GitHub, GitHubAccess};
 use crate::latest::{self, LatestReader, LatestWriter};
 use crate::repository::RepositoryName;
@@ -75,6 +77,12 @@ pub(super) enum GitHubMessage {
     Search {
         repository: RepositoryName,
         text: String,
+    },
+    /// The Inbox shows placeholders `numbers`, which the user scrolled to, so GitHub answers what they say
+    /// (#466).
+    FillPlaceholders {
+        repository: RepositoryName,
+        numbers: Vec<u32>,
     },
     /// The size of a Repository on GitHub, which the Mirror worker asks before a clone.
     Size {
@@ -247,6 +255,12 @@ pub(super) enum Turn {
         repository: RepositoryName,
         text: String,
     },
+    /// The Inbox shows placeholders `numbers`, which the user scrolled to, so GitHub answers what they say
+    /// (#466).
+    FillPlaceholders {
+        repository: RepositoryName,
+        numbers: Vec<u32>,
+    },
     /// The session couldn't keep what it saved.
     Problem(Error),
     /// Time to see whether the hour's points have reset, so the window stops showing the old hour's count.
@@ -405,7 +419,8 @@ impl Refreshes {
                     GitHubMessage::Check { .. }
                     | GitHubMessage::FetchUnstored { .. }
                     | GitHubMessage::Size { .. }
-                    | GitHubMessage::Search { .. },
+                    | GitHubMessage::Search { .. }
+                    | GitHubMessage::FillPlaceholders { .. },
                 ) => {}
             }
         }
@@ -434,6 +449,15 @@ impl Refreshes {
                 }
                 Ok(GitHubMessage::Search { repository, text }) => {
                     return Turn::Search { repository, text };
+                }
+                Ok(GitHubMessage::FillPlaceholders {
+                    repository,
+                    numbers,
+                }) => {
+                    return Turn::FillPlaceholders {
+                        repository,
+                        numbers,
+                    };
                 }
                 Ok(GitHubMessage::FilterSearch { repository, query }) => {
                     syncs.search_filter(&repository, query);
@@ -683,6 +707,32 @@ pub(super) fn watch(
                 due: &due,
                 request: SearchRequest { repository, text },
             }),
+            // What the placeholders an Inbox search left say (#466).
+            Turn::FillPlaceholders {
+                repository,
+                numbers,
+            } => {
+                let filled = {
+                    let read = Reading {
+                        github: &github,
+                        queue: refreshes,
+                        syncs: &syncs,
+                    };
+                    fill_placeholders(
+                        board,
+                        store,
+                        &read,
+                        Placeholders {
+                            repository: &repository,
+                            numbers: &numbers,
+                        },
+                    )
+                };
+                if let Err(problem) = filled {
+                    syncs.after_fetch_failure(&problem, due.status);
+                    tell_problem(board, problem, store);
+                }
+            }
             // A Workbench lists nothing until Tsugiki knows who the user is, and no event tells the window
             // when it learns that. So a sync waits for it, and its first save then shows the rows.
             Turn::SyncStep if !matches!(store.last_login(), Ok(Some(_))) => {
@@ -779,6 +829,61 @@ fn keep_search(
         repository: search.repository.clone(),
         items: Vec::new(),
     }))
+}
+
+/// The placeholders an Inbox shows, which the user scrolled to, and the Repository they are in (#466).
+struct Placeholders<'a> {
+    repository: &'a RepositoryName,
+    numbers: &'a [u32],
+}
+
+/// Fetches what the placeholders `numbers` of `repository` say, in one batch, and saves them in the cache
+/// (#466). The Inbox reads them on the next `changed`, and they stay after the search is cleared. A number
+/// GitHub has nothing under, or refuses alone, keeps its placeholder until a later search, and says so in the
+/// log alone.
+fn fill_placeholders(
+    board: &mut StatusBoard,
+    store: &Store,
+    read: &Reading<'_>,
+    placeholders: Placeholders<'_>,
+) -> Result<(), Error> {
+    let Placeholders {
+        repository,
+        numbers,
+    } = placeholders;
+    let batch = read
+        .github
+        .fetch_items(repository, numbers, PLACEHOLDER_BATCH)?;
+    let mut issues = Vec::new();
+    let mut issue_activity = Vec::new();
+    let mut pull_requests = Vec::new();
+    for (number, numbered) in numbers.iter().zip(batch.items) {
+        match numbered {
+            Numbered::Issue(facts, activity) => {
+                issues.push(facts);
+                issue_activity.push(activity);
+            }
+            Numbered::PullRequest(facts, activity) => pull_requests.push((*facts, activity)),
+            Numbered::Missing => {
+                log::warn!("GitHub has no #{number} of {repository}, which a search found");
+            }
+            // `fetch_items` logged what GitHub refused.
+            Numbered::Hidden => {}
+        }
+    }
+    let mut touched: Vec<u32> = issues.iter().map(|issue| issue.number).collect();
+    touched.extend(pull_requests.iter().map(|(facts, _)| facts.number));
+    if touched.is_empty() {
+        return Ok(());
+    }
+    store.save_fetched_items(repository, (issues, issue_activity), pull_requests)?;
+    let change = Change {
+        repository: repository.clone(),
+        items: touched,
+    };
+    hand_over_heads(&(read.queue.fetching), read.syncs, &change);
+    board.changed(&change);
+    Ok(())
 }
 
 /// Tells the window and the Mirror worker what the sync queue's `progress` says, if anything. A step's news

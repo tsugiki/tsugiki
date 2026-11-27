@@ -7,7 +7,7 @@
 //! So nothing that needs no request waits for one that hangs.
 
 use std::cell::{Cell, RefCell};
-use std::collections::{BTreeSet, VecDeque};
+use std::collections::{BTreeSet, HashSet, VecDeque};
 use std::ops::ControlFlow;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
@@ -21,8 +21,8 @@ use crate::facts::activity::ItemKey;
 use crate::facts::pull_requests::PrHead;
 use crate::facts::{CommitSha, WorkFacts};
 use crate::fetching::{
-    Fetching, Headless, Item, ItemFetch, ItemUnfetched, Marked, MirrorWant, SessionMessage,
-    answered,
+    Fetching, Headless, Item, ItemFetch, ItemUnfetched, Marked, MirrorWant, PLACEHOLDER_BATCH,
+    SessionMessage, answered,
 };
 use crate::folders::Folders;
 use crate::github::GitHubAccess;
@@ -317,6 +317,9 @@ struct Keeper {
     /// The Repositories the window opened since launch, as their Syncs passed through this queue, which the
     /// GitHub thread's syncs take after.
     opened: RefCell<Vec<RepositoryName>>,
+    /// Each Inbox placeholder this session has asked GitHub to fill, by Repository, so scrolling back over
+    /// one asks nothing again (#466).
+    placeholders: RefCell<HashSet<(RepositoryName, u32)>>,
     telling: Telling,
     /// How many of the user's refreshes the session passed to the GitHub thread.
     refreshes_passed: Cell<u64>,
@@ -339,6 +342,7 @@ impl Keeper {
             saves_taken: Cell::new(0),
             links: RefCell::new(LinkRefill::default()),
             opened: RefCell::new(Vec::new()),
+            placeholders: RefCell::new(HashSet::new()),
             telling,
             refreshes_passed: Cell::new(0),
         }
@@ -400,6 +404,10 @@ impl Keeper {
             SessionMessage::Search { repository, text } => {
                 telling.to_github(GitHubMessage::Search { repository, text });
             }
+            SessionMessage::FillPlaceholders {
+                repository,
+                numbers,
+            } => self.fill_placeholders(store, repository, numbers),
             SessionMessage::FilterSearch { repository, query } => {
                 telling.to_github(GitHubMessage::FilterSearch { repository, query });
             }
@@ -438,6 +446,34 @@ impl Keeper {
             return;
         }
         (self.telling).to_github(GitHubMessage::FetchUnstored { item, reply });
+    }
+
+    /// Passes a fill of the Inbox's placeholders to the GitHub thread, a batch of `PLACEHOLDER_BATCH` at a
+    /// time (#466). A number the cache now holds, or that this session already asked for, costs no request,
+    /// so scrolling back and forth fetches no batch twice and placeholders the user never scrolls to fetch
+    /// nothing.
+    fn fill_placeholders(&self, store: &Store, repository: RepositoryName, numbers: Vec<u32>) {
+        let lacking = store
+            .numbers_lacking(&repository, &numbers)
+            .unwrap_or_else(|problem| {
+                log::warn!(
+                    "Tsugiki couldn't check whether {} holds the Inbox's placeholders: {}",
+                    repository,
+                    problem.message
+                );
+                numbers
+            });
+        let mut asked = self.placeholders.borrow_mut();
+        let fresh: Vec<u32> = (lacking.into_iter())
+            .filter(|number| asked.insert((repository.clone(), *number)))
+            .collect();
+        drop(asked);
+        for batch in fresh.chunks(PLACEHOLDER_BATCH) {
+            (self.telling).to_github(GitHubMessage::FillPlaceholders {
+                repository: repository.clone(),
+                numbers: batch.to_vec(),
+            });
+        }
     }
 
     /// Passes the user's refresh to the GitHub thread, unless one it passed still waits there or runs, which

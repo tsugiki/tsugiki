@@ -201,11 +201,31 @@
       void workbench.readOlder();
     }
   }
+  /** Asks the core to fill the Inbox's placeholders that the list shows, and only those (#466): one the user
+   * never scrolls to costs no request. */
+  function fillPlaceholdersNearScreen() {
+    if (workbench.shown.kind !== "inbox" || !list) return;
+    const view = list.getBoundingClientRect();
+    const numbers: number[] = [];
+    for (const placeholder of list.querySelectorAll<HTMLElement>("[data-placeholder]")) {
+      const box = placeholder.getBoundingClientRect();
+      if (box.bottom > view.top && box.top < view.bottom) {
+        numbers.push(Number(placeholder.dataset.placeholder));
+      }
+    }
+    if (numbers.length > 0) void workbench.fillPlaceholders(numbers);
+  }
+  /** A scroll of the list reads the older page near its end, and fills the placeholders on screen (#466). */
+  function onListScroll() {
+    readOlderNearEnd();
+    fillPlaceholdersNearScreen();
+  }
   // A page too short to fill the list leaves nothing to scroll, so each new page and the list's return check
   // again.
   $effect(() => {
     void workbench.items;
     readOlderNearEnd();
+    fillPlaceholdersNearScreen();
   });
 
   /** Whether the window holds the system's focus, which no CSS can ask. The panes read which of them holds
@@ -1583,7 +1603,7 @@
   {#if item.kind === "placeholder"}
     <!-- A result GitHub found that the cache lacks, which a later ticket fills as the user scrolls to it
          (#465). It takes its place in GitHub's order, and nothing acts on it yet. -->
-    <li class="item placeholder">
+    <li class="item placeholder" data-placeholder={String(item.number)}>
       <div class="row">
         <span class="people"></span>
         <span class="headline">
@@ -1796,7 +1816,7 @@
       data-pane="list"
       tabindex="-1"
       bind:this={list}
-      onscroll={readOlderNearEnd}
+      onscroll={onListScroll}
     >
       <header class="view">
         <h2>{workbench.title}</h2>

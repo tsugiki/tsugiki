@@ -43,6 +43,7 @@ const core = vi.hoisted(() => ({
   workbench: vi.fn(),
   inbox: vi.fn(),
   searchInbox: vi.fn(),
+  fillInboxPlaceholders: vi.fn(),
   issue: vi.fn(),
   openIssue: vi.fn(),
   pullRequest: vi.fn(),
@@ -96,6 +97,7 @@ vi.mock("$lib/data/bindings", async () => {
       workbench: core.workbench,
       inbox: core.inbox,
       searchInbox: core.searchInbox,
+      fillInboxPlaceholders: core.fillInboxPlaceholders,
       issue: core.issue,
       openIssue: core.openIssue,
       pullRequest: core.pullRequest,
@@ -6457,6 +6459,54 @@ it("shows a search result the cache lacks as a placeholder in GitHub's order", a
   expect(screen.getByText("#4242")).toBeTruthy();
   expect(screen.getByText("Issue not in the cache yet")).toBeTruthy();
   expect(screen.getByText("#4243")).toBeTruthy();
+});
+
+it("fills only the placeholders the user scrolls to, each once, in the Inbox (#466)", async () => {
+  core.workbench.mockResolvedValue(workbenchPage([]));
+  core.inbox.mockResolvedValue(
+    inboxPage([
+      placeholderItem(4242, "pull_request"),
+      placeholderItem(4243, "issue"),
+      { ...issue, attention: null },
+    ]),
+  );
+  core.fillInboxPlaceholders.mockResolvedValue(ok(null));
+  render(RepositoryHome, {
+    name: "python/cpython",
+    onpick: () => {},
+    onsettings: () => {},
+    onsavefilter: () => {},
+  });
+  await fireEvent.click(await screen.findByRole("button", { name: "Inbox" }));
+  await screen.findByRole("heading", { name: "Inbox" });
+  const list = document.querySelector<HTMLElement>(".list");
+  const first = document.querySelector<HTMLElement>('[data-placeholder="4242"]');
+  const second = document.querySelector<HTMLElement>('[data-placeholder="4243"]');
+  const layOut = (firstTop: number, secondTop: number) =>
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
+      if (this === list) return { top: 0, bottom: 100 } as DOMRect;
+      if (this === first) return { top: firstTop, bottom: firstTop + 50 } as DOMRect;
+      if (this === second) return { top: secondTop, bottom: secondTop + 50 } as DOMRect;
+      return { top: 0, bottom: 0 } as DOMRect;
+    });
+  let layout = layOut(10, 200);
+  onTestFinished(() => layout.mockRestore());
+
+  // Only the placeholder on screen is asked for.
+  await fireEvent.scroll(list as HTMLElement);
+  await vi.waitFor(() => {
+    expect(core.fillInboxPlaceholders).toHaveBeenCalledExactlyOnceWith("python/cpython", [4242]);
+  });
+
+  // Scrolling on asks for the next one, and scrolling back over both asks for neither again.
+  layout.mockRestore();
+  layout = layOut(200, 10);
+  await fireEvent.scroll(list as HTMLElement);
+  await vi.waitFor(() => {
+    expect(core.fillInboxPlaceholders).toHaveBeenLastCalledWith("python/cpython", [4243]);
+  });
+  await fireEvent.scroll(list as HTMLElement);
+  expect(core.fillInboxPlaceholders).toHaveBeenCalledTimes(2);
 });
 
 it("says how many of GitHub's results a search past 1,000 showed", async () => {

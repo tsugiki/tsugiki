@@ -9,6 +9,7 @@ import {
   done,
   inboxPage,
   listedIssue,
+  ok,
   placeholderItem,
   refused,
   workbenchPage,
@@ -32,6 +33,7 @@ vi.mock("$lib/data/bindings", () => ({
     workbench: vi.fn(),
     inbox: vi.fn(),
     searchInbox: vi.fn(),
+    fillInboxPlaceholders: vi.fn(),
     markSeen: vi.fn(),
     markUnseen: vi.fn(),
     archive: vi.fn(),
@@ -1945,6 +1947,23 @@ describe("WorkbenchState's Inbox", () => {
     expect(state.seenOf(stop)).toBeUndefined();
     expect(state.muteAuthorOf(stop)).toBeUndefined();
     expect(state.hidingBy(stop)).toBeUndefined();
+    state.stop();
+  });
+
+  it("fills the placeholders the list shows, each number once, as scrolling back over one asks nothing", async () => {
+    catchChanged();
+    vi.mocked(commands.workbench).mockResolvedValue(answer());
+    const placeholder = placeholderItem(4242, "pull_request");
+    vi.mocked(commands.inbox).mockResolvedValue(inboxPage([placeholder, item(3)]));
+    vi.mocked(commands.fillInboxPlaceholders).mockResolvedValue(ok(null));
+    const state = await showingInbox();
+
+    await state.fillPlaceholders([4242, 4242]);
+    expect(commands.fillInboxPlaceholders).toHaveBeenCalledExactlyOnceWith("python/cpython", [4242]);
+
+    // Scrolling back over the placeholder asks nothing more.
+    await state.fillPlaceholders([4242]);
+    expect(commands.fillInboxPlaceholders).toHaveBeenCalledOnce();
     state.stop();
   });
 

@@ -35,6 +35,9 @@ use crate::workbench::Asked;
 pub(crate) const NOT_CONNECTED: &str =
     "Tsugiki isn't connected to GitHub. The status bar says why.";
 
+/// The most placeholders one fetch of the Inbox fills (#466).
+pub(crate) const PLACEHOLDER_BATCH: usize = 50;
+
 /// Sends `to` the message `asking` makes around a reply channel, and waits for its answer. A thread that has
 /// stopped, or drops the message with its reply, answers that Tsugiki isn't connected.
 pub(crate) fn answered<M, T>(
@@ -280,6 +283,12 @@ pub(crate) enum SessionMessage {
     Search {
         repository: RepositoryName,
         text: String,
+    },
+    /// The Inbox shows placeholders `numbers`, which the user scrolled to, so the session fetches their
+    /// facts in batches of `PLACEHOLDER_BATCH` (#466).
+    FillPlaceholders {
+        repository: RepositoryName,
+        numbers: Vec<u32>,
     },
     /// "Show muted" on the Inbox of `repository` turned to `show` (#825), which answers once the store has
     /// kept it, or why it couldn't. The window then asks for the Inbox again.
@@ -609,6 +618,17 @@ impl Fetching {
     /// of the sync's next step, and the `changed` event follows their answer (#465).
     pub fn search(&self, repository: RepositoryName, text: String) {
         self.to_session(SessionMessage::Search { repository, text });
+    }
+
+    /// The Inbox shows placeholders `numbers` of `repository`, which the user scrolled to: the session
+    /// fetches what they say from GitHub, a batch of `PLACEHOLDER_BATCH` at a time and each number once,
+    /// saves them in the cache, and the `changed` event follows (#466). Placeholders the user never scrolled
+    /// to cost no request.
+    pub fn fill_placeholders(&self, repository: RepositoryName, numbers: Vec<u32>) {
+        self.to_session(SessionMessage::FillPlaceholders {
+            repository,
+            numbers,
+        });
     }
 
     /// Fetches Issue or PR `number` of `repository`, which the database lacks, and waits for the answer.

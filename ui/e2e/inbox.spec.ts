@@ -150,6 +150,33 @@ test("Enter sends the whole search to GitHub, and its rows show with a placehold
   );
 });
 
+test("fills a placeholder only once the list scrolls to it, and asks for it once", async ({ page }) => {
+  await page.setViewportSize({ width: 1200, height: 600 });
+  const placeholder = placeholderItem(4242, "pull_request");
+  await mockCore(page, {
+    home,
+    workbench,
+    inbox: pageOf([...issues(60, 1), placeholder], false),
+  });
+  await page.goto("/");
+  await openInbox(page);
+  await expect(page.getByRole("button", { name: "#60 Issue 60" })).toBeVisible();
+  const filled = () => callsOf(page, "fillInboxPlaceholders");
+
+  // The placeholder is far below the screen, so it costs no request until the list scrolls to it.
+  await expect.poll(filled).toBe(0);
+  await scrollToEnd(page);
+  await expect.poll(filled).toBe(1);
+  await expect(page.getByText("PR not in the cache yet")).toBeInViewport();
+
+  // Scrolling back over it asks GitHub nothing again.
+  await page.locator(".list").evaluate((list) => {
+    list.scrollTop = 0;
+  });
+  await scrollToEnd(page);
+  await expect.poll(filled).toBe(1);
+});
+
 test("saves the search as a Filter, which opens in place of the Inbox with the box cleared", async ({
   page,
 }) => {

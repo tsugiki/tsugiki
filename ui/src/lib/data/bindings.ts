@@ -279,6 +279,11 @@ export const commands = {
 	 */
 	searchInbox: (repository: string, search: string) => typedError<null, Error_Serialize>(__TAURI_INVOKE("search_inbox", { repository, search })),
 	/**
+	 *  Fills the Inbox's placeholders `numbers`, which the user scrolled to: GitHub's facts for each are kept in
+	 *  the cache in batches of 50, and the `changed` event follows (#466). Returns at once.
+	 */
+	fillInboxPlaceholders: (repository: string, numbers: number[]) => typedError<null, Error_Serialize>(__TAURI_INVOKE("fill_inbox_placeholders", { repository, numbers })),
+	/**
 	 *  The Issue view of Issue `number`, or nothing if Tsugiki doesn't hold it. This waits on the database and
 	 *  never on GitHub (ADR 0018).
 	 */

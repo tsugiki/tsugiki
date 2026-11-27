@@ -2,6 +2,7 @@ use super::file::{Contents, contents};
 use super::testing::{V1, V2, backups, has_table, migrated, temp_database, user_version};
 use super::*;
 use crate::facts::CommitSha;
+use crate::facts::activity::ItemActivity;
 use crate::facts::filters::FilterProblem;
 use crate::facts::issue_content::Comment;
 use crate::facts::issues::IssueState;
@@ -10,6 +11,7 @@ use crate::facts::pull_request_content::{
     ThreadComment, ThreadCommentId, ThreadId, ThreadLine,
 };
 use crate::facts::pull_requests::{CiState, LatestReview, OffDefault, PrState, ReviewState};
+use crate::testing::{cpython, issue_facts, pr_facts};
 use rusqlite::trace::{TraceEvent, TraceEventCodes};
 use time::OffsetDateTime;
 
@@ -500,4 +502,94 @@ fn the_plan_check_finds_a_full_scan_of_a_large_table() {
     assert_eq!(full_scans(&connection, by_key), [""; 0]);
     assert_eq!(full_scans(&connection, by_index), [""; 0]);
     assert_eq!(full_scans(&connection, small), [""; 0]);
+}
+
+#[test]
+fn a_placeholder_fill_saves_both_kinds_and_skips_the_numbers_the_store_holds() {
+    let (path, _folder) = temp_database("placeholder-fill");
+    let store = Store::open(&path).unwrap();
+    let repository = cpython();
+    store
+        .save_issues(&repository, vec![issue_facts(7)])
+        .unwrap();
+
+    assert_eq!(
+        store.numbers_lacking(&repository, &[7, 8, 9]).unwrap(),
+        [8, 9],
+        "the store holds 7, so a fill asks GitHub for the rest alone"
+    );
+
+    let issue = issue_facts(8);
+    let issue_activity = ItemActivity {
+        number: 8,
+        events: vec![],
+    };
+    let pull_request = pr_facts(9);
+    let pull_request_activity = ItemActivity {
+        number: 9,
+        events: vec![],
+    };
+    store
+        .save_fetched_items(
+            &repository,
+            (vec![issue], vec![issue_activity]),
+            vec![(pull_request, pull_request_activity)],
+        )
+        .unwrap();
+
+    assert!(
+        store
+            .numbers_lacking(&repository, &[7, 8, 9])
+            .unwrap()
+            .is_empty()
+    );
+    let facts = store.work_facts(&repository).unwrap();
+    assert!(facts.issues.iter().any(|issue| issue.number == 8));
+    assert!(facts.pull_requests.iter().any(|pr| pr.number == 9));
+    store.close();
+}
+
+#[test]
+fn a_placeholder_pr_updated_since_the_last_sync_may_have_opened() {
+    let (path, _folder) = temp_database("placeholder-opened");
+    let store = Store::open(&path).unwrap();
+    let repository = cpython();
+    let now = OffsetDateTime::now_utc();
+    store
+        .save_sync_state(
+            &repository,
+            SyncState {
+                started_at: now - time::Duration::hours(1),
+                finished_at: now - time::Duration::hours(1),
+                check: ChangeCheck::Skipped,
+                refresh_under_way: false,
+            },
+        )
+        .unwrap();
+    let mut facts = pr_facts(9);
+    facts.updated_at = now;
+
+    store
+        .save_fetched_items(
+            &repository,
+            (vec![], vec![]),
+            vec![(
+                facts,
+                ItemActivity {
+                    number: 9,
+                    events: vec![],
+                },
+            )],
+        )
+        .unwrap();
+
+    assert!(
+        store
+            .work_facts(&repository)
+            .unwrap()
+            .pull_requests
+            .iter()
+            .any(|pr| pr.number == 9)
+    );
+    store.close();
 }

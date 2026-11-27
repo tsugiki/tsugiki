@@ -80,6 +80,7 @@ impl Setup {
                 | SessionMessage::Check { .. }
                 | SessionMessage::FetchUnstored { .. }
                 | SessionMessage::Search { .. }
+                | SessionMessage::FillPlaceholders { .. }
                 | SessionMessage::FilterSearch { .. }
                 | SessionMessage::ShowMuted { .. }
                 | SessionMessage::Sync { .. }
@@ -213,6 +214,7 @@ fn synced_and_saved(messages: &Receiver<SessionMessage>) -> Vec<String> {
             | SessionMessage::Check { .. }
             | SessionMessage::FetchUnstored { .. }
             | SessionMessage::Search { .. }
+            | SessionMessage::FillPlaceholders { .. }
             | SessionMessage::FilterSearch { .. }
             | SessionMessage::ShowMuted { .. }
             | SessionMessage::Refresh

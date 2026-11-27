@@ -55,8 +55,11 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
   adds `is:open` unless the query names a state and `sort:updated-desc` unless it sorts itself, and reads at
   most ten pages of a hundred, GitHub's 1,000 results. Leaving the Inbox before the pause sends nothing, and
   entering it again sends the query the box still holds. Cached rows GitHub returns show at once in its
-  order, cached rows it leaves out drop, and a result the cache lacks shows as a placeholder until a later
-  ticket fills it ([#466](https://github.com/tsugiki/tsugiki/issues/466)). Past 1,000 results, the list ends
+  order, cached rows it leaves out drop, and a result the cache lacks shows as a placeholder until the user
+  scrolls to it, when Tsugiki fetches it in a batch of up to 50 with the item facts the sync reads, keeps it
+  in the cache, and draws its row in its place ([#466](https://github.com/tsugiki/tsugiki/issues/466)).
+  Placeholders the user never scrolls to cost no request, and scrolling back and forth fetches none twice.
+  Past 1,000 results, the list ends
   with "1,000 of 1,712 shown. Narrow the search, or save it as a Filter." Until GitHub answers, a query the
   cache can't read lists nothing and says it needs GitHub. A matching PR stays in its Issue's fold, whose
   header stays even when the Issue doesn't match, and a matching Issue with no matching PR shows alone.

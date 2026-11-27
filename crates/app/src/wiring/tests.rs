@@ -2963,3 +2963,22 @@ fn a_search_the_window_types_is_sent_and_a_blank_one_sends_nothing() {
     assert_eq!(blank, Ok(Value::Null));
     assert!(unknown.is_err(), "{unknown:?}");
 }
+
+#[test]
+fn a_placeholder_the_window_scrolled_to_is_filled_and_an_empty_batch_asks_nothing() {
+    let (folders, _root) = temp_folders("wired-placeholder-fill");
+    let wired = Wired::start(Ok(folders), no_network());
+    let asked = |numbers: Value| json!({ "repository": CPYTHON, "numbers": numbers });
+
+    let filled = wired.ask("fill_inbox_placeholders", asked(json!([7, 8])));
+    let empty = wired.ask("fill_inbox_placeholders", asked(json!([])));
+    let unknown = wired.ask(
+        "fill_inbox_placeholders",
+        json!({ "repository": "cpython", "numbers": [7] }),
+    );
+    drop(wired.stop());
+
+    assert_eq!(filled, Ok(Value::Null));
+    assert_eq!(empty, Ok(Value::Null));
+    assert!(unknown.is_err(), "{unknown:?}");
+}

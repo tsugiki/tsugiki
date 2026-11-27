@@ -3,7 +3,8 @@ use serde_json::json;
 use super::*;
 use crate::error::ErrorKind;
 use crate::github::testing::{
-    Scripted, github, issue_item, item_answer, item_missing, item_refused, not_found, pr_item,
+    Scripted, github, issue_item, item_answer, item_missing, item_refused, items_answer,
+    items_refused, not_found, pr_item,
 };
 use crate::github::{Reply, Unreachable};
 use crate::testing::{cpython, gcmon};
@@ -103,4 +104,62 @@ fn the_query_asks_for_either_kind_under_one_field() {
         "{query}"
     );
     assert!(query.contains("... on PullRequest {"), "{query}");
+}
+
+/// What a batch fetch of `numbers` of python/cpython answered with `reply` came to.
+fn fetched_items(numbers: &[u32], reply: Result<Reply, Unreachable>) -> FetchedItems {
+    let (script, _asked) = Scripted::new(vec![reply]);
+    github(script).fetch_items(&cpython(), numbers, 50).unwrap()
+}
+
+#[test]
+fn a_batch_query_names_each_number_under_an_alias() {
+    let query = fetch_items_query(&[12, 13]);
+    assert!(query.starts_with("query FetchItems("), "{query}");
+    assert!(
+        query.contains("i12: issueOrPullRequest(number: 12) { __typename"),
+        "{query}"
+    );
+    assert!(
+        query.contains("i13: issueOrPullRequest(number: 13) { __typename"),
+        "{query}"
+    );
+    assert!(query.contains("... on Issue {"), "{query}");
+    assert!(query.contains("... on PullRequest {"), "{query}");
+}
+
+#[test]
+fn a_batch_comes_back_with_each_kind_and_the_numbers_github_has_nothing_under() {
+    let answer = items_answer(
+        &cpython(),
+        &[
+            (12, issue_item(12, &cpython())),
+            (13, pr_item(13)),
+            (14, serde_json::Value::Null),
+        ],
+    );
+
+    let fetched = fetched_items(&[12, 13, 14], answer);
+
+    assert_eq!(fetched.asked_for, 3);
+    assert!(matches!(fetched.items[0], Numbered::Issue(..)));
+    assert!(matches!(fetched.items[1], Numbered::PullRequest(..)));
+    assert_eq!(fetched.items[2], Numbered::Missing);
+    assert_eq!(fetched.rate_limit.remaining, 4000);
+}
+
+#[test]
+fn a_batch_answers_a_number_github_refuses_alone_as_hidden_and_the_rest_stands() {
+    let answer = items_refused(&cpython(), 12);
+
+    let fetched = fetched_items(&[12, 13], answer);
+
+    assert_eq!(fetched.items, [Numbered::Hidden, Numbered::Missing]);
+}
+
+#[test]
+fn a_batch_leaves_out_an_issue_transferred_to_another_repository() {
+    let answer = items_answer(&cpython(), &[(12, issue_item(12, &gcmon()))]);
+
+    assert_eq!(fetched_items(&[12], answer).items, [Numbered::Missing]);
 }

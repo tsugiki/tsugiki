@@ -151,8 +151,9 @@ and reads the trees it still owed.
   `is:open` unless the query names a state, excluded or not, and `sort:updated-desc` unless the query sorts
   itself, and reads at most ten pages of a hundred, GitHub's 1,000 results: unlike a Filter, a typed search
   does not split into `created:` ranges. The cached rows the answer returns show at once in GitHub's order,
-  the cached rows it leaves out drop, and results the cache lacks show as placeholders that a later ticket
-  fills ([#465](https://github.com/tsugiki/tsugiki/issues/465),
+  the cached rows it leaves out drop, and results the cache lacks show as placeholders, which fill in
+  batches of 50 as the user scrolls to them and stay in the cache
+  ([#465](https://github.com/tsugiki/tsugiki/issues/465),
   [#466](https://github.com/tsugiki/tsugiki/issues/466)). A newer query drops the answer to the older one. All
   issues ends with "Load 30 more days", which walks further back once without changing the window.
 - **Window changes.** Widening it walks only the added days. Narrowing it deletes nothing. Items that leave

@@ -64,6 +64,8 @@ export const mockCore = (page: Page, answers: CoreAnswers, unanswered: (keyof Co
       paneLayout: panes,
       // A search typed in the Inbox goes to GitHub, and the test answers what its rows become (#465).
       searchInbox: null,
+      // A placeholder the Inbox shows is filled from GitHub once the user scrolls to it (#466).
+      fillInboxPlaceholders: null,
       // Saving a search as a Filter writes it to `settings.toml`, and the Inbox's view reads it back (#471).
       saveFilter: { status: "ok", data: null },
       themes: {

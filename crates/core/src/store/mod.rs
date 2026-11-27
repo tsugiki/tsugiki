@@ -437,6 +437,55 @@ impl Store {
         saved.map_err(saying(CANT_WRITE))
     }
 
+    /// Stores the Issues and PRs a fill of the Inbox's placeholders fetched, in one transaction, as
+    /// `save_fetched_issues` and `save_unstored_pull_request` do each alone (#466). A PR updated since the
+    /// next refresh's poll starts may have opened since, as `save_unstored_pull_request` says.
+    pub fn save_fetched_items(
+        &self,
+        repository: &RepositoryName,
+        (issues, issue_events): (Vec<IssueFacts>, Vec<ItemActivity>),
+        pull_requests: Vec<(PullRequestFacts, ItemActivity)>,
+    ) -> Result<(), Error> {
+        let repository = repository.clone();
+        let saved = self.call(move |connection| {
+            let transaction = connection.transaction()?;
+            issues::save_in(&transaction, &repository, &issues, &issue_events)?;
+            let synced = sync_state::read(&transaction, &repository)?;
+            for (facts, activity) in pull_requests {
+                let first = if synced
+                    .as_ref()
+                    .is_some_and(|state| facts.updated_at >= state.changes_since())
+                {
+                    FirstSave::MayHaveOpened
+                } else {
+                    FirstSave::Loaded
+                };
+                let saving = (std::slice::from_ref(&facts), first);
+                pull_requests::save_in(&transaction, &repository, saving, &[activity])?;
+            }
+            transaction.commit()
+        })?;
+        saved.map_err(saying(CANT_WRITE))
+    }
+
+    /// Which of `numbers` the store doesn't hold as an Issue or a PR of `repository`, so a fill of the
+    /// Inbox's placeholders asks GitHub only for those (#466).
+    pub fn numbers_lacking(
+        &self,
+        repository: &RepositoryName,
+        numbers: &[u32],
+    ) -> Result<Vec<u32>, Error> {
+        let repository = repository.clone();
+        let asked = Numbers::of(numbers.iter().copied());
+        let held =
+            self.call(move |connection| read_held_numbers(connection, &repository, &asked))?;
+        let held = held.map_err(saying(CANT_READ))?;
+        Ok((numbers.iter())
+            .copied()
+            .filter(|number| !held.contains(number))
+            .collect())
+    }
+
     /// Stores `issues` of `repository` and what GitHub says happened on them, and keeps each of `issueless`
     /// as a number that will never name an Issue, which `named_issues_lacking` leaves out from then on
     /// (#980). One transaction holds it all.
@@ -1014,6 +1063,26 @@ fn write_last_login(connection: &Connection, login: &Login) -> rusqlite::Result<
             named_params! { ":login": login },
         )
         .map(drop)
+}
+
+/// Which of `numbers` `repository` holds as an Issue or a PR, for `Store::numbers_lacking` (#466).
+fn read_held_numbers(
+    connection: &mut Connection,
+    repository: &RepositoryName,
+    numbers: &Numbers,
+) -> rusqlite::Result<BTreeSet<u32>> {
+    let sql = "SELECT number FROM issues
+               WHERE repository = :repository
+                 AND number IN (SELECT value FROM json_each(:numbers))
+               UNION
+               SELECT number FROM pull_requests
+               WHERE repository = :repository
+                 AND number IN (SELECT value FROM json_each(:numbers))";
+    let mut statement = connection.prepare(sql)?;
+    let asked = named_params! { ":repository": repository, ":numbers": numbers };
+    statement
+        .query_map(asked, |row| row.get("number"))?
+        .collect::<rusqlite::Result<_>>()
 }
 
 // Add each read a screen waits on to `view_statements` in the tests, which check its plans (ADR 0017).

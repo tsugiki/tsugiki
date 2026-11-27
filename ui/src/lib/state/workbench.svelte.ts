@@ -217,6 +217,8 @@ export class WorkbenchState {
   #reading: Promise<void> = Promise.resolve();
   /** Whether the Inbox's next older page is asked for and not yet read, so it is asked for once. */
   #olderAsked = false;
+  /** The Inbox's placeholder numbers the list asked the core to fill, each once (#466). */
+  #placeholdersAsked = new SvelteSet<number>();
   /** The list's order as the window holds it now, and the order the items on show were asked in. */
   #order: () => ListOrder;
   #shownOrder: ListOrder | undefined;
@@ -402,6 +404,22 @@ export class WorkbenchState {
     const run = this.#reading.then(read);
     this.#reading = run.catch(() => {});
     return run;
+  }
+
+  /** Asks the core to fill the placeholders with `numbers` that the list shows (#466), each number once:
+   * the session fetches them in batches of 50. A placeholder the user scrolls back over costs no request. */
+  async fillPlaceholders(numbers: number[]): Promise<void> {
+    const fresh = numbers.filter((number) => {
+      if (this.#placeholdersAsked.has(number)) return false;
+      this.#placeholdersAsked.add(number);
+      return true;
+    });
+    if (fresh.length === 0) return;
+    const problem = await problemIn(commands.fillInboxPlaceholders(this.#repository, fresh));
+    // A command that didn't reach the core asked GitHub nothing, so a later scroll may ask again.
+    if (problem !== undefined) {
+      for (const number of fresh) this.#placeholdersAsked.delete(number);
+    }
   }
 
   /** Asks for the view on show again once the list's order has changed. Its lines then moved for the order

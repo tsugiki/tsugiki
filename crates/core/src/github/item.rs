@@ -1,5 +1,8 @@
 //! Fetching one Issue or PR by its number, whichever it turns out to be, for an item the database lacks
-//! (#981). GitHub shares one number space between Issues and PRs, so one field asks for either.
+//! (#981), and a batch of them for the placeholders an Inbox search left (#466). GitHub shares one number
+//! space between Issues and PRs, so one field asks for either.
+
+use std::collections::BTreeMap;
 
 use serde::Deserialize;
 use serde_json::json;
@@ -16,17 +19,65 @@ use crate::repository::RepositoryName;
 /// The field under `repository` that asks for the item, which GitHub can refuse alone.
 const FIELD: &str = "issueOrPullRequest";
 
-/// Names the fetch, and so its recording.
+/// Names the fetch of one item, and so its recording.
 const OPERATION: &str = "FetchItem";
 
+/// Names the fetch of a batch of items, whose query names each number, so it has no recording.
+const BATCH_OPERATION: &str = "FetchItems";
+
+/// What a fetch of one item reads, whichever kind GitHub says it is, and the Repository that holds it now.
+fn item_selection() -> String {
+    format!(
+        "__typename ... on Issue {{ repository {{ nameWithOwner }} {ISSUE_FIELDS} }} \
+         ... on PullRequest {{ {PULL_REQUEST_FIELDS} }}"
+    )
+}
+
 fn fetch_item_query() -> String {
+    let selection = item_selection();
     format!(
         "query {OPERATION}($owner: String!, $name: String!, $number: Int!) {{ \
-         repository(owner: $owner, name: $name) {{ nameWithOwner {FIELD}(number: $number) {{ __typename \
-         ... on Issue {{ repository {{ nameWithOwner }} {ISSUE_FIELDS} }} \
-         ... on PullRequest {{ {PULL_REQUEST_FIELDS} }} }} }} \
+         repository(owner: $owner, name: $name) {{ nameWithOwner {FIELD}(number: $number) {{ {selection} }} }} \
          {RATE_LIMIT_FIELDS} }}"
     )
+}
+
+/// The text of a fetch of `numbers`, one field for each, as GraphQL can't look up a list by variable. Only
+/// digits reach this text.
+fn fetch_items_query(numbers: &[u32]) -> String {
+    let selection = item_selection();
+    let fields: Vec<String> = numbers
+        .iter()
+        .map(|number| format!("i{number}: {FIELD}(number: {number}) {{ {selection} }}"))
+        .collect();
+    format!(
+        "query {BATCH_OPERATION}($owner: String!, $name: String!) {{ \
+         repository(owner: $owner, name: $name) {{ nameWithOwner {} }} {RATE_LIMIT_FIELDS} }}",
+        fields.join(" ")
+    )
+}
+
+/// The Repository an answer names, which GitHub finds under an old name too.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct Holdings {
+    name_with_owner: RepositoryName,
+}
+
+/// An Issue, with the Repository that holds it now.
+#[derive(Deserialize)]
+struct HeldIssue {
+    repository: Holdings,
+    #[serde(flatten)]
+    issue: IssueWire,
+}
+
+/// One item, whichever kind GitHub says it is.
+#[derive(Deserialize)]
+#[serde(tag = "__typename")]
+enum Wire {
+    Issue(HeldIssue),
+    PullRequest(Box<PullRequestWire>),
 }
 
 /// What GitHub said number N of a Repository is.
@@ -49,6 +100,15 @@ pub struct FetchedItem {
     pub rate_limit: RateLimit,
 }
 
+/// The answer to a fetch of a batch of items by their numbers, in the order they were asked.
+#[derive(Debug, PartialEq, Eq)]
+pub struct FetchedItems {
+    pub items: Vec<Numbered>,
+    /// The count of numbers it asked for, which a retry can make smaller than the batch.
+    pub asked_for: usize,
+    pub rate_limit: RateLimit,
+}
+
 impl GitHub {
     /// Issue or PR `number` of `repository`, whichever it is. A Repository the token can't see fails with
     /// `ErrorKind::NotFound`.
@@ -57,25 +117,6 @@ impl GitHub {
         repository: &RepositoryName,
         number: u32,
     ) -> Result<FetchedItem, Error> {
-        #[derive(Deserialize)]
-        #[serde(rename_all = "camelCase")]
-        struct Holding {
-            name_with_owner: RepositoryName,
-        }
-        /// An Issue, with the Repository that holds it now.
-        #[derive(Deserialize)]
-        struct HeldIssue {
-            repository: Holding,
-            #[serde(flatten)]
-            issue: IssueWire,
-        }
-        #[derive(Deserialize)]
-        #[serde(tag = "__typename")]
-        enum Wire {
-            Issue(HeldIssue),
-            PullRequest(Box<PullRequestWire>),
-        }
-        /// The Repository asked about, under the name it has now, which GitHub finds under an old one too.
         #[derive(Deserialize)]
         #[serde(rename_all = "camelCase")]
         struct Holder {
@@ -120,6 +161,85 @@ impl GitHub {
         };
         Ok(FetchedItem {
             numbered,
+            rate_limit: data.rate_limit,
+        })
+    }
+
+    /// The first `size` of `numbers`, or half that after a 502 or no answer, as `fetch_item` does one: the
+    /// item facts of the placeholders an Inbox search left, without their Conversations (#466). A number
+    /// GitHub refuses alone answers `Numbered::Hidden`, and the rest of the batch stands.
+    pub fn fetch_items(
+        &self,
+        repository: &RepositoryName,
+        numbers: &[u32],
+        size: usize,
+    ) -> Result<FetchedItems, Error> {
+        #[derive(Deserialize)]
+        #[serde(rename_all = "camelCase")]
+        struct Holder {
+            name_with_owner: RepositoryName,
+            #[serde(flatten)]
+            items: BTreeMap<String, Option<Wire>>,
+        }
+        #[derive(Deserialize)]
+        #[serde(rename_all = "camelCase")]
+        struct Data {
+            repository: Holder,
+            rate_limit: RateLimit,
+        }
+        let alias = |number: &u32| format!("i{number}");
+        let aliases: Vec<String> = numbers.iter().map(alias).collect();
+        let reply = self.read_at_size(
+            size.min(numbers.len()),
+            |first| {
+                let asked: Vec<u32> = numbers.iter().take(first).copied().collect();
+                Request {
+                    operation: BATCH_OPERATION,
+                    query: fetch_items_query(&asked).into(),
+                    variables: json!({ "owner": repository.owner(), "name": repository.name() }),
+                }
+            },
+            |reply| {
+                let refusable = |field: &str| aliases.iter().any(|asked| asked == field);
+                self.answer_with_refused(reply, refusable)
+            },
+        );
+        let ((mut data, refused), asked_for): ((Data, Vec<_>), usize) = reply?;
+        let mut hidden: Vec<String> = refused
+            .into_iter()
+            .map(|refusal| {
+                log::warn!(
+                    "GitHub wouldn't give one item of {}: {}",
+                    repository,
+                    refusal.message
+                );
+                refusal.field
+            })
+            .collect();
+        let asked = data.repository.name_with_owner;
+        let mut items = Vec::new();
+        for number in numbers.iter().take(asked_for) {
+            let name = alias(number);
+            let refused = hidden.iter().any(|field| field == &name);
+            hidden.retain(|field| field != &name);
+            let answer = (data.repository.items).remove(&name).flatten();
+            let numbered = match answer {
+                _ if refused => Numbered::Hidden,
+                Some(Wire::Issue(held)) if held.repository.name_with_owner.is_same(&asked) => {
+                    let (facts, activity) = held.issue.into();
+                    Numbered::Issue(facts, activity)
+                }
+                Some(Wire::PullRequest(pull_request)) => {
+                    let (facts, activity) = (*pull_request).into();
+                    Numbered::PullRequest(Box::new(facts), activity)
+                }
+                Some(Wire::Issue(_)) | None => Numbered::Missing,
+            };
+            items.push(numbered);
+        }
+        Ok(FetchedItems {
+            items,
+            asked_for,
             rate_limit: data.rate_limit,
         })
     }

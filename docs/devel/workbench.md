@@ -268,7 +268,7 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
   sync leaves this to the first refresh after it. A PR's number, or a transferred Issue's, isn't asked for
   again. A number GitHub doesn't find is asked at each refresh, since its Issue may be opened or restored
   later.
-- **Draft PRs** get a badge.
+- **Draft PRs** get a badge while they are open; a merged or closed PR shows how it ended.
 - A PR that fixes several Issues shows under each of them, with "also fixes #N" on its row.
 - **Stacked PRs**: a PR that targets another PR's branch is stacked on it. Its row and PR view say "stacked on
   #N", and the PR view lists the whole stack in order. Tsugiki reads "Closes #N" from a Stacked PR's

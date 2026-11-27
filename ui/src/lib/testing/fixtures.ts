@@ -286,8 +286,8 @@ export const treedFiles = (folded = false): ReadyFiles =>
     },
   });
 
-/** Review thread `id` under row `at` of the diff, or at `at` when it isn't a number, with `comments` comments
- * by some-reviewer. */
+/** Review thread `id` under row `at` of the diff, on the head's side, or at `at` when it isn't a number, with
+ * `comments` comments by some-reviewer. */
 export const diffThread = (
   id: string,
   at: number | DiffThread["at"],
@@ -295,7 +295,7 @@ export const diffThread = (
   comments = 1,
 ): DiffThread => ({
   id,
-  at: typeof at === "number" ? { kind: "row", row: at } : at,
+  at: typeof at === "number" ? { kind: "row", row: at, side: "RIGHT" } : at,
   resolution,
   comments: Array.from({ length: comments }, () => reviewComment()),
   later_comments: 0,

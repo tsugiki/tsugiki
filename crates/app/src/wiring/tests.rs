@@ -2772,6 +2772,8 @@ fn conversation_of_pr_1(head: &str) -> PullRequestContent {
             body_html: String::new(),
             comments: vec![],
             earlier_comments: 0,
+            events: vec![],
+            earlier_events: 0,
             opened_at: Some(time::OffsetDateTime::UNIX_EPOCH),
         },
         reviews: vec![Review {

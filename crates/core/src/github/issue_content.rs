@@ -7,10 +7,16 @@ use serde::{Deserialize, Deserializer};
 use serde_json::json;
 use time::OffsetDateTime;
 
+use super::issues::StateReason;
+use super::labels::LabelWire;
 use super::pull_requests::{Person, RateLimit};
+use super::references::NamedRepository;
 use super::{GitHub, RATE_LIMIT_FIELDS, Request};
 use crate::error::{Error, ErrorKind};
-use crate::facts::issue_content::{Comment, CommentId, HiddenReason, IssueComment, IssueContent};
+use crate::facts::issue_content::{
+    Comment, CommentId, CommitReference, HiddenReason, IssueComment, IssueContent, IssueEvent,
+    IssueEventKind, Reference,
+};
 use crate::facts::pull_requests::NodeId;
 use crate::repository::RepositoryName;
 
@@ -47,7 +53,7 @@ impl Thread {
 
     const fn more_fields(self) -> &'static str {
         match self {
-            Self::Issue => "",
+            Self::Issue => EVENTS_FIELDS,
             Self::PullRequest => super::pull_request_content::REVIEW_FIELDS,
         }
     }
@@ -69,6 +75,36 @@ impl Thread {
 pub(super) const CONVERSATION_FIELDS: &str = "id bodyHTML createdAt comments(last: 30) { totalCount \
                                               nodes { fullDatabaseId author { login } createdAt bodyHTML \
                                               isMinimized minimizedReason } }";
+
+/// The events the Issue view shows, the last 30 of the kinds it draws, in time order (#1067). They come from
+/// `timelineItems`, whose own connection keeps the count of the older ones GitHub still holds.
+pub(super) const EVENTS_FIELDS: &str = "events: timelineItems(last: 30, itemTypes: [\
+     CROSS_REFERENCED_EVENT, REFERENCED_EVENT, CONNECTED_EVENT, DISCONNECTED_EVENT, LABELED_EVENT, \
+     UNLABELED_EVENT, ASSIGNED_EVENT, UNASSIGNED_EVENT, CLOSED_EVENT, REOPENED_EVENT, RENAMED_TITLE_EVENT]) \
+     { totalCount nodes { __typename \
+     ... on CrossReferencedEvent { createdAt actor { login } source { __typename \
+       ... on Issue { number title url repository { nameWithOwner } } \
+       ... on PullRequest { number title url repository { nameWithOwner } } } } \
+     ... on ReferencedEvent { createdAt actor { login } commit { abbreviatedOid messageHeadline url } } \
+     ... on ConnectedEvent { createdAt actor { login } source { __typename \
+       ... on Issue { number title url repository { nameWithOwner } } \
+       ... on PullRequest { number title url repository { nameWithOwner } } } subject { __typename \
+       ... on Issue { number title url repository { nameWithOwner } } \
+       ... on PullRequest { number title url repository { nameWithOwner } } } } \
+     ... on DisconnectedEvent { createdAt actor { login } source { __typename \
+       ... on Issue { number title url repository { nameWithOwner } } \
+       ... on PullRequest { number title url repository { nameWithOwner } } } subject { __typename \
+       ... on Issue { number title url repository { nameWithOwner } } \
+       ... on PullRequest { number title url repository { nameWithOwner } } } } \
+     ... on LabeledEvent { createdAt actor { login } label { name } } \
+     ... on UnlabeledEvent { createdAt actor { login } label { name } } \
+     ... on AssignedEvent { createdAt actor { login } assignee { ... on User { login } \
+       ... on Bot { login } ... on Organization { login } ... on Mannequin { login } } } \
+     ... on UnassignedEvent { createdAt actor { login } assignee { ... on User { login } \
+       ... on Bot { login } ... on Organization { login } ... on Mannequin { login } } } \
+     ... on ClosedEvent { createdAt actor { login } stateReason } \
+     ... on ReopenedEvent { createdAt actor { login } } \
+     ... on RenamedTitleEvent { createdAt actor { login } previousTitle } } }";
 
 /// GitHub's `BigInt`, such as a `fullDatabaseId`, which it sends as a string of digits. Its `databaseId` is
 /// a 32-bit `Int`, too small for the numbers of comments and Reviews today. Nothing, for null.
@@ -135,6 +171,274 @@ struct CommentsWire {
     nodes: Vec<Option<CommentWire>>,
 }
 
+/// A PR or an Issue that kind of event points at. Both carry the same fields, so the kind only says whether
+/// a hand link names a PR.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SubjectWire {
+    #[serde(rename = "__typename")]
+    kind: SubjectKind,
+    number: u32,
+    title: String,
+    url: String,
+    repository: NamedRepository,
+}
+
+#[derive(Deserialize)]
+enum SubjectKind {
+    Issue,
+    PullRequest,
+}
+
+impl SubjectWire {
+    fn reference(self) -> Reference {
+        Reference {
+            repository: self.repository.name_with_owner,
+            number: self.number,
+            title: self.title,
+            url: self.url,
+        }
+    }
+
+    fn is_pull_request(&self) -> bool {
+        matches!(self.kind, SubjectKind::PullRequest)
+    }
+}
+
+/// The PR of a hand link. GitHub puts the PR on one side of the event, so this names whichever side is one.
+fn linked(source: SubjectWire, subject: SubjectWire) -> Reference {
+    if source.is_pull_request() {
+        source.reference()
+    } else {
+        subject.reference()
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CommitReferenceWire {
+    abbreviated_oid: String,
+    message_headline: String,
+    url: String,
+}
+
+/// One item of the Issue's `timelineItems`, of the kinds [`EVENTS_FIELDS`] asks for.
+#[derive(Deserialize)]
+#[expect(
+    clippy::enum_variant_names,
+    reason = "GitHub's `__typename` names each kind, and each ends with Event"
+)]
+#[serde(tag = "__typename", rename_all_fields = "camelCase")]
+enum EventWire {
+    CrossReferencedEvent {
+        #[serde(with = "time::serde::rfc3339")]
+        created_at: OffsetDateTime,
+        actor: Option<Person>,
+        source: SubjectWire,
+    },
+    ReferencedEvent {
+        #[serde(with = "time::serde::rfc3339")]
+        created_at: OffsetDateTime,
+        actor: Option<Person>,
+        commit: Option<CommitReferenceWire>,
+    },
+    ConnectedEvent {
+        #[serde(with = "time::serde::rfc3339")]
+        created_at: OffsetDateTime,
+        actor: Option<Person>,
+        source: SubjectWire,
+        subject: SubjectWire,
+    },
+    DisconnectedEvent {
+        #[serde(with = "time::serde::rfc3339")]
+        created_at: OffsetDateTime,
+        actor: Option<Person>,
+        source: SubjectWire,
+        subject: SubjectWire,
+    },
+    LabeledEvent {
+        #[serde(with = "time::serde::rfc3339")]
+        created_at: OffsetDateTime,
+        actor: Option<Person>,
+        label: LabelWire,
+    },
+    UnlabeledEvent {
+        #[serde(with = "time::serde::rfc3339")]
+        created_at: OffsetDateTime,
+        actor: Option<Person>,
+        label: LabelWire,
+    },
+    AssignedEvent {
+        #[serde(with = "time::serde::rfc3339")]
+        created_at: OffsetDateTime,
+        actor: Option<Person>,
+        assignee: Option<Person>,
+    },
+    UnassignedEvent {
+        #[serde(with = "time::serde::rfc3339")]
+        created_at: OffsetDateTime,
+        actor: Option<Person>,
+        assignee: Option<Person>,
+    },
+    ClosedEvent {
+        #[serde(with = "time::serde::rfc3339")]
+        created_at: OffsetDateTime,
+        actor: Option<Person>,
+        state_reason: Option<StateReason>,
+    },
+    ReopenedEvent {
+        #[serde(with = "time::serde::rfc3339")]
+        created_at: OffsetDateTime,
+        actor: Option<Person>,
+    },
+    RenamedTitleEvent {
+        #[serde(with = "time::serde::rfc3339")]
+        created_at: OffsetDateTime,
+        actor: Option<Person>,
+        previous_title: String,
+    },
+}
+
+impl EventWire {
+    fn event(self) -> Option<IssueEvent> {
+        let (created_at, actor, kind) = match self {
+            Self::CrossReferencedEvent {
+                created_at,
+                actor,
+                source,
+            } => (
+                created_at,
+                actor,
+                IssueEventKind::CrossReferenced {
+                    reference: source.reference(),
+                },
+            ),
+            Self::ReferencedEvent {
+                created_at,
+                actor,
+                commit,
+            } => {
+                // The commit a reference named can have gone, and the line has nothing to say without it.
+                let commit = commit?;
+                (
+                    created_at,
+                    actor,
+                    IssueEventKind::Referenced {
+                        commit: CommitReference {
+                            sha: commit.abbreviated_oid,
+                            message: commit.message_headline,
+                            url: commit.url,
+                        },
+                    },
+                )
+            }
+            Self::ConnectedEvent {
+                created_at,
+                actor,
+                source,
+                subject,
+            } => (
+                created_at,
+                actor,
+                IssueEventKind::Connected {
+                    reference: linked(source, subject),
+                },
+            ),
+            Self::DisconnectedEvent {
+                created_at,
+                actor,
+                source,
+                subject,
+            } => (
+                created_at,
+                actor,
+                IssueEventKind::Disconnected {
+                    reference: linked(source, subject),
+                },
+            ),
+            Self::LabeledEvent {
+                created_at,
+                actor,
+                label,
+            } => (
+                created_at,
+                actor,
+                IssueEventKind::Labeled { label: label.name },
+            ),
+            Self::UnlabeledEvent {
+                created_at,
+                actor,
+                label,
+            } => (
+                created_at,
+                actor,
+                IssueEventKind::Unlabeled { label: label.name },
+            ),
+            Self::AssignedEvent {
+                created_at,
+                actor,
+                assignee,
+            } => (
+                created_at,
+                actor,
+                IssueEventKind::Assigned {
+                    assignee: assignee.map(|assignee| assignee.login),
+                },
+            ),
+            Self::UnassignedEvent {
+                created_at,
+                actor,
+                assignee,
+            } => (
+                created_at,
+                actor,
+                IssueEventKind::Unassigned {
+                    assignee: assignee.map(|assignee| assignee.login),
+                },
+            ),
+            Self::ClosedEvent {
+                created_at,
+                actor,
+                state_reason,
+            } => (
+                created_at,
+                actor,
+                IssueEventKind::Closed {
+                    completed: !matches!(
+                        state_reason,
+                        Some(StateReason::NotPlanned | StateReason::Duplicate)
+                    ),
+                },
+            ),
+            Self::ReopenedEvent { created_at, actor } => {
+                (created_at, actor, IssueEventKind::Reopened)
+            }
+            Self::RenamedTitleEvent {
+                created_at,
+                actor,
+                previous_title,
+            } => (
+                created_at,
+                actor,
+                IssueEventKind::Renamed { previous_title },
+            ),
+        };
+        Some(IssueEvent {
+            actor: actor.map(|actor| actor.login),
+            created_at,
+            kind,
+        })
+    }
+}
+
+#[derive(Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+struct EventsWire {
+    total_count: u32,
+    #[serde(default)]
+    nodes: Vec<Option<EventWire>>,
+}
+
 /// The answer to [`CONVERSATION_FIELDS`].
 #[derive(Deserialize)]
 pub(super) struct IssueWire {
@@ -144,6 +448,9 @@ pub(super) struct IssueWire {
     #[serde(rename = "createdAt", with = "time::serde::rfc3339")]
     created_at: OffsetDateTime,
     comments: CommentsWire,
+    /// A PR's query asks for no events, so its Conversation keeps none until an Issue's ticket adds them.
+    #[serde(default)]
+    events: EventsWire,
 }
 
 impl From<IssueWire> for IssueContent {
@@ -164,11 +471,24 @@ impl From<IssueWire> for IssueContent {
             })
             .collect();
         let held = u32::try_from(comments.len()).unwrap_or(u32::MAX);
+        // A referenced event whose commit GitHub no longer has is dropped, but it was still one of the
+        // events this read brought, so it doesn't count as an older one.
+        let fetched_events = wire.events.nodes.iter().flatten().count();
+        let events: Vec<IssueEvent> = wire
+            .events
+            .nodes
+            .into_iter()
+            .flatten()
+            .filter_map(EventWire::event)
+            .collect();
+        let held_events = u32::try_from(fetched_events).unwrap_or(u32::MAX);
         Self {
             id: Some(wire.id),
             body_html: wire.body_html,
             comments,
             earlier_comments: wire.comments.total_count.saturating_sub(held),
+            events,
+            earlier_events: wire.events.total_count.saturating_sub(held_events),
             opened_at: Some(wire.created_at),
         }
     }

@@ -101,18 +101,27 @@ fn placed(diff: &Diff, threads: &[ThreadLine]) -> Vec<DiffThread> {
     place(diff, threads.iter())
 }
 
-/// Each thread's id, and where it is: `row N`, `file N`, `outdated N`, `outside N:line@head`, or
+/// `side` as `places` names it.
+fn side(side: Side) -> &'static str {
+    match side {
+        Side::Left => "left",
+        Side::Right => "right",
+    }
+}
+
+/// Each thread's id, and where it is: `row N side`, `file N`, `outdated N`, `outside N:line@head side`, or
 /// `gone path`.
 fn places(placed: &[DiffThread]) -> Vec<(&str, String)> {
     let at = |thread: &DiffThread| match &thread.at {
-        Placement::Row { row } => format!("row {row}"),
+        Placement::Row { row, side: which } => format!("row {row} {}", side(*which)),
         Placement::File { file } => format!("file {file}"),
         Placement::Outdated { file, .. } => format!("outdated {file}"),
         Placement::Outside {
             file,
             line,
             head_line,
-        } => format!("outside {file}:{line}@{head_line}"),
+            side: which,
+        } => format!("outside {file}:{line}@{head_line} {}", side(*which)),
         Placement::Gone { path, .. } => format!("gone {path}"),
     };
     placed
@@ -135,10 +144,10 @@ fn a_thread_sits_under_its_line_at_the_head_or_at_the_merge_base_in_row_order() 
     assert_eq!(
         places(&placed),
         [
-            ("removed", "row 3".to_owned()),
-            ("added", "row 4".to_owned()),
-            ("context at the base", "row 5".to_owned()),
-            ("context at the head", "row 10".to_owned())
+            ("removed", "row 3 left".to_owned()),
+            ("added", "row 4 right".to_owned()),
+            ("context at the base", "row 5 left".to_owned()),
+            ("context at the head", "row 10 right".to_owned())
         ]
     );
 }
@@ -155,8 +164,8 @@ fn a_renamed_file_s_threads_name_it_either_way() {
     assert_eq!(
         places(&placed),
         [
-            ("old name", "row 8".to_owned()),
-            ("new name", "row 9".to_owned())
+            ("old name", "row 8 left".to_owned()),
+            ("new name", "row 9 right".to_owned())
         ]
     );
 }
@@ -176,7 +185,7 @@ fn a_thread_on_a_file_that_took_a_renamed_file_s_old_name_stays_on_it() {
     let placed = placed(&diff, &threads);
 
     // The rename's rows are 0 to 3, and the new file's 4 to 7.
-    assert_eq!(places(&placed), [("new file", "row 7".to_owned())]);
+    assert_eq!(places(&placed), [("new file", "row 7 right".to_owned())]);
 }
 
 #[test]
@@ -198,7 +207,7 @@ fn each_file_shows_its_threads_on_the_file_then_its_outdated_ones_then_those_on_
             ("earlier file", "outdated 0".to_owned()),
             ("whole", "file 1".to_owned()),
             ("outdated", "outdated 1".to_owned()),
-            ("line", "row 9".to_owned()),
+            ("line", "row 9 right".to_owned()),
             ("also gone", "gone Lib/gone.py".to_owned()),
             ("gone", "gone Lib/re.py".to_owned()),
         ],
@@ -220,10 +229,10 @@ fn a_thread_on_a_line_no_hunk_shows_sits_in_its_gap_or_after_the_file_s_last_row
     assert_eq!(
         places(&placed),
         [
-            ("in the gap at the base", "outside 0:3@3".to_owned()),
-            ("further down the gap", "outside 0:5@5".to_owned()),
-            ("in the hunk", "row 8".to_owned()),
-            ("after", "outside 0:20@20".to_owned()),
+            ("in the gap at the base", "outside 0:3@3 left".to_owned()),
+            ("further down the gap", "outside 0:5@5 right".to_owned()),
+            ("in the hunk", "row 8 right".to_owned()),
+            ("after", "outside 0:20@20 right".to_owned()),
         ]
     );
 }

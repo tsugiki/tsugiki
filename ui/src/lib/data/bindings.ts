@@ -899,6 +899,16 @@ export type Comment_Serialize = {
 	hidden: HiddenReason | null,
 };
 
+/**  A commit an event names, as GitHub spells it. */
+export type CommitReference = {
+	/**  GitHub's short SHA. */
+	sha: string,
+	/**  The first line of its message. */
+	message: string,
+	/**  The address a click opens. */
+	url: string,
+};
+
 /**  Whether GitHub can be reached now. */
 export type Connection = "online" | 
 /**
@@ -1867,10 +1877,10 @@ export type IssueComment_Serialize = {
 	id: CommentId | null,
 } & Comment_Serialize;
 
-/**  An Issue's description and its recent comments. */
+/**  An Issue's description, its recent comments, and the events the Issue view shows. */
 export type IssueContent = IssueContent_Serialize | IssueContent_Deserialize;
 
-/**  An Issue's description and its recent comments. */
+/**  An Issue's description, its recent comments, and the events the Issue view shows. */
 export type IssueContent_Deserialize = {
 	/**  GitHub's rendering, written by a stranger. The webview's content security policy holds it (ADR 0005). */
 	body_html: string,
@@ -1879,13 +1889,20 @@ export type IssueContent_Deserialize = {
 	/**  The count of older comments that only GitHub shows. */
 	earlier_comments: number,
 	/**
+	 *  The events the Issue view shows, oldest first (#1067). Empty for a PR's Conversation, whose events
+	 *  wait for a later ticket.
+	 */
+	events: IssueEvent_Deserialize[],
+	/**  The count of older events that only GitHub shows. */
+	earlier_events: number,
+	/**
 	 *  The time its author opened it. Nothing, for a read kept from before Tsugiki asked, until the next
 	 *  read.
 	 */
 	opened_at: string | null,
 };
 
-/**  An Issue's description and its recent comments. */
+/**  An Issue's description, its recent comments, and the events the Issue view shows. */
 export type IssueContent_Serialize = {
 	/**  GitHub's rendering, written by a stranger. The webview's content security policy holds it (ADR 0005). */
 	body_html: string,
@@ -1894,11 +1911,77 @@ export type IssueContent_Serialize = {
 	/**  The count of older comments that only GitHub shows. */
 	earlier_comments: number,
 	/**
+	 *  The events the Issue view shows, oldest first (#1067). Empty for a PR's Conversation, whose events
+	 *  wait for a later ticket.
+	 */
+	events: IssueEvent_Serialize[],
+	/**  The count of older events that only GitHub shows. */
+	earlier_events: number,
+	/**
 	 *  The time its author opened it. Nothing, for a read kept from before Tsugiki asked, until the next
 	 *  read.
 	 */
 	opened_at: string | null,
 };
+
+/**  One thing that happened on an Issue, as the Issue view shows it between the comments. */
+export type IssueEvent = IssueEvent_Serialize | IssueEvent_Deserialize;
+
+/**
+ *  An event on an Issue, of the kinds the Issue view shows. The kinds it leaves out change none of the
+ *  fields it draws, as `docs/devel/layout.md` says.
+ */
+export type IssueEventKind = IssueEventKind_Serialize | IssueEventKind_Deserialize;
+
+/**
+ *  An event on an Issue, of the kinds the Issue view shows. The kinds it leaves out change none of the
+ *  fields it draws, as `docs/devel/layout.md` says.
+ */
+export type IssueEventKind_Deserialize = 
+/**  A PR or an Issue mentions this one. */
+{ kind: "cross-referenced"; reference: Reference } | 
+/**  A commit mentions this one. */
+{ kind: "referenced"; commit: CommitReference } | 
+/**  Someone linked a PR to this Issue by hand, in GitHub's Development panel. */
+{ kind: "connected"; reference: Reference } | 
+/**  Someone removed a PR's hand link. */
+{ kind: "disconnected"; reference: Reference } | { kind: "labeled"; label: Label } | { kind: "unlabeled"; label: Label } | { kind: "assigned"; assignee?: Login | null } | { kind: "unassigned"; assignee?: Login | null } | 
+/**  It closed. `completed` is false when it closed as not planned, a duplicate included. */
+{ kind: "closed"; completed: boolean } | { kind: "reopened" } | 
+/**  Its title changed, from `previous_title`. */
+{ kind: "renamed"; previous_title: string };
+
+/**
+ *  An event on an Issue, of the kinds the Issue view shows. The kinds it leaves out change none of the
+ *  fields it draws, as `docs/devel/layout.md` says.
+ */
+export type IssueEventKind_Serialize = 
+/**  A PR or an Issue mentions this one. */
+{ kind: "cross-referenced"; reference: Reference } | 
+/**  A commit mentions this one. */
+{ kind: "referenced"; commit: CommitReference } | 
+/**  Someone linked a PR to this Issue by hand, in GitHub's Development panel. */
+{ kind: "connected"; reference: Reference } | 
+/**  Someone removed a PR's hand link. */
+{ kind: "disconnected"; reference: Reference } | { kind: "labeled"; label: Label } | { kind: "unlabeled"; label: Label } | { kind: "assigned"; assignee: Login | null } | { kind: "unassigned"; assignee: Login | null } | 
+/**  It closed. `completed` is false when it closed as not planned, a duplicate included. */
+{ kind: "closed"; completed: boolean } | { kind: "reopened" } | 
+/**  Its title changed, from `previous_title`. */
+{ kind: "renamed"; previous_title: string };
+
+/**  One thing that happened on an Issue, as the Issue view shows it between the comments. */
+export type IssueEvent_Deserialize = {
+	/**  Nothing, for an event whose actor's account has gone. */
+	actor?: Login | null,
+	created_at: string,
+} & IssueEventKind_Deserialize;
+
+/**  One thing that happened on an Issue, as the Issue view shows it between the comments. */
+export type IssueEvent_Serialize = {
+	/**  Nothing, for an event whose actor's account has gone. */
+	actor: Login | null,
+	created_at: string,
+} & IssueEventKind_Serialize;
 
 /**  An Issue on the Workbench, with its tree: each PR Tsugiki knows that fixes it, whatever its state. */
 export type IssueItem = IssueItem_Serialize | IssueItem_Deserialize;
@@ -2899,8 +2982,11 @@ export type Placement = Placement_Serialize | Placement_Deserialize;
 
 /**  Where Files shows a thread. A file is named by its place among the diff's files. */
 export type Placement_Deserialize = 
-/**  Under the diff's row `row`, which shows its line. */
-{ kind: "row"; row: number } | 
+/**
+ *  Under the diff's row `row`, which shows its line, on `side`: `LEFT` or `RIGHT`, whose column of the
+ *  side-by-side view holds the thread.
+ */
+{ kind: "row"; row: number; side: Side } | 
 /**  At the top of file `file`, as it is on the whole file, above the file's Outdated threads. */
 { kind: "file"; file: number } | 
 /**
@@ -2910,9 +2996,10 @@ export type Placement_Deserialize =
 { kind: "outdated"; file: number; code?: ThreadCode | null } | 
 /**
  *  Under line `head_line` of file `file` at the head, which no hunk shows, so the gap or the end of the
- *  file around it opens to show it. `line` is the line as the thread's side counts it.
+ *  file around it opens to show it. `line` is the line as the thread's side counts it, and `side` which
+ *  column of the side-by-side view holds the thread.
  */
-{ kind: "outside"; file: number; line: number; head_line: number } | 
+{ kind: "outside"; file: number; line: number; head_line: number; side: Side } | 
 /**
  *  After the last file, on file `path`, which the diff no longer holds, with the code it was written
  *  against.
@@ -2921,8 +3008,11 @@ export type Placement_Deserialize =
 
 /**  Where Files shows a thread. A file is named by its place among the diff's files. */
 export type Placement_Serialize = 
-/**  Under the diff's row `row`, which shows its line. */
-{ kind: "row"; row: number } | 
+/**
+ *  Under the diff's row `row`, which shows its line, on `side`: `LEFT` or `RIGHT`, whose column of the
+ *  side-by-side view holds the thread.
+ */
+{ kind: "row"; row: number; side: Side } | 
 /**  At the top of file `file`, as it is on the whole file, above the file's Outdated threads. */
 { kind: "file"; file: number } | 
 /**
@@ -2932,9 +3022,10 @@ export type Placement_Serialize =
 { kind: "outdated"; file: number; code: ThreadCode | null } | 
 /**
  *  Under line `head_line` of file `file` at the head, which no hunk shows, so the gap or the end of the
- *  file around it opens to show it. `line` is the line as the thread's side counts it.
+ *  file around it opens to show it. `line` is the line as the thread's side counts it, and `side` which
+ *  column of the side-by-side view holds the thread.
  */
-{ kind: "outside"; file: number; line: number; head_line: number } | 
+{ kind: "outside"; file: number; line: number; head_line: number; side: Side } | 
 /**
  *  After the last file, on file `path`, which the diff no longer holds, with the code it was written
  *  against.
@@ -3223,6 +3314,17 @@ export type ReadOnly =
 export type ReadOnlyChoice = {
 	repository: RepositoryName,
 	read_only: boolean,
+};
+
+/**  A PR or an Issue that an event names: a cross-reference, or the PR a hand link connected. */
+export type Reference = {
+	/**  Its Repository, as `owner/name`. */
+	repository: RepositoryName,
+	number: number,
+	/**  Its title, so the line says what it is. */
+	title: string,
+	/**  The address a click opens. */
+	url: string,
 };
 
 /**  The background refreshes that ran while the window drew frames. */

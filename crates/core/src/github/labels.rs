@@ -10,7 +10,7 @@ use crate::facts::labels::Label;
 /// query costs here.
 #[derive(Deserialize)]
 pub(super) struct LabelWire {
-    name: Label,
+    pub(super) name: Label,
 }
 
 /// The names of `labels`, in the order the store reads them back, so facts from GitHub and from the store

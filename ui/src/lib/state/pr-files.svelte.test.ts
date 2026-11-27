@@ -1300,6 +1300,24 @@ it("folds a resolved thread to a line and leaves an open one open, as the user t
   expect(files.layout.threadsIn(0, 99).map((placed) => placed.length)).toEqual([9, 3, 4]);
 });
 
+it("measures a thread apart in each view, as side by side it wraps in half the width", async () => {
+  const choice = new DiffViewChoice();
+  core.pullRequestFiles.mockResolvedValue(ok(threaded()));
+  const files = new PrFilesState("python/cpython", 11, new PanesState(), timer(), choice);
+  await files.load();
+  const lengths = () => files.layout.threadsIn(0, 99).map((placed) => placed.length);
+
+  files.measured("T2", 9);
+  expect(lengths()).toEqual([9, 1, 4]);
+  // The other view keeps its own measurement, and guesses until it has one.
+  choice.toggle();
+  expect(lengths()).toEqual([7, 1, 4]);
+  files.measured("T2", 12);
+  expect(lengths()).toEqual([12, 1, 4]);
+  choice.toggle();
+  expect(lengths()).toEqual([9, 1, 4]);
+});
+
 it("moves through the open threads with F8 and back with Shift+F8, round from either end", async () => {
   const files = await loaded(threaded());
   const visited: string[] = [];
@@ -1424,7 +1442,13 @@ it("reveals a thread at the top of a collapsed file, opening the file, and one o
 });
 
 it("opens the lines around a thread on a line no hunk shows, once, and its thread sits under the line", async () => {
-  const outside = diffThread("outside", { kind: "outside", file: 0, line: 28, head_line: 30 });
+  const outside = diffThread("outside", {
+    kind: "outside",
+    file: 0,
+    line: 28,
+    head_line: 30,
+    side: "RIGHT",
+  });
   const files = await loaded({ ...gapped(), threads: shown(outside) });
   await vi.waitFor(() => {
     expect(files.line(0, 33)).toEqual({ text: "line 33", spans: [] });
@@ -1433,7 +1457,10 @@ it("opens the lines around a thread on a line no hunk shows, once, and its threa
   core.pullRequestFiles.mockResolvedValue(
     ok({
       ...gapped(),
-      threads: shown(outside, diffThread("near", { kind: "outside", file: 0, line: 1, head_line: 2 })),
+      threads: shown(
+        outside,
+        diffThread("near", { kind: "outside", file: 0, line: 1, head_line: 2, side: "RIGHT" }),
+      ),
     }),
   );
   await files.ask();
@@ -3323,6 +3350,8 @@ it("looks up a word picked in the peek's code at the hit's commit, and names the
     symbol: "width",
     side: "base",
     commit: "base",
+    // The hit is at the base, but the peek's line is at the head, so it stays in the right column.
+    column: "right",
     trail: [first],
   };
   expect(whileLooking).toEqual([{ ...followed, lookup: { state: "looking" } }, "take"]);

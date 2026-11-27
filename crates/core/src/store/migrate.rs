@@ -207,6 +207,10 @@ pub(super) const MIGRATIONS: &[Migration] = &[
         version: 45,
         sql: super::inbox_search::SCHEMA,
     },
+    Migration {
+        version: 46,
+        sql: super::issue_content::EVENTS,
+    },
 ];
 
 /// The version a file has after all of `migrations`.

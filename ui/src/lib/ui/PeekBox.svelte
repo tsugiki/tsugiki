@@ -1,15 +1,21 @@
 <!-- The Definition peek's box under its line, in the diff (#438) or in the file view (#457), with the edge
      that drags its height astride its bottom line (#458). It stays as wide as what it sits in, however far
      across the code scrolls, from the `--across` and `--width` its parent sets, and leaves the line numbers'
-     `gutter` pixels on its left. Split, it fills the place below the code that `SplitPeek` gives it, which
-     holds its edge, and lists its hits on the left (#459). The peek holds the focus itself while it has no
-     list, as while a lookup from inside it runs, and takes it on a click on its header. While anything in it
-     has the focus, `Alt+F12` looks up the word picked in its code (#447), and the window's keys never hear
-     it. With no word picked there, it goes on to look up the word picked in the code under it. -->
+     `gutter` pixels on its left. Side by side, `column` puts it under the column of the side the word was
+     picked in, as wide as that column (#1080). Split, it fills the place below the code that `SplitPeek`
+     gives it, which holds its edge, and lists its hits on the left (#459). The peek holds the focus itself
+     while it has no list, as while a lookup from inside it runs, and takes it on a click on its header.
+     While anything in it has the focus, `Alt+F12` looks up the word picked in its code (#447), and the
+     window's keys don't hear it. With no word picked there, it goes on to look up the word picked in the
+     code under it. -->
 <script lang="ts" module>
+  import type { Column } from "$lib/state/pick";
+
   /** The box's place: under its line, `top` pixels from the top of the rows, in `rows` rows, past the
-   * line numbers' `gutter` pixels, or below the code, in the place `SplitPeek` gives it. */
-  export type PeekPlace = { kind: "inline"; top: number; rows: number; gutter: number } | { kind: "split" };
+   * line numbers' `gutter` pixels, under the `column` of the side-by-side view the word was picked in, or
+   * below the code, in the place `SplitPeek` gives it. */
+  export type PeekPlace =
+    { kind: "inline"; top: number; rows: number; gutter: number; column?: Column } | { kind: "split" };
 </script>
 
 <script lang="ts">
@@ -37,7 +43,7 @@
 
 <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
 <div
-  class={["peek sans", place.kind]}
+  class={["peek sans", place.kind, place.kind === "inline" && place.column]}
   role="group"
   aria-label="Definition peek"
   tabindex="-1"
@@ -88,7 +94,7 @@
 </div>
 {#if place.kind === "inline" && peekSized(peek)}
   <!-- Astride the peek's bottom line, outside the peek, whose `overflow: hidden` would clip it. -->
-  <div class="peek-edge" style:top={`${String(place.top + place.rows * ROW - 4)}px`}>
+  <div class={["peek-edge", place.column]} style:top={`${String(place.top + place.rows * ROW - 4)}px`}>
     <PaneEdge
       label="Definition peek height"
       sizes={{ kind: "box", value: diff.panes.peekRows, unit: ROW }}
@@ -117,6 +123,19 @@
     position: absolute;
     left: var(--across);
     width: var(--width);
+  }
+
+  /* Side by side, the peek stays in the column of the side the word was picked in, as wide as that column,
+     and the other column stays empty beside it (#1080). */
+  .peek.inline.left,
+  .peek-edge.left {
+    width: calc(var(--width) / 2);
+  }
+
+  .peek.inline.right,
+  .peek-edge.right {
+    left: calc(var(--across) + var(--width) / 2);
+    width: calc(var(--width) / 2);
   }
 
   /* Below the code, it fills the place `SplitPeek` gives it. */

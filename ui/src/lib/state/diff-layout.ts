@@ -52,7 +52,8 @@ export interface LaidFile {
 }
 
 /** Where a review thread sits: under a row of the diff, a file's header among them; under line `line` at
- * the head of file `file`, which no hunk shows; or after the last file. */
+ * the head of file `file`, which no hunk shows; or after the last file. The anchor says where, and not which
+ * column: a thread's side is in its placement, where GitHub's answer put it (#1080). */
 export type ThreadAnchor =
   { kind: "row"; row: number } | { kind: "line"; file: number; line: number } | { kind: "end" };
 

@@ -58,6 +58,8 @@ const view: PrView = {
       },
     ],
     earlier_comments: 2,
+    events: [],
+    earlier_events: 0,
     opened_at: null,
     reviews: [
       {

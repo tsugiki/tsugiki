@@ -45,6 +45,7 @@ export const looking = (lookup: Peek["lookup"]): Peek => ({
   symbol: "eggs",
   side: "head",
   commit: "abcdef123",
+  column: null,
   lookup,
 });
 

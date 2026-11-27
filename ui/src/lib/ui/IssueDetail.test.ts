@@ -88,6 +88,8 @@ const view: IssueView = {
       { id: null, author: null, created_at: "2026-11-04T10:00:00Z", body_html: "<p>Gone</p>", hidden: null },
     ],
     earlier_comments: 3,
+    events: [],
+    earlier_events: 0,
     opened_at: "2026-10-22T10:00:00Z",
   },
 };
@@ -96,6 +98,8 @@ const content = (body_html: string, earlier_comments: number) => ({
   body_html,
   comments: [],
   earlier_comments,
+  events: [],
+  earlier_events: 0,
   opened_at: null,
 });
 

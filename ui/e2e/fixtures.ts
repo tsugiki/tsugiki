@@ -84,6 +84,8 @@ export const prView = (reviews: Review[] = []): PrView => ({
     body_html: "<p>The fix</p>",
     comments: [],
     earlier_comments: 0,
+    events: [],
+    earlier_events: 0,
     opened_at: null,
     reviews,
     earlier_reviews: 0,

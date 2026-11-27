@@ -335,6 +335,8 @@ fn an_issue_nobody_has_to_act_on_still_has_a_view_with_what_was_last_read() {
             },
         }],
         earlier_comments: 0,
+        events: vec![],
+        earlier_events: 0,
         opened_at: Some(OffsetDateTime::UNIX_EPOCH),
     };
     world

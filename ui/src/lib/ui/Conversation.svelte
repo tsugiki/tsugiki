@@ -1,15 +1,23 @@
 <script lang="ts">
   import { SvelteSet } from "svelte/reactivity";
   import { counted } from "$lib/state/counted";
-  import type { HiddenReason, IssueComment, IssueContent } from "$lib/state/issue-view.svelte";
+  import type {
+    CommitReference,
+    HiddenReason,
+    IssueComment,
+    IssueContent,
+    IssueEvent,
+    Reference,
+  } from "$lib/state/issue-view.svelte";
   import type { PullRequestContent, Review, ReviewState, ThreadLine } from "$lib/state/pr-view.svelte";
   import { REASONS } from "./hidden";
+  import { followLink, linkTitle } from "./link-tooltip";
   import RenderedHtml from "./RenderedHtml.svelte";
   import { stampOf } from "./time";
   import { ago } from "./workbench-row";
 
-  // An Issue's or a PR's description, then its recent comments and a PR's Reviews in time order (#156). A
-  // thread's place opens the thread in Files, given `onthread` (#184).
+  // An Issue's or a PR's description, then its recent comments and events and a PR's Reviews in time order
+  // (#156, #1067). A thread's place opens the thread in Files, given `onthread` (#184).
   let {
     content,
     now,
@@ -26,7 +34,8 @@
   // moves each one's place.
   type Entry =
     | { kind: "comment"; key: string; id: string; at: string; comment: IssueComment }
-    | { kind: "review"; key: string; id: string; at: string; review: Review };
+    | { kind: "review"; key: string; id: string; at: string; review: Review }
+    | { kind: "event"; key: string; at: string; event: IssueEvent };
 
   const entries = $derived.by((): Entry[] => {
     const comments = content.comments.map((comment, position): Entry => ({
@@ -43,7 +52,15 @@
       at: review.submitted_at,
       review,
     }));
-    return [...comments, ...reviews].sort((one, other) => Date.parse(one.at) - Date.parse(other.at));
+    const events = content.events.map((event, position): Entry => ({
+      kind: "event",
+      key: `e${String(position)}`,
+      at: event.created_at,
+      event,
+    }));
+    return [...comments, ...reviews, ...events].sort(
+      (one, other) => Date.parse(one.at) - Date.parse(other.at),
+    );
   });
   const earlierReviews = $derived("earlier_reviews" in content ? content.earlier_reviews : 0);
 
@@ -53,8 +70,11 @@
     if (!opened.delete(id)) opened.add(id);
   };
 
-  const earlierComments = (count: number) =>
-    count === 1 ? "1 earlier comment is on GitHub." : `${String(count)} earlier comments are on GitHub.`;
+  /** A count of what only GitHub holds yet, in words: "1 earlier comment is on GitHub." */
+  const earlierWords = (count: number, one: string, many: string) =>
+    `${counted(count, one, many)} ${count === 1 ? "is" : "are"} on GitHub.`;
+  const earlierComments = (count: number) => earlierWords(count, "earlier comment", "earlier comments");
+  const earlierEvents = (count: number) => earlierWords(count, "earlier event", "earlier events");
 
   const DID: Record<ReviewState, string> = {
     APPROVED: "approved",
@@ -78,6 +98,9 @@
   const replies = (count: number) => counted(count, "reply", "replies");
 </script>
 
+<!-- eslint-disable svelte/no-navigation-without-resolve -- The links open in the system browser through
+     followLink, and none moves the window. -->
+
 {#snippet body(id: string, html: string, hidden: HiddenReason | null)}
   {#if hidden === null}
     <RenderedHtml {html} {onlink} />
@@ -98,6 +121,62 @@
     title={stampOf(review.submitted_at)}>{reviewRest(review)}</span
   >{/snippet}
 
+<!-- A PR or an Issue an event names, as the number that opens it and the title it has. -->
+{#snippet reference({ repository, number, title, url }: Reference)}
+  <a
+    href={url}
+    title={linkTitle(url)}
+    onclick={(e) => followLink(e, onlink)}
+    onauxclick={(e) => {
+      // A middle click follows it too, as any link in a description does.
+      if (e.button === 1) followLink(e, onlink);
+    }}>{`${repository}#${String(number)}`}</a
+  >{` ${title}`}
+{/snippet}
+
+<!-- A commit an event names: its short SHA, which opens it, then the first line of its message. -->
+{#snippet commit({ sha, message, url }: CommitReference)}
+  <a
+    href={url}
+    title={linkTitle(url)}
+    onclick={(e) => followLink(e, onlink)}
+    onauxclick={(e) => {
+      if (e.button === 1) followLink(e, onlink);
+    }}>{sha}</a
+  >{` ${message}`}
+{/snippet}
+
+<!-- One event between the comments, in one line: who, what, and how long ago, with the date in its
+     tooltip. A close says whether it was completed or not planned, a rename gives the title it had, a label
+     event names the label, and an assignment the assignee (#1067). -->
+{#snippet eventLine(event: IssueEvent)}
+  <b>{event.actor ?? "deleted user"}</b>
+  {#if event.kind === "cross-referenced"}
+    mentioned this in {@render reference(event.reference)}
+  {:else if event.kind === "referenced"}
+    added a commit that references this: {@render commit(event.commit)}
+  {:else if event.kind === "connected"}
+    connected this to {@render reference(event.reference)}
+  {:else if event.kind === "disconnected"}
+    disconnected this from {@render reference(event.reference)}
+  {:else if event.kind === "labeled"}
+    <span>{`added the ${event.label} label`}</span>
+  {:else if event.kind === "unlabeled"}
+    <span>{`removed the ${event.label} label`}</span>
+  {:else if event.kind === "assigned"}
+    <span>{`assigned ${event.assignee ?? "deleted user"}`}</span>
+  {:else if event.kind === "unassigned"}
+    <span>{`unassigned ${event.assignee ?? "deleted user"}`}</span>
+  {:else if event.kind === "closed"}
+    {event.completed ? "closed this as completed" : "closed this as not planned"}
+  {:else if event.kind === "reopened"}
+    reopened this
+  {:else}
+    <span>{`renamed this from "${event.previous_title}"`}</span>
+  {/if}
+  <span class="muted" title={stampOf(event.created_at)}>{` · ${ago(event.created_at, now)}`}</span>
+{/snippet}
+
 <div class="conversation">
   <h3>Description</h3>
   <div class="post">
@@ -109,6 +188,9 @@
   </div>
   {#if content.earlier_comments > 0}
     <p class="by">{earlierComments(content.earlier_comments)}</p>
+  {/if}
+  {#if content.earlier_events > 0}
+    <p class="by">{earlierEvents(content.earlier_events)}</p>
   {/if}
   {#if earlierReviews > 0}
     <!-- Some of them may only have replied in threads, which GitHub doesn't show as Reviews. -->
@@ -125,6 +207,8 @@
         </header>
         <div class="body">{@render body(entry.id, entry.comment.body_html, entry.comment.hidden)}</div>
       </article>
+    {:else if entry.kind === "event"}
+      <p class="event">{@render eventLine(entry.event)}</p>
     {:else if entry.review.body_html === "" && entry.review.threads.length === 0}
       <p class="review">{@render reviewLine(entry.review)}</p>
     {:else}
@@ -211,6 +295,22 @@
     margin: 10px 0;
     padding: 0 12px;
     font-size: 13px;
+  }
+
+  /* One event between the comments, on a line of its own. */
+  .event {
+    margin: 6px 0;
+    font-size: 12px;
+    color: var(--fg-muted);
+  }
+
+  .event b {
+    font-weight: 600;
+    color: var(--fg);
+  }
+
+  .event a {
+    color: var(--accent);
   }
 
   .chip.approved {

@@ -5,7 +5,8 @@
      show the lines its gap leaves out, and the row after a file's last hunk the lines after it (#182).
      Side by side, a line of context shows on both sides, and a change shows its removed rows on the left
      beside its added ones on the right (#183). A review thread takes as many rows' places under its line
-     as it is tall, and the tab measures it once drawn (#184). A thread on a line no hunk shows opens the
+     as it is tall, and the tab measures it once drawn (#184); side by side, it stays in the column of its
+     line's side, as wide as that column (#1080). A thread on a line no hunk shows opens the
      lines around it, with buttons above and below for the lines still hidden, and the threads on files no
      longer in the diff come under a heading after the last file (#185). One file at a time, it shows the
      page on show: the NEWS entries, one file, or those threads (#605). A click on a word of code puts the
@@ -565,14 +566,23 @@
     {#each diff.layout.threadsIn(first, last) as placed (placed.laid.id)}
       {@const block = placed.laid.block}
       {#if block.kind === "peek"}
+        {@const column = sideBySide ? block.peek.column : null}
         <PeekBox
           {diff}
           peek={block.peek}
-          place={{ kind: "inline", top: placed.shown * ROW, rows: placed.length, gutter: 96 }}
+          place={{
+            kind: "inline",
+            top: placed.shown * ROW,
+            rows: placed.length,
+            gutter: column === null ? 96 : 48,
+            ...(column && { column }),
+          }}
         />
       {:else}
+        {@const at = block.thread.at}
+        {@const side = sideBySide && (at.kind === "row" || at.kind === "outside") ? at.side : undefined}
         <div
-          class="thread sans"
+          class={["thread sans", side === "LEFT" ? "left" : side === "RIGHT" ? "right" : undefined]}
           role="group"
           aria-label="Review thread"
           style:top={`${String(placed.shown * ROW)}px`}
@@ -618,7 +628,9 @@
     outline: 1px solid currentColor;
   }
 
-  /* A thread stays as wide as the tab, however far across the code scrolls, and reads as prose. */
+  /* A thread stays as wide as the tab, however far across the code scrolls, and reads as prose. Side by
+     side, one on a line stays in the column of its side, as wide as that column and past its 48 px gutter,
+     while the other column stays empty beside it (#1080). */
   .thread {
     position: absolute;
     left: var(--across);
@@ -628,6 +640,16 @@
     border-top: 1px solid color-mix(in srgb, currentColor 15%, transparent);
     border-bottom: 1px solid color-mix(in srgb, currentColor 15%, transparent);
     background: color-mix(in srgb, currentColor 4%, transparent);
+  }
+
+  .thread.left,
+  .thread.right {
+    width: calc(var(--width) / 2);
+    padding-left: 48px;
+  }
+
+  .thread.right {
+    left: calc(var(--across) + var(--width) / 2);
   }
 
   /* The line Go to definition landed on, in window.css's `landed` colour, which fades out. Side by side,

@@ -226,6 +226,7 @@ erDiagram
         TEXT head_sha "nullable"
         INTEGER opened_at "nullable"
         TEXT node_id "nullable"
+        INTEGER earlier_events
     }
     issue_comments {
         TEXT repository PK, FK
@@ -236,6 +237,12 @@ erDiagram
         TEXT body_html
         TEXT hidden "nullable"
         INTEGER database_id "nullable"
+    }
+    issue_events {
+        TEXT repository PK, FK
+        INTEGER number PK, FK
+        INTEGER position PK
+        TEXT event
     }
     activity {
         TEXT repository PK
@@ -249,6 +256,7 @@ erDiagram
     issue_assignees }o--|| issues : "repository, number"
     issue_labels }o--|| issues : "repository, number"
     issue_comments }o--|| issue_content : "repository, number"
+    issue_events }o--|| issue_content : "repository, number"
 ```
 
 ## State: the user's and the sync's

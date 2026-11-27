@@ -1006,6 +1006,8 @@ it("says how long ago each comment in the Detail pane came", async () => {
           { author: "some-reviewer", created_at: new Date().toISOString(), body_html: "<p>Which build?</p>" },
         ],
         earlier_comments: 0,
+        events: [],
+        earlier_events: 0,
       },
     },
   });
@@ -1060,6 +1062,8 @@ it("opens a Standalone PR in the Detail pane on a click, on its Conversation, an
         body_html: "<p>Why it fails</p>",
         comments: [{ author: "some-reviewer", created_at: "2026-11-04T10:00:00Z", body_html: "<p>LGTM</p>" }],
         earlier_comments: 0,
+        events: [],
+        earlier_events: 0,
       },
     },
   });
@@ -2187,6 +2191,7 @@ it("closes the Definition peek in the file view with Escape, and the file view w
       symbol: "x",
       side: "base",
       commit: "base",
+      column: null,
       lookup: { state: "looking" },
     },
   };
@@ -2229,6 +2234,7 @@ it("closes the Definition peek with Escape before the search, and the search bef
       symbol: "gc",
       side: "head",
       commit: "abc",
+      column: null,
       lookup: { state: "looking" },
     },
   };

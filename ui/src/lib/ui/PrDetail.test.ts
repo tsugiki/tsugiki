@@ -232,6 +232,15 @@ it("marks the PR's title with the icon of its state", async () => {
   ).toBe("Draft PR");
 });
 
+it("says Draft in the PR view's state words only while the PR is open", async () => {
+  const open = await shown({ ...view, state: "OPEN", is_draft: true }, 10);
+  expect(document.querySelector("p.byline .words")?.textContent).toBe("Open · Draft · CI passed");
+  open.stop();
+  cleanup();
+  await shown({ ...view, state: "CLOSED", is_draft: true }, 10);
+  expect(document.querySelector("p.byline .words")?.textContent).toBe("Closed · CI passed");
+});
+
 it("says it's reading from GitHub until the first read lands", async () => {
   await shown({ ...view, author: null, content: null }, 10);
 

@@ -17,6 +17,7 @@ import {
   type YourReview,
 } from "$lib/state/workbench.svelte";
 import { counted } from "$lib/state/counted";
+import { showsAsDraft } from "./octicons";
 import { elapsed, stampOf } from "./time";
 
 const REASONS: Record<WorkReason, string> = {
@@ -222,7 +223,7 @@ export function detailWords(row: WorkbenchRow & { backport?: BackportKind }): St
     plain(row.author ?? "deleted user"),
     plain(`into ${row.target_branch}`),
     plain(STATES[row.state]),
-    ...(row.is_draft ? [plain("Draft")] : []),
+    ...(showsAsDraft(row) ? [plain("Draft")] : []),
     ...(row.ci ? [plain(CI[row.ci])] : []),
   ];
 }
@@ -245,7 +246,7 @@ const CI_TONES: Record<CiState, WordTone> = {
 export function prStateWords(row: WorkbenchRow): StateWord[] {
   return [
     { words: STATES[row.state], tone: "plain" as const },
-    ...(row.is_draft ? [{ words: "Draft", tone: "plain" as const }] : []),
+    ...(showsAsDraft(row) ? [{ words: "Draft", tone: "plain" as const }] : []),
     ...(row.ci ? [{ words: CI[row.ci], tone: CI_TONES[row.ci] }] : []),
     ...(row.reasons.includes("review_request")
       ? [{ words: REASONS.review_request, tone: "request" as const }]

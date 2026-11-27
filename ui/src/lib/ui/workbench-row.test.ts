@@ -78,9 +78,15 @@ it("lists every reason", () => {
   );
 });
 
-it("says when a PR is a draft", () => {
+it("says a PR is a draft only while it is open", () => {
   expect(details({ ...row, is_draft: true })).toBe(
     "Review request · some-author · into main · Open · Draft · CI passed",
+  );
+  expect(details({ ...row, is_draft: true, state: "CLOSED" })).toBe(
+    "Review request · some-author · into main · Closed · CI passed",
+  );
+  expect(details({ ...row, is_draft: true, state: "MERGED" })).toBe(
+    "Review request · some-author · into main · Merged · CI passed",
   );
 });
 
@@ -282,6 +288,8 @@ it("says a PR's state, CI and where the user stands in the Issue view, each with
     "Reviewed",
   ]);
   expect(words({ reasons: [], is_draft: true, ci: null })).toEqual(["Open", "Draft"]);
+  expect(words({ reasons: [], is_draft: true, ci: null, state: "CLOSED" })).toEqual(["Closed"]);
+  expect(words({ reasons: [], is_draft: true, ci: null, state: "MERGED" })).toEqual(["Merged"]);
 });
 
 const stale: WorkbenchRow = {

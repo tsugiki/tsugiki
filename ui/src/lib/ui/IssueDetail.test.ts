@@ -314,6 +314,17 @@ it("shows each Origin PR's state, CI and review state, and folds its Backports i
   expect(backports.textContent).toContain("3.13 Open");
 });
 
+it("says Draft on an Origin PR's line only while the PR is open", async () => {
+  const openDraft: TreeEntry = { ...opened, is_draft: true, number: 21 };
+  const closedDraft: TreeEntry = { ...opened, is_draft: true, number: 22, state: "CLOSED" };
+  await shown({ ...view, pull_requests: [openDraft, closedDraft] });
+
+  const words = [...document.querySelectorAll(".words")].map((line) => line.textContent);
+  expect(words).toContain("Open · Draft · CI passed");
+  expect(words).toContain("Closed · CI passed");
+  expect(words).not.toContain("Closed · Draft · CI passed");
+});
+
 it("gives each PR in the Origin PRs table its update in a tooltip, and each Backport its own", async () => {
   await shown(view);
 

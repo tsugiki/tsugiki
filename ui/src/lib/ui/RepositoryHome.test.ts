@@ -339,6 +339,28 @@ it("lists a Standalone PR with the time it changed", async () => {
   expect(within(item).getByText("Review request · some-author · into main · Open · CI passed")).toBeTruthy();
 });
 
+it("says Draft in a PR's facts only while the PR is open", async () => {
+  const draft = { kind: "standalone_pr" as const, ...row, reasons: [], backports: [] };
+  core.workbench.mockResolvedValue(
+    workbenchPage([
+      { ...draft, number: 1, is_draft: true },
+      { ...draft, number: 2, is_draft: true, state: "CLOSED" },
+    ]),
+  );
+  render(RepositoryHome, {
+    name: "python/cpython",
+    onpick: () => {},
+    onsettings: () => {},
+    onsavefilter: () => {},
+  });
+
+  const facts = await screen.findAllByText(/into main/);
+  expect(facts.map((line) => line.textContent)).toEqual([
+    "some-author · into main · Open · Draft · CI passed",
+    "some-author · into main · Closed · CI passed",
+  ]);
+});
+
 it("names what an Issue's time measures, with its own update and each PR's in its tooltip", async () => {
   vi.setSystemTime("2026-11-04T13:00:00Z");
   core.workbench.mockResolvedValue(workbenchPage([issue], { count: 1 }));

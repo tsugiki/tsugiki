@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   addRefusal,
+  keepReason,
   pullRefusal,
   ticketBranch,
   ticketNumber,
@@ -114,8 +115,9 @@ describe("worktrees", () => {
     ]);
   });
 
-  it("reads nothing from an empty listing", () => {
+  it("reads nothing from an empty listing, or a branch before any worktree", () => {
     expect(worktrees("")).toEqual([]);
+    expect(worktrees("branch refs/heads/main")).toEqual([]);
   });
 });
 
@@ -129,6 +131,34 @@ describe("worktreeTicket", () => {
     expect(worktreeTicket("X:/Work/gh-rev/.temp/proto")).toBeUndefined();
     expect(worktreeTicket("X:/Work/gh-rev/.temp/wt-zero")).toBeUndefined();
     expect(worktreeTicket("X:/Work/gh-rev")).toBeUndefined();
+  });
+});
+
+describe("keepReason", () => {
+  const LIST = [
+    "worktree X:/Work/gh-rev",
+    "HEAD 1a2b3c",
+    "branch refs/heads/main",
+    "",
+    "worktree X:/Work/gh-rev/.temp/wt-471",
+    "HEAD 4d5e6f",
+    "branch refs/heads/471-save-filter",
+    "",
+  ].join("\n");
+
+  it("lets git delete a branch no worktree has", () => {
+    expect(keepReason(LIST, "472-other")).toBeUndefined();
+  });
+
+  it("names the recipe that deletes a ticket's worktree and its branch", () => {
+    expect(keepReason(LIST, "471-save-filter")).toContain("`just worktree-remove 471` deletes both.");
+  });
+
+  it("leaves another worktree for the user to remove", () => {
+    const foreign = ["worktree X:/Work/elsewhere", "HEAD 1a2b3c", "branch refs/heads/472-other", ""].join(
+      "\n",
+    );
+    expect(keepReason(foreign, "472-other")).toContain("It stays until you remove that worktree.");
   });
 });
 

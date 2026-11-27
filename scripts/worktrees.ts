@@ -1,5 +1,5 @@
-// The decisions behind `just worktree` and `just worktree-remove`, kept apart from the git, GitHub and npm
-// calls in worktree.ts so that tests can reach them.
+// The decisions behind `just worktree`, `just worktree-remove` and `just merged`, kept apart from the git,
+// GitHub and npm calls in worktree.ts and merged.ts so that tests can reach them.
 
 /** Words a branch name leaves out of a ticket's title, as our branches do. */
 const FILLER = new Set(
@@ -93,11 +93,24 @@ export function worktrees(list: string): Worktree[] {
 
 /** The ticket whose worktree folder `path` is, or `undefined` when it is some other folder. */
 export function worktreeTicket(path: string): number | undefined {
-  const parts = path.replace(/\\/g, "/").split("/");
-  const name = parts.at(-1) ?? "";
-  return parts.at(-2) === ".temp" && name.startsWith("wt-")
-    ? ticketNumber(name.slice("wt-".length))
-    : undefined;
+  const match = /(?:^|\/)\.temp\/wt-([^/]*)$/.exec(path.replace(/\\/g, "/"));
+  return match === null ? undefined : ticketNumber(match[1]);
+}
+
+/**
+ * What `just merged` prints instead of deleting `branch`, when a worktree `list` names has it checked out, or
+ * `undefined` when git can delete the branch.
+ */
+export function keepReason(list: string, branch: string): string | undefined {
+  const holder = worktrees(list).find((tree) => tree.branch === branch);
+  if (holder === undefined) return undefined;
+  const ticket = worktreeTicket(holder.path);
+  return (
+    `Kept the branch ${branch}: the worktree ${holder.path} has it checked out. ` +
+    (ticket === undefined
+      ? "It stays until you remove that worktree."
+      : `\`just worktree-remove ${String(ticket)}\` deletes both.`)
+  );
 }
 
 /**

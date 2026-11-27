@@ -48,7 +48,7 @@
     onmuteauthor: (view: IssueView) => void;
     /** Pin, or Unpin on a Pinned issue, as the header's ★ offers for the view on show (#488). */
     onpin: (view: IssueView) => void;
-    /** Opens the person Filter for a clicked name (#472). */
+    /** Fills the Inbox's search box with the search for a clicked name (#472). */
     onperson?: (login: string) => void;
     /** Whether the pane takes the focus itself: while the Issue list is hidden, and while the list shows
      * after a click in its controls or a press of F6. Otherwise a click on its background drops the focus to

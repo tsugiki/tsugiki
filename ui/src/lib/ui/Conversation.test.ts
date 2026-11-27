@@ -88,7 +88,7 @@ it("gives a comment's and a Review's time the date and time in a tooltip", () =>
   ]);
 });
 
-it("opens the person Filter from a Review's author, and does nothing unless the page listens", async () => {
+it("fills the Inbox's search box from a Review's author, and does nothing unless the page listens", async () => {
   const content = reviewed([review({ author: "review-author" })], {
     comments: [
       {

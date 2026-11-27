@@ -211,7 +211,7 @@ it("names a deleted author on the byline where the login is gone", async () => {
   expect(document.querySelector("p.byline b")?.textContent).toBe("deleted user");
 });
 
-it("opens the person Filter from the PR's author, and does nothing unless the page listens", async () => {
+it("fills the Inbox's search box from the PR's author, and does nothing unless the page listens", async () => {
   const onperson = vi.fn();
   await shown(view, 10, vi.fn(), vi.fn(), new PanesState(), { onperson });
 
@@ -458,7 +458,7 @@ it("sends a link in a NEWS entry to the browser", async () => {
   expect(core.openLink).toHaveBeenCalledExactlyOnceWith(url);
 });
 
-it("opens the person Filter from a thread's author in the Files tab", async () => {
+it("fills the Inbox's search box from a thread's author in the Files tab", async () => {
   const rows: DiffRow[] = [
     { kind: "file", path: "a.py", old_path: null, change: { kind: "lines", added: 0, removed: 0 } },
     { kind: "hunk", text: "@@ -1,2 +1,2 @@" },

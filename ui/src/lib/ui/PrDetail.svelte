@@ -61,7 +61,7 @@
     /** Mute author on the PR's author, or Unmute author on a Muted author, as the header's button offers
      * for the PR on show (#494). */
     onmuteauthor: (view: PrView) => void;
-    /** Opens the person Filter for a clicked name (#472). */
+    /** Fills the Inbox's search box with the search for a clicked name (#472). */
     onperson?: (login: string) => void;
     /** Whether the header offers Mark Seen or Mark Unseen, which it doesn't on a PR of a Muted item
      * (#492). */

@@ -7,7 +7,7 @@ fn from_toml(text: &str) -> Result<Filter, toml_edit::de::Error> {
 #[test]
 fn a_person_s_search_names_them_as_the_author_and_open() {
     assert_eq!(
-        FilterQuery::person("octocat").as_str(),
+        FilterQuery::person(&Login::new("octocat")).as_str(),
         "is:open author:octocat"
     );
 }

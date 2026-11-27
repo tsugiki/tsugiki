@@ -59,7 +59,7 @@ it("shows who started a thread and its comments, oldest first, and folds on a cl
   expect(ontoggle).toHaveBeenCalledOnce();
 });
 
-it("opens the person Filter from a thread's first comment, each comment after it, and the head", async () => {
+it("fills the Inbox's search box from a thread's first comment, each comment after it, and the head", async () => {
   const { onperson } = shown(
     thread({ comments: [comment(), comment({ author: null, body_html: "<p>It reads better</p>" })] }),
   );

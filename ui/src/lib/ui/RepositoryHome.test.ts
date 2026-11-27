@@ -587,6 +587,25 @@ it("saves the search a clicked name put in the box as a Filter (#472)", async ()
   expect(onsavefilter).toHaveBeenCalledExactlyOnceWith({ name: query, query });
 });
 
+it("says why a clicked name opened nothing, and leaves the Inbox closed (#472)", async () => {
+  core.personQuery.mockResolvedValue(refused("that name names no one person"));
+  core.workbench.mockResolvedValue(workbenchPage([issue], { count: 1 }));
+  render(RepositoryHome, {
+    name: "python/cpython",
+    onpick: () => {},
+    onsettings: () => {},
+    onsavefilter: () => {},
+  });
+
+  await fireEvent.click(await screen.findByRole("button", { name: "issue-author" }));
+
+  expect((await screen.findByRole("alert")).textContent).toBe(
+    "Tsugiki can't read this Workbench: that name names no one person",
+  );
+  expect(screen.queryByRole("searchbox", { name: "Search the Inbox" })).toBeNull();
+  expect(core.searchInbox).not.toHaveBeenCalled();
+});
+
 it("marks what Needs attention the way unread mail is, and says why", async () => {
   const attention = {
     since: "2026-11-04T10:00:00Z",

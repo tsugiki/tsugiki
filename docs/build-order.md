@@ -90,7 +90,8 @@ GitHub.
 - The Inbox, with search on GitHub and Load 30 more days ([ADR
   0015](adr/0015-github-sync-serial-graphql-in-tiers-the-users-work-first.md)).
 - **Pinned issues**, **Archive**, **Mute** and Mute author, and all the Built-in views.
-- **Stacked PRs**, **Dependency updates**, **Maintained repositories**, the person Filter.
+- **Stacked PRs**, **Dependency updates**, **Maintained repositories**, and a clicked name's search in the
+  Inbox.
 - The **Peek** for Issues and PRs outside the current Repository, and `tsugiki://` links.
 - **Alerts** ([ADR 0016](adr/0016-alerts-launch-tsugiki-links-own-toasts-on-windows-the-plugin-on-macos.md)).
 - The per-user Windows installer, which Alerts need, and the universal `.dmg` ([Tsugiki installs on Windows,

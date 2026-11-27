@@ -31,7 +31,7 @@
     files: PrFilesState;
     now: Date;
     onlink: (address: string) => void;
-    /** Opens the person Filter for a clicked name (#472). */
+    /** Fills the Inbox's search box with the search for a clicked name (#472). */
     onperson: (login: string) => void;
   } = $props();
 

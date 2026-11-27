@@ -167,7 +167,7 @@ it("names a deleted author of a PR in its tree", async () => {
   expect([...document.querySelectorAll(".who")].map((who) => who.textContent)).toContain("deleted user");
 });
 
-it("opens the person Filter from a PR's author in the Issue's tree", async () => {
+it("fills the Inbox's search box from a PR's author in the Issue's tree", async () => {
   const onperson = vi.fn();
   await shown(view, vi.fn(), vi.fn(), vi.fn(), vi.fn(), vi.fn(), vi.fn(), onperson);
 
@@ -178,7 +178,7 @@ it("opens the person Filter from a PR's author in the Issue's tree", async () =>
   expect(onperson).toHaveBeenCalledExactlyOnceWith("some-author");
 });
 
-it("opens the person Filter from the Issue's author, and does nothing unless the page listens", async () => {
+it("fills the Inbox's search box from the Issue's author, and does nothing unless the page listens", async () => {
   const onperson = vi.fn();
   await shown(view, vi.fn(), vi.fn(), vi.fn(), vi.fn(), vi.fn(), vi.fn(), onperson);
 

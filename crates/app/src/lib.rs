@@ -73,7 +73,7 @@ fn about() -> tsugiki_core::About {
 fn person_query(login: &str) -> Result<String, Error> {
     let login = Login::parse(login)
         .ok_or_else(|| Error::new(ErrorKind::Internal, "The name doesn't name one person."))?;
-    Ok(FilterQuery::person(login.as_str()).as_str().to_owned())
+    Ok(FilterQuery::person(&login).as_str().to_owned())
 }
 
 /// Opens WebView2's DevTools for the window that asks, from the palette (#460). Only a development build

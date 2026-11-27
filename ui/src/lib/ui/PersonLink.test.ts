@@ -2,7 +2,7 @@ import { fireEvent, render, screen } from "@testing-library/svelte";
 import { expect, it, vi } from "vitest";
 import PersonLink from "./PersonLink.svelte";
 
-it("opens the person Filter for the login on a click", async () => {
+it("fills the Inbox's search box from the login on a click", async () => {
   const onopen = vi.fn();
   render(PersonLink, { login: "octocat", onopen });
 

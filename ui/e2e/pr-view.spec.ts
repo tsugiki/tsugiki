@@ -306,7 +306,7 @@ test("a thread's place in the Conversation opens it in Files, under its line in 
   await expect.poll(() => gaps("The fix", "And more")).toEqual([0, expect.any(Number)]);
 });
 
-test("a click anywhere on a thread's line folds it, but a click on its author opens the person Filter", async ({
+test("a click anywhere on a thread's line folds it, but a click on its author fills the Inbox's box", async ({
   page,
 }) => {
   const pane = await threaded(page, { kind: "row", row: 2, side: "RIGHT" }, "Say what it fixes.");

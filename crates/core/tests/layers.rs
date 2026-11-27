@@ -154,8 +154,9 @@ const LAYERS: &[Layer] = &[
     },
     Layer {
         module: "filters",
-        uses: &[],
-        why: "Holds a Filter as `settings.toml` writes it, and the Filters a new Repository starts with.",
+        uses: &["login"],
+        why: "Holds a Filter as `settings.toml` writes it, the Filters a new Repository starts with, and the \
+              search that clicking a person runs (#472).",
     },
     Layer {
         module: "facts",

@@ -1098,10 +1098,12 @@
   }
 
   /** Opens the Inbox on the typed search for `login`, from a click on their name anywhere on the screen
-   * (#472). */
+   * (#472), and shows the list once it holds the search. A name the core can't spell leaves the panes as they
+   * were, with the page's error saying why. */
   function openPerson(login: string) {
-    void workbench.openPerson(login);
-    void panes.show("list");
+    void workbench.openPerson(login).then((opened) => {
+      if (opened) void panes.show("list");
+    });
   }
 
   /** The names the list's switch gives each order. */

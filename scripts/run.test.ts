@@ -4,7 +4,7 @@ import { join } from "node:path";
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { attempt, git, messageOf, run, stop, untracked } from "./run.ts";
+import { attempt, gh, git, messageOf, run, stop, untracked } from "./run.ts";
 
 const NODE = process.execPath;
 
@@ -59,6 +59,12 @@ describe("messageOf", () => {
 
   it("gives anything else as text", () => {
     expect(messageOf(7)).toBe("7");
+  });
+});
+
+describe("gh", () => {
+  it("gives gh's output", () => {
+    expect(gh("--version")).toMatch(/^gh version \d/);
   });
 });
 

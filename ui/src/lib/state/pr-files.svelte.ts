@@ -177,15 +177,17 @@ type Asked = { peek: Omit<Peek, "lookup" | "layout">; path: string; line: number
 type TabAt = { kind: "landed"; page: Page; place: number | undefined; end: boolean } | { kind: "scrolled" };
 
 /** The lookup of the word `pick` picked in the code of a file at `place`, for a peek under `at` that names
- * the peeks of `trail` before it: in the peek's code (#447), or in the file view's (#457). */
+ * the peeks of `trail` before it: in the peek's code (#447), or in the file view's (#457). `column` is the
+ * half of a side-by-side row the peek stays in, if the word was picked in the diff. */
 function askedIn(
   at: Peek["at"],
   place: RepositoryHit["place"],
   pick: CodePick,
   trail?: readonly Crumb[],
+  column: Column = null,
 ): Asked {
   return {
-    peek: { at, symbol: pick.word, side: place.side, commit: place.commit, ...(trail && { trail }) },
+    peek: { at, symbol: pick.word, side: place.side, commit: place.commit, column, ...(trail && { trail }) },
     path: place.path,
     line: pick.line,
     column: pick.start,
@@ -1391,7 +1393,7 @@ export class PrFilesState {
     if (pick === undefined || !file) return undefined;
     const commit = pick.side === "base" ? view.base : view.head;
     return {
-      peek: { at: pick.at, symbol: pick.word, side: pick.side, commit },
+      peek: { at: pick.at, symbol: pick.word, side: pick.side, commit, column: pick.column },
       path: pick.side === "base" ? (file.old_path ?? file.path) : file.path,
       line: pick.line,
       column: pick.start,
@@ -1552,10 +1554,11 @@ export class PrFilesState {
       symbol: peek.symbol,
       side: peek.side,
       commit: peek.commit,
+      column: peek.column,
       lookup: { state: "answered", answer: { state: "found", hits: shown.hits } },
       code: shown.code,
     };
-    const asked = askedIn(peek.at, hit.place, pick, [...(peek.trail ?? []), crumb]);
+    const asked = askedIn(peek.at, hit.place, pick, [...(peek.trail ?? []), crumb], peek.column);
     const looked = await this.#lookUp(
       (looking) => {
         this.#peek = looking;
@@ -1873,18 +1876,19 @@ function rank(page: Page): number {
 }
 
 /** Where `thread` sits among the diff's `files`: under its row, under its file's header when it is on the
- * whole file or Outdated, under its line at the head when no hunk shows it, or after the last file. */
+ * whole file or Outdated, under its line at the head when no hunk shows it, or after the last file. A thread
+ * on a line keeps the side GitHub stores it on, whose column of the side-by-side view holds it. */
 function anchor(thread: DiffThread, files: readonly DiffFile[]): ThreadAnchor {
   const at = thread.at;
   switch (at.kind) {
     case "row":
-      return { kind: "row", row: at.row };
+      return { kind: "row", row: at.row, side: at.side };
     case "file":
     case "outdated":
       // At the top, should a payload name a file the diff doesn't have.
       return { kind: "row", row: files[at.file]?.row ?? 0 };
     case "outside":
-      return { kind: "line", file: at.file, line: at.head_line };
+      return { kind: "line", file: at.file, line: at.head_line, side: at.side };
     case "gone":
       return { kind: "end" };
   }

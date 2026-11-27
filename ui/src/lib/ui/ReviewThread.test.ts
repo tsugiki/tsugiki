@@ -106,7 +106,7 @@ it("says when a thread is on the whole file, Outdated, outside the diff or on a 
   const places: DiffThread["at"][] = [
     { kind: "file", file: 0 },
     { kind: "outdated", file: 0, code: null },
-    { kind: "outside", file: 0, line: 80, head_line: 82 },
+    { kind: "outside", file: 0, line: 80, head_line: 82, side: "RIGHT" },
     { kind: "gone", path: "Lib/old.py", code: null },
   ];
   for (const at of places) shown(thread({ at, resolution: "resolved" }), true);

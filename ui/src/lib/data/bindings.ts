@@ -2893,8 +2893,11 @@ export type Placement = Placement_Serialize | Placement_Deserialize;
 
 /**  Where Files shows a thread. A file is named by its place among the diff's files. */
 export type Placement_Deserialize = 
-/**  Under the diff's row `row`, which shows its line. */
-{ kind: "row"; row: number } | 
+/**
+ *  Under the diff's row `row`, which shows its line, on `side`: `LEFT` or `RIGHT`, whose column of the
+ *  side-by-side view holds the thread.
+ */
+{ kind: "row"; row: number; side: Side } | 
 /**  At the top of file `file`, as it is on the whole file, above the file's Outdated threads. */
 { kind: "file"; file: number } | 
 /**
@@ -2904,9 +2907,10 @@ export type Placement_Deserialize =
 { kind: "outdated"; file: number; code?: ThreadCode | null } | 
 /**
  *  Under line `head_line` of file `file` at the head, which no hunk shows, so the gap or the end of the
- *  file around it opens to show it. `line` is the line as the thread's side counts it.
+ *  file around it opens to show it. `line` is the line as the thread's side counts it, and `side` which
+ *  column of the side-by-side view holds the thread.
  */
-{ kind: "outside"; file: number; line: number; head_line: number } | 
+{ kind: "outside"; file: number; line: number; head_line: number; side: Side } | 
 /**
  *  After the last file, on file `path`, which the diff no longer holds, with the code it was written
  *  against.
@@ -2915,8 +2919,11 @@ export type Placement_Deserialize =
 
 /**  Where Files shows a thread. A file is named by its place among the diff's files. */
 export type Placement_Serialize = 
-/**  Under the diff's row `row`, which shows its line. */
-{ kind: "row"; row: number } | 
+/**
+ *  Under the diff's row `row`, which shows its line, on `side`: `LEFT` or `RIGHT`, whose column of the
+ *  side-by-side view holds the thread.
+ */
+{ kind: "row"; row: number; side: Side } | 
 /**  At the top of file `file`, as it is on the whole file, above the file's Outdated threads. */
 { kind: "file"; file: number } | 
 /**
@@ -2926,9 +2933,10 @@ export type Placement_Serialize =
 { kind: "outdated"; file: number; code: ThreadCode | null } | 
 /**
  *  Under line `head_line` of file `file` at the head, which no hunk shows, so the gap or the end of the
- *  file around it opens to show it. `line` is the line as the thread's side counts it.
+ *  file around it opens to show it. `line` is the line as the thread's side counts it, and `side` which
+ *  column of the side-by-side view holds the thread.
  */
-{ kind: "outside"; file: number; line: number; head_line: number } | 
+{ kind: "outside"; file: number; line: number; head_line: number; side: Side } | 
 /**
  *  After the last file, on file `path`, which the diff no longer holds, with the code it was written
  *  against.

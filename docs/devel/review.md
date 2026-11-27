@@ -142,6 +142,12 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
   sits under it like any other, placed by its file, line and side. It can be replied to and resolved like any
   thread, and `F8` reaches it in order. If its line no longer exists at the head, it is an **Outdated
   thread**. Go to definition opens a hidden line the same way ([definitions.md](definitions.md)).
+- Side by side, a thread on a line stays in that line's column, as wide as the column, its text past the
+  column's 48 px gutter, as the code's is. The other column stays empty beside it. A thread on a line of
+  context sits on the side GitHub stores it on, and two threads on the same row stack, each in its own column.
+  A thread on a whole file, an Outdated thread at its file's top, and a thread in the unified view take the
+  whole width. The inline Definition peek follows the same rule, in the column of the side the word was
+  picked in.
 - **Outdated threads** are grouped at the top of their file together with the code they were written against:
   the last 4 lines of the hunk GitHub stored with the thread, ending at the commented line, and the whole hunk
   on "show more". During a re-review, the user's own unresolved Outdated threads are listed first.

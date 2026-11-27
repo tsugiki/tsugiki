@@ -274,7 +274,7 @@ const threaded = async (page: Page, at: DiffThread["at"], words: string) => {
 test("a thread's place in the Conversation opens it in Files, under its line in either view", async ({
   page,
 }) => {
-  const pane = await threaded(page, { kind: "row", row: 2 }, "Say what it fixes. ".repeat(40));
+  const pane = await threaded(page, { kind: "row", row: 2, side: "RIGHT" }, "Say what it fixes. ".repeat(40));
 
   await pane.getByRole("button", { name: "NEWS:1" }).click();
 
@@ -344,7 +344,7 @@ test("the Files button, Ctrl+K F and × open and close the rail, its left edge s
 }) => {
   // Wide enough for the Detail pane to keep 240 px of the diff beside the widened rail.
   await page.setViewportSize({ width: 1800, height: 700 });
-  const pane = await threaded(page, { kind: "row", row: 2 }, "Say what it fixes.");
+  const pane = await threaded(page, { kind: "row", row: 2, side: "RIGHT" }, "Say what it fixes.");
   const rail = pane.getByRole("complementary", { name: "Rail" });
   const button = pane.getByRole("button", { name: "Files in the rail" });
   const width = async () => (await rail.boundingBox())?.width ?? 0;
@@ -384,7 +384,7 @@ test("the Files button, Ctrl+K F and × open and close the rail, its left edge s
 test("Ctrl+F searches the diff, marks the match it moves to, and Escape gives the diff its focus back", async ({
   page,
 }) => {
-  const pane = await threaded(page, { kind: "row", row: 2 }, "Say what it fixes.");
+  const pane = await threaded(page, { kind: "row", row: 2, side: "RIGHT" }, "Say what it fixes.");
   await changeAnswer(page, "pullRequestFind", ok({ matches: [{ row: 3, start: 4, end: 8 }], more: false }));
   await pane.getByRole("tab", { name: "Files" }).click();
   await expect(pane.getByRole("region", { name: "Diff" })).toContainText("And more");
@@ -404,7 +404,7 @@ test("Ctrl+Shift+F searches the PR's code from the rail, and a match opens at it
   page,
 }) => {
   await page.setViewportSize({ width: 1400, height: 700 });
-  const pane = await threaded(page, { kind: "row", row: 2 }, "Say what it fixes.");
+  const pane = await threaded(page, { kind: "row", row: 2, side: "RIGHT" }, "Say what it fixes.");
   const line = (number: number, text: string, start: number, end: number) => ({
     line: number,
     text,

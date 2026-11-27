@@ -2185,6 +2185,7 @@ it("closes the Definition peek in the file view with Escape, and the file view w
       symbol: "x",
       side: "base",
       commit: "base",
+      column: null,
       lookup: { state: "looking" },
     },
   };
@@ -2227,6 +2228,7 @@ it("closes the Definition peek with Escape before the search, and the search bef
       symbol: "gc",
       side: "head",
       commit: "abc",
+      column: null,
       lookup: { state: "looking" },
     },
   };

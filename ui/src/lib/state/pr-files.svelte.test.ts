@@ -1424,7 +1424,13 @@ it("reveals a thread at the top of a collapsed file, opening the file, and one o
 });
 
 it("opens the lines around a thread on a line no hunk shows, once, and its thread sits under the line", async () => {
-  const outside = diffThread("outside", { kind: "outside", file: 0, line: 28, head_line: 30 });
+  const outside = diffThread("outside", {
+    kind: "outside",
+    file: 0,
+    line: 28,
+    head_line: 30,
+    side: "RIGHT",
+  });
   const files = await loaded({ ...gapped(), threads: shown(outside) });
   await vi.waitFor(() => {
     expect(files.line(0, 33)).toEqual({ text: "line 33", spans: [] });
@@ -1433,7 +1439,10 @@ it("opens the lines around a thread on a line no hunk shows, once, and its threa
   core.pullRequestFiles.mockResolvedValue(
     ok({
       ...gapped(),
-      threads: shown(outside, diffThread("near", { kind: "outside", file: 0, line: 1, head_line: 2 })),
+      threads: shown(
+        outside,
+        diffThread("near", { kind: "outside", file: 0, line: 1, head_line: 2, side: "RIGHT" }),
+      ),
     }),
   );
   await files.ask();
@@ -3323,6 +3332,7 @@ it("looks up a word picked in the peek's code at the hit's commit, and names the
     symbol: "width",
     side: "base",
     commit: "base",
+    column: null,
     trail: [first],
   };
   expect(whileLooking).toEqual([{ ...followed, lookup: { state: "looking" } }, "take"]);

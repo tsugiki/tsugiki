@@ -5,7 +5,7 @@
 // counts and places rows by where they show, and asks the core for the diff's rows by where they are in
 // the diff.
 
-import type { Gap, Pair, Rest, Side } from "$lib/data/bindings";
+import type { Gap, Pair, Rest } from "$lib/data/bindings";
 import type { Page } from "./file-pages";
 
 /** The two views of a diff: each row under the one before, or the old lines beside the new. */
@@ -52,13 +52,10 @@ export interface LaidFile {
 }
 
 /** Where a review thread sits: under a row of the diff, a file's header among them; under line `line` at
- * the head of file `file`, which no hunk shows; or after the last file. A thread on a line carries the side
- * GitHub stores it on, whose column of the side-by-side view holds it; a thread on a whole file or Outdated
- * has no side, and spans both. */
+ * the head of file `file`, which no hunk shows; or after the last file. The anchor says where, and not which
+ * column: a thread's side is in its placement, where GitHub's answer put it (#1080). */
 export type ThreadAnchor =
-  | { kind: "row"; row: number; side?: Side }
-  | { kind: "line"; file: number; line: number; side?: Side }
-  | { kind: "end" };
+  { kind: "row"; row: number } | { kind: "line"; file: number; line: number } | { kind: "end" };
 
 /** A review thread as the layout needs it: where it sits, how many places it takes, and its id, which names
  * it from one layout to the next. */

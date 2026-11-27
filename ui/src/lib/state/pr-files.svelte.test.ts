@@ -1300,6 +1300,24 @@ it("folds a resolved thread to a line and leaves an open one open, as the user t
   expect(files.layout.threadsIn(0, 99).map((placed) => placed.length)).toEqual([9, 3, 4]);
 });
 
+it("measures a thread apart in each view, as side by side it wraps in half the width", async () => {
+  const choice = new DiffViewChoice();
+  core.pullRequestFiles.mockResolvedValue(ok(threaded()));
+  const files = new PrFilesState("python/cpython", 11, new PanesState(), timer(), choice);
+  await files.load();
+  const lengths = () => files.layout.threadsIn(0, 99).map((placed) => placed.length);
+
+  files.measured("T2", 9);
+  expect(lengths()).toEqual([9, 1, 4]);
+  // The other view keeps its own measurement, and guesses until it has one.
+  choice.toggle();
+  expect(lengths()).toEqual([7, 1, 4]);
+  files.measured("T2", 12);
+  expect(lengths()).toEqual([12, 1, 4]);
+  choice.toggle();
+  expect(lengths()).toEqual([9, 1, 4]);
+});
+
 it("moves through the open threads with F8 and back with Shift+F8, round from either end", async () => {
   const files = await loaded(threaded());
   const visited: string[] = [];

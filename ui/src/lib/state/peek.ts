@@ -171,6 +171,13 @@ export function peekPlaces(peek: Peek, rows: number): number {
   return peek.indexing === undefined ? 2 : 3;
 }
 
+/** The column of the side-by-side view the inline peek stays in: the half the word was picked in, or, for a
+ * word picked in the unified view, the column of its line's commit, the base's on the left and the head's on
+ * the right (#1080). */
+export function peekColumn(peek: Peek): Exclude<Column, null> {
+  return peek.column ?? (peek.side === "base" ? "left" : "right");
+}
+
 /** `threads`, in the order they show, with `peek` among them right under its line, above any thread there.
  * The layout places threads under rows and threads under lines apart, so only those of the peek's kind
  * order it. */

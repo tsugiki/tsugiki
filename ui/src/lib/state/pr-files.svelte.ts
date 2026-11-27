@@ -347,7 +347,8 @@ export class PrFilesState {
   #lengths = new SvelteMap<number, number>();
   /** The threads the user folded or opened, against how each starts: open, or folded once resolved. */
   #flipped = new SvelteSet<string>();
-  /** The places of each open thread the tab has measured, by its id. */
+  /** The places of each open thread the tab has measured, by its id and the view it was drawn in: a thread
+   * side by side is as wide as its column, so it wraps and takes more places than in the unified view. */
   #measured = new SvelteMap<string, number>();
   /** The thread to move to once the diff comes, as one opened from the Conversation before it did. */
   #revealing: string | undefined;
@@ -666,14 +667,16 @@ export class PrFilesState {
     if (id !== undefined && !this.#flipped.delete(id)) this.#flipped.add(id);
   }
 
-  /** Notes that open thread `id` takes `places` places, as the tab measured it. */
+  /** Notes that open thread `id`, as the view on show draws it, takes `places` places. */
   measured(id: string, places: number) {
-    if (this.#measured.get(id) !== places) this.#measured.set(id, places);
+    const key = `${this.shownAs}:${id}`;
+    if (this.#measured.get(key) !== places) this.#measured.set(key, places);
   }
 
-  /** The places thread `thread`, at `at` among the threads, takes: one when folded. */
+  /** The places thread `thread`, at `at` among the threads, takes in the view on show: one when folded. */
   #places(thread: DiffThread, at: number): number {
-    return this.folded(at) ? 1 : (this.#measured.get(thread.id) ?? guessPlaces(thread));
+    const key = `${this.shownAs}:${thread.id}`;
+    return this.folded(at) ? 1 : (this.#measured.get(key) ?? guessPlaces(thread));
   }
 
   /** Moves to thread `id`, open, and opens the collapsed file it is in, showing that file's page one file at
@@ -1876,19 +1879,18 @@ function rank(page: Page): number {
 }
 
 /** Where `thread` sits among the diff's `files`: under its row, under its file's header when it is on the
- * whole file or Outdated, under its line at the head when no hunk shows it, or after the last file. A thread
- * on a line keeps the side GitHub stores it on, whose column of the side-by-side view holds it. */
+ * whole file or Outdated, under its line at the head when no hunk shows it, or after the last file. */
 function anchor(thread: DiffThread, files: readonly DiffFile[]): ThreadAnchor {
   const at = thread.at;
   switch (at.kind) {
     case "row":
-      return { kind: "row", row: at.row, side: at.side };
+      return { kind: "row", row: at.row };
     case "file":
     case "outdated":
       // At the top, should a payload name a file the diff doesn't have.
       return { kind: "row", row: files[at.file]?.row ?? 0 };
     case "outside":
-      return { kind: "line", file: at.file, line: at.head_line, side: at.side };
+      return { kind: "line", file: at.file, line: at.head_line };
     case "gone":
       return { kind: "end" };
   }

@@ -923,6 +923,31 @@ it("keeps the Definition peek in the column of the side the word was picked in, 
   expect(peekBox()?.classList).not.toContain("right");
 });
 
+it("puts a peek picked in the unified view in its line's commit's column when the view switches", async () => {
+  core.pullRequestRows.mockResolvedValue(ok(changed));
+  core.definitions.mockResolvedValue(ok({ state: "found", hits: [] }));
+  const choice = new DiffViewChoice();
+  const files = await shown(ready(changed.length, { files: [changedFile] }), choice);
+  await vi.waitFor(() => {
+    expect(lines()[0]).toBe("▾a.py+2 −3");
+  });
+
+  // Row 6 is the added line "B", on the head, so a pick made unified has no column until the switch.
+  await clickAt(codeOf(6), 2);
+  const looking = files.peekDefinition();
+  await tick();
+  expect(peekBox()?.classList).not.toContain("left");
+  expect(peekBox()?.classList).not.toContain("right");
+  await looking;
+
+  choice.toggle();
+  await vi.waitFor(() => {
+    expect(screen.getByRole("region", { name: "Side-by-side diff" })).toBeTruthy();
+  });
+  expect(peekBox()?.classList).toContain("right");
+  expect(peekBox()?.classList).not.toContain("left");
+});
+
 it("draws the lines a gap left out on both sides, side by side", async () => {
   setUpGapped();
   const paired = { ...gappedFile, pairs: [{ row: 3, removed: 1, added: 1 }] };

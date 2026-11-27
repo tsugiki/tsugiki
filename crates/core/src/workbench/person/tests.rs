@@ -111,6 +111,32 @@ fn the_person_s_issues_show_alone_when_no_pr_of_theirs_fixes_one() {
 }
 
 #[test]
+fn a_person_s_filter_leaves_out_their_closed_issues() {
+    let world = ViewWorld::new("person-closed");
+    let theirs = |number, state| IssueFacts {
+        author: Some(Login::new("some-author")),
+        state,
+        ..issue(number)
+    };
+    world.has(
+        vec![],
+        vec![
+            theirs(1, Some(IssueState::Open)),
+            theirs(2, Some(IssueState::Closed)),
+        ],
+    );
+
+    let found = read(&world, "some-author");
+    world.finish();
+
+    assert_eq!(
+        outline(&found),
+        [("issue", 1, vec![])],
+        "the person Filter lists their open Issues and leaves out the closed ones"
+    );
+}
+
+#[test]
 fn a_bot_is_a_person_too() {
     let world = ViewWorld::new("person-bot");
     world.has(vec![by("dependabot[bot]", 20, None, at(1))], vec![]);

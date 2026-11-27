@@ -131,7 +131,7 @@ fn a_reference_whose_commit_is_gone_shows_nothing_and_an_unknown_close_reason_is
         "createdAt": "2026-11-01T09:00:00Z",
         "comments": { "totalCount": 0, "nodes": [] },
         "events": {
-            "totalCount": 3,
+            "totalCount": 2,
             "nodes": [
                 {
                     "__typename": "ReferencedEvent",
@@ -156,7 +156,8 @@ fn a_reference_whose_commit_is_gone_shows_nothing_and_an_unknown_close_reason_is
         content.events[0].kind,
         IssueEventKind::Closed { completed: true }
     );
-    assert_eq!(content.earlier_events, 2);
+    // The dropped reference came in the fetched page, so nothing older waits on GitHub.
+    assert_eq!(content.earlier_events, 0);
 }
 
 #[test]

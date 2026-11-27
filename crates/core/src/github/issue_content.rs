@@ -7,6 +7,7 @@ use serde::{Deserialize, Deserializer};
 use serde_json::json;
 use time::OffsetDateTime;
 
+use super::issues::StateReason;
 use super::labels::LabelWire;
 use super::pull_requests::{Person, RateLimit};
 use super::references::NamedRepository;
@@ -237,17 +238,6 @@ struct CommitReferenceWire {
     url: String,
 }
 
-/// GitHub's reason for a close. A duplicate is a close as not planned too, and a reason GitHub adds later
-/// reads as a plain close.
-#[derive(Deserialize)]
-#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
-enum StateReasonWire {
-    NotPlanned,
-    Duplicate,
-    #[serde(other)]
-    Other,
-}
-
 /// One item of the Issue's `timelineItems`, of the kinds [`EVENTS_FIELDS`] asks for.
 #[derive(Deserialize)]
 #[expect(
@@ -310,7 +300,7 @@ enum EventWire {
         #[serde(with = "time::serde::rfc3339")]
         created_at: OffsetDateTime,
         actor: Option<Person>,
-        state_reason: Option<StateReasonWire>,
+        state_reason: Option<StateReason>,
     },
     ReopenedEvent {
         #[serde(with = "time::serde::rfc3339")]
@@ -432,7 +422,7 @@ impl EventWire {
                 IssueEventKind::Closed {
                     completed: !matches!(
                         state_reason,
-                        Some(StateReasonWire::NotPlanned | StateReasonWire::Duplicate)
+                        Some(StateReason::NotPlanned | StateReason::Duplicate)
                     ),
                 },
             ),
@@ -497,6 +487,9 @@ impl From<IssueWire> for IssueContent {
             })
             .collect();
         let held = u32::try_from(comments.len()).unwrap_or(u32::MAX);
+        // A referenced event whose commit GitHub no longer has is dropped, but it was still one of the
+        // events this read brought, so it doesn't count as an older one.
+        let fetched_events = wire.events.nodes.iter().flatten().count();
         let events: Vec<IssueEvent> = wire
             .events
             .nodes
@@ -504,7 +497,7 @@ impl From<IssueWire> for IssueContent {
             .flatten()
             .filter_map(EventWire::event)
             .collect();
-        let held_events = u32::try_from(events.len()).unwrap_or(u32::MAX);
+        let held_events = u32::try_from(fetched_events).unwrap_or(u32::MAX);
         Self {
             id: Some(wire.id),
             body_html: wire.body_html,

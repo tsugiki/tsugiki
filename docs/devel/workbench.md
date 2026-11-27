@@ -58,8 +58,8 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
   order, cached rows it leaves out drop, and a result the cache lacks shows as a placeholder until the user
   scrolls to it, when Tsugiki fetches it in a batch of up to 50 with the item facts the sync reads, keeps it
   in the cache, and draws its row in its place ([#466](https://github.com/tsugiki/tsugiki/issues/466)).
-  Placeholders the user never scrolls to cost no request, and scrolling back and forth fetches none twice.
-  Past 1,000 results, the list ends
+  Placeholders the user never scrolls to cost no request, and a placeholder the core handled is fetched once;
+  one it couldn't handle comes back for a later ask. Past 1,000 results, the list ends
   with "1,000 of 1,712 shown. Narrow the search, or save it as a Filter." Until GitHub answers, a query the
   cache can't read lists nothing and says it needs GitHub. A matching PR stays in its Issue's fold, whose
   header stays even when the Issue doesn't match, and a matching Issue with no matching PR shows alone.

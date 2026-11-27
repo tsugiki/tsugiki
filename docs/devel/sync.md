@@ -74,8 +74,9 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
   on GitHub, ahead of the sync's next step: Tsugiki reads at most ten light pages of a hundred results, its
   1,000 cap, and keeps the answer in the cache. A result the cache lacks shows as a placeholder, which fills
   in a batch of up to 50 as the user scrolls to it: Tsugiki fetches the item's facts, keeps them, and the
-  Inbox draws their row. Placeholders the user never scrolls to cost no request, and scrolling back and forth
-  fetches none twice. The Inbox ends with "Load 30 more days" once it has listed all the cache holds.
+  Inbox draws their row. Placeholders the user never scrolls to cost no request, and a placeholder the core
+  handled is fetched once; one it couldn't handle comes back for a later ask. The Inbox ends with "Load 30
+  more days" once it has listed all the cache holds.
 - The local database is one file for all Repositories, holding both the cached GitHub data and the user's own
   state ([ADR 0010](../adr/0010-one-sqlite-database-and-per-repository-mirrors.md)). **Export database**
   (Settings › Advanced, and the command palette) writes a consistent copy of it anywhere, such as a synced

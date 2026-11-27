@@ -148,12 +148,11 @@ resolution rewrote code, a moderate or hard conflict, where a failed CI round tr
 
 ### 7. Look for copies the siblings made
 
-Once the wave's last PR has merged, bring the main checkout up to date with `git pull --ff-only --prune` and
-run `just dupes` there. `just merged` can't do it: it wants a branch name, and the branch it would delete is
-still held by the wave's worktree, which step 8 removes. Each PR passed against the main it started from, so a
-helper two siblings each wrote shows up only once both are in. Fold each copy it finds into one place both
-use, in one small PR, and wait for it to merge before the next wave starts. If a repeat has to stay, the PR
-adds it to `ALLOWED` in `scripts/copies.ts` with why.
+Once the wave's last PR has merged, run `just merged` and then `just dupes` in the main checkout. The main
+checkout is on main, so `just merged` only pulls: the worktrees and their branches go in step 8. Each PR
+passed against the main it started from, so a helper two siblings each wrote shows up only once both are in.
+Fold each copy it finds into one place both use, in one small PR, and wait for it to merge before the next
+wave starts. If a repeat has to stay, the PR adds it to `ALLOWED` in `scripts/copies.ts` with why.
 
 Done when `just dupes` passes on main.
 

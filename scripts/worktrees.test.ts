@@ -8,6 +8,8 @@ import {
   ticketTitle,
   titleSlug,
   worktreeFolder,
+  worktreeTicket,
+  worktrees,
 } from "./worktrees.ts";
 
 describe("ticketNumber", () => {
@@ -85,6 +87,48 @@ describe("ticketBranch", () => {
 describe("worktreeFolder", () => {
   it("puts the worktree under .temp", () => {
     expect(worktreeFolder(738)).toBe(".temp/wt-738");
+  });
+});
+
+describe("worktrees", () => {
+  const LIST = [
+    "worktree X:/Work/gh-rev",
+    "HEAD 1a2b3c",
+    "branch refs/heads/main",
+    "",
+    "worktree X:/Work/gh-rev/.temp/wt-471",
+    "HEAD 4d5e6f",
+    "branch refs/heads/471-save-filter",
+    "",
+    "worktree X:/Work/gh-rev/.temp/proto",
+    "HEAD 7a8b9c",
+    "detached",
+    "",
+  ].join("\n");
+
+  it("reads each worktree and its branch", () => {
+    expect(worktrees(LIST)).toEqual([
+      { path: "X:/Work/gh-rev", branch: "main" },
+      { path: "X:/Work/gh-rev/.temp/wt-471", branch: "471-save-filter" },
+      { path: "X:/Work/gh-rev/.temp/proto", branch: undefined },
+    ]);
+  });
+
+  it("reads nothing from an empty listing", () => {
+    expect(worktrees("")).toEqual([]);
+  });
+});
+
+describe("worktreeTicket", () => {
+  it("reads the ticket whose worktree folder it is", () => {
+    expect(worktreeTicket("X:/Work/gh-rev/.temp/wt-471")).toBe(471);
+    expect(worktreeTicket("X:\\Work\\gh-rev\\.temp\\wt-471")).toBe(471);
+  });
+
+  it("gives nothing for another folder", () => {
+    expect(worktreeTicket("X:/Work/gh-rev/.temp/proto")).toBeUndefined();
+    expect(worktreeTicket("X:/Work/gh-rev/.temp/wt-zero")).toBeUndefined();
+    expect(worktreeTicket("X:/Work/gh-rev")).toBeUndefined();
   });
 });
 

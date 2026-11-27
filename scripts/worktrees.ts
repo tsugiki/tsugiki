@@ -70,6 +70,36 @@ export function worktreeFolder(ticket: number): string {
   return `.temp/wt-${String(ticket)}`;
 }
 
+/** One worktree that `git worktree list --porcelain` names. */
+export interface Worktree {
+  path: string;
+  /** Its branch, without `refs/heads/`, or `undefined` when it is detached or bare. */
+  branch: string | undefined;
+}
+
+/** The worktrees in what `git worktree list --porcelain` prints, in its order. */
+export function worktrees(list: string): Worktree[] {
+  const trees: Worktree[] = [];
+  for (const line of list.split(/\r?\n/)) {
+    if (line.startsWith("worktree ")) {
+      trees.push({ path: line.slice("worktree ".length), branch: undefined });
+    } else if (line.startsWith("branch refs/heads/")) {
+      const tree = trees.at(-1);
+      if (tree !== undefined) tree.branch = line.slice("branch refs/heads/".length);
+    }
+  }
+  return trees;
+}
+
+/** The ticket whose worktree folder `path` is, or `undefined` when it is some other folder. */
+export function worktreeTicket(path: string): number | undefined {
+  const parts = path.replace(/\\/g, "/").split("/");
+  const name = parts.at(-1) ?? "";
+  return parts.at(-2) === ".temp" && name.startsWith("wt-")
+    ? ticketNumber(name.slice("wt-".length))
+    : undefined;
+}
+
 /**
  * The reason `just worktree` won't make the worktree in `folder`, from what it can tell before it asks git or
  * GitHub anything, or `undefined` when it may go on. `cargoTargetDir` is `CARGO_TARGET_DIR` as the

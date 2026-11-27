@@ -22,6 +22,7 @@ import {
   ticketNumber,
   ticketTitle,
   worktreeFolder,
+  worktrees,
 } from "./worktrees.ts";
 
 /** The main checkout, whichever checkout of the repository the script runs in. */
@@ -50,10 +51,7 @@ function sameFolder(a: string, b: string): boolean {
 /** Whether git lists a worktree at `path`. */
 function listed(main: string, path: string): boolean {
   const list = run("git worktree list failed.", "git", "-C", main, "worktree", "list", "--porcelain");
-  return list
-    .split(/\r?\n/)
-    .filter((line) => line.startsWith("worktree "))
-    .some((line) => samePath(line.slice("worktree ".length), path));
+  return worktrees(list).some((tree) => samePath(tree.path, path));
 }
 
 /** Deletes `path` and all it holds, or stops with what may hold it and how to finish. */

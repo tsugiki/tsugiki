@@ -2,10 +2,28 @@
 // live in state.ts, the data the e2e specs share too in fixtures.ts, and setup.ts fills jsdom's gaps before
 // each test file.
 import { fireEvent, screen, within } from "@testing-library/svelte";
+import { onTestFinished, vi } from "vitest";
 
 /** Waits a macrotask, for what the code under test sets off with `setTimeout(…, 0)` or answers after a
  * promise chain longer than a few ticks. */
 export const nextTask = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+/** Draws every element `height` tall for the rest of the test, and `width` wide if given, which jsdom leaves
+ * at nothing. A `client` size fills the client box instead of the offset box. */
+export function measureHeight(
+  height: number,
+  { width, dimension = "offset" }: { width?: number; dimension?: "offset" | "client" } = {},
+) {
+  const heightName = dimension === "offset" ? "offsetHeight" : "clientHeight";
+  const widthName = dimension === "offset" ? "offsetWidth" : "clientWidth";
+  vi.spyOn(HTMLElement.prototype, heightName, "get").mockReturnValue(height);
+  if (width !== undefined) {
+    vi.spyOn(HTMLElement.prototype, widthName, "get").mockReturnValue(width);
+  }
+  onTestFinished(() => {
+    vi.restoreAllMocks();
+  });
+}
 
 /** A key pressed, as `init` says, that bubbles and can be cancelled, as the browser's do. */
 export const keydown = (init: KeyboardEventInit) =>

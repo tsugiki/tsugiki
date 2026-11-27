@@ -30,6 +30,8 @@ label it carries. Follow `AGENTS.md`, with these changes for a wave:
   catches the formatting a review would otherwise spend a finding on.
 - Run tests in the foreground with a `timeout`, not in the background: a background run that ends can leave
   you waiting on it with nothing running.
+- Read a gate's own exit code: never pipe `just preflight` through `tail`, since a pipeline reports the last
+  command's status and a failure then reads as 0.
 - Allow 0.5px when you compare where an element sits on the screen: macOS's WebKit puts it a fraction of a
   pixel off.
 - Read each item you put behind `#[cfg(unix)]` or `cfg(not(windows))` against the lints in `Cargo.toml` and

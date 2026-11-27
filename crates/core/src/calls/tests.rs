@@ -80,6 +80,7 @@ impl Setup {
                 | SessionMessage::Check { .. }
                 | SessionMessage::FetchUnstored { .. }
                 | SessionMessage::Search { .. }
+                | SessionMessage::FilterSearch { .. }
                 | SessionMessage::ShowMuted { .. }
                 | SessionMessage::Sync { .. }
                 | SessionMessage::Refresh
@@ -212,6 +213,7 @@ fn synced_and_saved(messages: &Receiver<SessionMessage>) -> Vec<String> {
             | SessionMessage::Check { .. }
             | SessionMessage::FetchUnstored { .. }
             | SessionMessage::Search { .. }
+            | SessionMessage::FilterSearch { .. }
             | SessionMessage::ShowMuted { .. }
             | SessionMessage::Refresh
             | SessionMessage::Mark { .. }
@@ -316,6 +318,60 @@ fn the_window_tells_the_session_what_the_user_did_with_an_item_and_with_itself()
             "closed #7",
         ]
     );
+}
+
+#[test]
+fn saving_a_filter_appends_it_off_the_workbench_and_starts_its_search_ahead_of_the_sync() {
+    let root = crate::testing::temp_path("calls-save-filter");
+    fs::create_dir_all(&root).unwrap();
+    let folders = crate::testing::one_folder(&root);
+    let before = "[[repositories]]\nname = \"python/cpython\"\n";
+    fs::write(folders.settings_file(), before).unwrap();
+    let settings = SettingsOwner::start(Ok(SettingsFiles::load(folders.clone())));
+    let (fetching, session, _heard, _headless) = handle_with_headless();
+    let db = OpenStore::new("calls-save-filter-store");
+    let parts = CallParts {
+        folders: Ok(folders.clone()),
+        settings,
+        definitions: no_servers(),
+    };
+    let calls = Calls::launched(
+        fetching,
+        db.reader.clone(),
+        shown(Account::Connecting).1,
+        parts,
+    );
+
+    let name = "Needs review".to_owned().try_into().unwrap();
+    let query = "review-requested:@me is:open"
+        .to_owned()
+        .try_into()
+        .unwrap();
+    calls.save_filter(cpython(), name, query).unwrap();
+    let heard: Vec<String> = session.try_iter().map(named).collect();
+    let after = fs::read_to_string(folders.settings_file()).unwrap();
+    let reloaded = SettingsFiles::load(folders);
+    let saved = &reloaded.loaded().settings.repositories[0].filters[2];
+    db.close();
+
+    // The save reaches the session before the demand that searches the new Filter, so the search the
+    // session starts reads the Filter from the settings.
+    assert_eq!(
+        heard,
+        [
+            "other",
+            "switch",
+            "filter search review-requested:@me is:open"
+        ]
+    );
+    assert!(
+        after.contains(
+            "[[repositories.filters]]\nname = \"Needs review\"\nquery = \
+             \"review-requested:@me is:open\"\n"
+        ),
+        "{after}"
+    );
+    assert_eq!(saved.on_workbench, OnWorkbench::Off);
 }
 
 #[test]

@@ -150,6 +150,41 @@ test("Enter sends the whole search to GitHub, and its rows show with a placehold
   );
 });
 
+test("saves the search as a Filter, which opens in place of the Inbox with the box cleared", async ({
+  page,
+}) => {
+  const bugs = { name: "Bugs", query: "label:bug is:open", on_workbench: false, count: 0, problem: null };
+  await mockCore(page, {
+    home,
+    workbench: workbenchPage([], { filters: [bugs] }),
+    inbox: pageOf(issues(2, 1), false),
+  });
+  await page.goto("/");
+  await openInbox(page);
+  const search = page.getByRole("searchbox", { name: "Search the Inbox" });
+  await expect(page.getByRole("button", { name: "Save" })).toHaveCount(0);
+
+  await changeAnswer(page, "inbox", inboxPage([], null, "off", true, null, "label:bug is:open"));
+  await search.fill("label:bug");
+  await expect(page.locator(".list").getByRole("status")).toContainText("needs GitHub");
+  await page.getByRole("button", { name: "Save" }).click();
+
+  // The dialog opens with the text as its name and the query the core spelled out for it.
+  const dialog = page.getByRole("dialog", { name: "Save as Filter" });
+  await expect(dialog.getByRole("textbox", { name: "Name" })).toHaveValue("label:bug");
+  await expect(dialog.getByRole("textbox", { name: "Query" })).toHaveValue("label:bug is:open");
+  await dialog.getByRole("textbox", { name: "Name" }).fill("");
+  await expect(dialog.getByRole("button", { name: "Save" })).toBeDisabled();
+  await dialog.getByRole("textbox", { name: "Name" }).fill("Bugs");
+  await dialog.getByRole("button", { name: "Save" }).click();
+
+  // The new Filter opens in place of the Inbox, and its box goes away cleared.
+  await expect(dialog).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "Bugs" })).toBeVisible();
+  await expect(search).toHaveCount(0);
+  await expect.poll(() => callsOf(page, "saveFilter")).toBe(1);
+});
+
 test("scrolling to the end of the Inbox reads the next page and draws it", async ({ page }) => {
   await page.setViewportSize({ width: 1200, height: 600 });
   await mockCore(page, { home, workbench, inbox: pageOf(issues(400, 341), true) });

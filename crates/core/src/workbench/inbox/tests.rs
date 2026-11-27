@@ -1169,6 +1169,7 @@ fn the_window_sends_a_page_and_gets_the_next_one_s_start_as_text() {
         show_muted: ShowMuted::On,
         needs_github: false,
         truncated: None,
+        filter_query: None,
     };
 
     let sent = serde_json::to_value(&inbox).unwrap();
@@ -1554,6 +1555,30 @@ fn a_qualifier_the_cache_does_not_read_lists_nothing_and_says_github() {
     assert!(found.needs_github);
     assert_eq!(found.older, None);
     assert!(!local.needs_github);
+}
+
+#[test]
+fn a_search_carries_the_filter_it_would_save_as() {
+    let world = ViewWorld::new("inbox-search-filter-query");
+    world.has(vec![pr_at(10, Some(1), ago(1))], vec![issue_at(1, ago(2))]);
+
+    let local = searched(&world, " label:bug ");
+    let closed = searched(&world, "is:closed label:bug");
+    let github = searched(&world, "review:approved");
+    let whole = read(&world, InboxPage::Latest);
+    world.finish();
+
+    let spelled = |inbox: &Inbox| {
+        inbox
+            .filter_query
+            .as_ref()
+            .map(|query| query.as_str().to_owned())
+    };
+    assert_eq!(spelled(&local), Some("label:bug is:open".to_owned()));
+    assert_eq!(spelled(&closed), Some("is:closed label:bug".to_owned()));
+    // A search the cache can't read still spells out what a Filter would hold.
+    assert_eq!(spelled(&github), Some("review:approved is:open".to_owned()));
+    assert_eq!(spelled(&whole), None);
 }
 
 #[test]

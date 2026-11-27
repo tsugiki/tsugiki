@@ -104,7 +104,7 @@ pub(super) fn first_phase(
         return Ok(None);
     };
     link.store
-        .keep_only_filters(link.repository, link.filters.to_vec())?;
+        .keep_only_filters(link.repository, link.keep_filters.clone())?;
     let stored = link.store.filter_results(link.repository)?;
     let (in_request, whole): (Vec<FilterQuery>, Vec<FilterQuery>) = link
         .filters

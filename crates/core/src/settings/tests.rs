@@ -1348,6 +1348,226 @@ fn a_switch_refuses_a_repository_or_a_search_the_file_doesnt_hold_and_saves_noth
 }
 
 #[test]
+fn a_saved_filter_goes_at_the_end_of_the_repository_s_filters_and_keeps_their_comments() {
+    let (mut files, folders, _root) = settings_saying(
+        "append-filter",
+        "\
+[[repositories]]
+name = \"a/b\"
+
+# Mine.
+[[repositories.filters]]
+name = \"Bugs\"
+query = \" label:bug \" # The bugs.
+
+[[repositories.filters]]
+name = \"Docs\"
+query = \"label:docs\"
+on_workbench = true
+",
+    );
+
+    files
+        .append_filter(
+            // The settings take a name in any case as one Repository, and the file writes the one it holds.
+            &repository("A/B"),
+            &filter("Needs review", "review-requested:@me is:open"),
+        )
+        .unwrap();
+    let after = fs::read_to_string(folders.settings_file()).unwrap();
+
+    assert!(
+        after.contains("# Mine.") && after.contains("# The bugs."),
+        "{after}"
+    );
+    assert_eq!(
+        (files.loaded().settings.repositories[0].filters.iter())
+            .map(|filter| (filter.name.as_str(), filter.query.as_str()))
+            .collect::<Vec<_>>(),
+        [
+            ("Bugs", "label:bug"),
+            ("Docs", "label:docs"),
+            ("Needs review", "review-requested:@me is:open"),
+        ]
+    );
+    assert_eq!(
+        files.loaded().settings.repositories[0].filters[2].on_workbench,
+        OnWorkbench::Off
+    );
+}
+
+#[test]
+fn a_saved_filter_refuses_a_name_the_repository_s_filters_already_use_and_saves_nothing() {
+    let before = "[[repositories]]\nname = \"a/b\"\n\n[[repositories.filters]]\nname = \"Bugs\"\nquery = \"label:bug\"\n";
+    let (mut files, folders, _root) = settings_saying("append-filter-taken", before);
+
+    let taken = files
+        .append_filter(&repository("a/b"), &filter("Bugs", "label:docs"))
+        .unwrap_err();
+
+    assert_eq!(taken.kind, ErrorKind::Conflict);
+    assert_eq!(
+        taken.message,
+        "a/b already has a Filter named Bugs. Choose another name."
+    );
+    assert_eq!(fs::read_to_string(folders.settings_file()).unwrap(), before);
+}
+
+#[test]
+fn a_saved_filter_turns_a_list_written_empty_into_blocks() {
+    let (mut files, folders, _root) = settings_saying(
+        "append-filter-empty",
+        "# The Filters.\n[[repositories]]\nname = \"a/b\"\nfilters = []\n",
+    );
+
+    files
+        .append_filter(&repository("a/b"), &filter("Bugs", "label:bug"))
+        .unwrap();
+    let after = fs::read_to_string(folders.settings_file()).unwrap();
+
+    assert_eq!(
+        after,
+        "# The Filters.\n[[repositories]]\nname = \"a/b\"\n\n[[repositories.filters]]\nname = \"Bugs\"\nquery = \"label:bug\"\n"
+    );
+    assert_eq!(
+        (files.loaded().settings.repositories[0].filters.iter())
+            .map(|filter| (filter.name.as_str(), filter.query.as_str()))
+            .collect::<Vec<_>>(),
+        [("Bugs", "label:bug")]
+    );
+}
+
+#[test]
+fn a_saved_filter_in_an_inline_list_stays_inline_and_a_repository_without_filters_gets_the_starters()
+ {
+    let (mut inline, inline_folders, _root) = settings_saying(
+        "append-filter-inline",
+        "repositories = [{ name = \"a/b\", filters = [{ name = \"Bugs\", query = \"label:bug\" }] }]\n",
+    );
+    inline
+        .append_filter(&repository("a/b"), &filter("Docs", "label:docs"))
+        .unwrap();
+
+    let (mut starters, starters_folders, _root) = settings_saying(
+        "append-filter-starters",
+        "[[repositories]]\nname = \"c/d\"\n",
+    );
+    starters
+        .append_filter(&repository("c/d"), &filter("Bugs", "label:bug"))
+        .unwrap();
+
+    assert_eq!(
+        fs::read_to_string(inline_folders.settings_file()).unwrap(),
+        "repositories = [{ name = \"a/b\", filters = [{ name = \"Bugs\", query = \"label:bug\" }, { name = \"Docs\", query = \"label:docs\" }] }]\n"
+    );
+    assert_eq!(
+        (starters.loaded().settings.repositories[0].filters.iter())
+            .map(|filter| filter.name.as_str())
+            .collect::<Vec<_>>(),
+        ["Mine", "Involved", "Bugs"]
+    );
+    let written = fs::read_to_string(starters_folders.settings_file()).unwrap();
+    assert!(
+        written.ends_with("[[repositories.filters]]\nname = \"Bugs\"\nquery = \"label:bug\"\n"),
+        "{written}"
+    );
+}
+
+#[test]
+fn a_saved_filter_refuses_a_repository_the_file_doesnt_hold() {
+    let before = "[[repositories]]\nname = \"a/b\"\n";
+    let (mut files, folders, _root) = settings_saying("append-filter-no-repository", before);
+
+    let missing = files
+        .append_filter(&repository("c/d"), &filter("Bugs", "label:bug"))
+        .unwrap_err();
+
+    assert_eq!(missing.kind, ErrorKind::NotFound);
+    assert_eq!(missing.message, "Tsugiki doesn't have c/d.");
+    assert_eq!(fs::read_to_string(folders.settings_file()).unwrap(), before);
+}
+
+#[test]
+fn a_saved_filter_refuses_a_search_or_name_the_repository_s_filters_already_have() {
+    let before = "[[repositories]]\nname = \"a/b\"\n\n[[repositories.filters]]\nname = \"Bugs\"\nquery = \"label:bug\"\n";
+    let (mut files, folders, _root) = settings_saying("append-filter-search-taken", before);
+
+    let search = files
+        .append_filter(&repository("a/b"), &filter("Docs", "label:bug"))
+        .unwrap_err();
+    let name = files
+        .append_filter(&repository("a/b"), &filter("Bugs", "label:docs"))
+        .unwrap_err();
+
+    assert_eq!(search.kind, ErrorKind::Conflict);
+    assert_eq!(
+        search.message,
+        "a/b already has a Filter that searches label:bug. Choose another search."
+    );
+    assert_eq!(name.kind, ErrorKind::Conflict);
+    assert_eq!(
+        name.message,
+        "a/b already has a Filter named Bugs. Choose another name."
+    );
+    assert_eq!(fs::read_to_string(folders.settings_file()).unwrap(), before);
+}
+
+#[test]
+fn a_saved_filter_refuses_a_file_that_names_the_repository_twice() {
+    // The settings take a name in any case as one Repository, and the file the first that names it.
+    let before = "[[repositories]]\nname = \"a/b\"\n\n[[repositories]]\nname = \"A/B\"\n";
+    let (mut files, folders, _root) = settings_saying("append-filter-twice", before);
+
+    let twice = files
+        .append_filter(&repository("A/B"), &filter("Bugs", "label:bug"))
+        .unwrap_err();
+
+    assert_eq!(twice.kind, ErrorKind::Conflict);
+    assert_eq!(
+        twice.message,
+        "settings.toml names A/B twice, first as a/b, and Tsugiki saves only the Filters of the first. \
+         Take one out of the file, then save the Filter again."
+    );
+    assert_eq!(fs::read_to_string(folders.settings_file()).unwrap(), before);
+}
+
+#[test]
+fn a_saved_filter_refuses_a_file_that_names_one_repository_twice_in_one_case() {
+    let before = "[[repositories]]\nname = \"A/B\"\n\n[[repositories]]\nname = \"A/B\"\n";
+    let (mut files, folders, _root) = settings_saying("append-filter-twice-one-case", before);
+
+    let twice = files
+        .append_filter(&repository("A/B"), &filter("Bugs", "label:bug"))
+        .unwrap_err();
+
+    assert_eq!(twice.kind, ErrorKind::Conflict);
+    assert_eq!(
+        twice.message,
+        "settings.toml names A/B twice, first as A/B, and Tsugiki saves only the Filters of the first. \
+         Take one out of the file, then save the Filter again."
+    );
+    assert_eq!(fs::read_to_string(folders.settings_file()).unwrap(), before);
+}
+
+#[test]
+fn a_saved_filter_refuses_a_file_that_already_holds_two_filters_with_one_search() {
+    let before = "[[repositories]]\nname = \"a/b\"\n\n[[repositories.filters]]\nname = \"Bugs\"\nquery = \"label:bug\"\n\n[[repositories.filters]]\nname = \"Also bugs\"\nquery = \"label:bug\"\n";
+    let (mut files, folders, _root) = settings_saying("append-filter-repeated", before);
+
+    let repeated = files
+        .append_filter(&repository("a/b"), &filter("Docs", "label:docs"))
+        .unwrap_err();
+
+    assert_eq!(repeated.kind, ErrorKind::Conflict);
+    assert_eq!(
+        repeated.message,
+        "settings.toml holds two Filters of a/b that search label:bug, and Tsugiki shows only the first. \
+         Take one out of the file, then save the Filter again."
+    );
+    assert_eq!(fs::read_to_string(folders.settings_file()).unwrap(), before);
+}
+
+#[test]
 fn the_owner_saves_a_switch_and_answers_with_what_the_files_say() {
     let (files, _folders, _root) = settings_saying(
         "owner-switch",
@@ -1362,6 +1582,26 @@ fn the_owner_saves_a_switch_and_answers_with_what_the_files_say() {
     assert_eq!(
         saved.loaded.settings.repositories[0].filters[0].on_workbench,
         OnWorkbench::On
+    );
+    assert_eq!(owner.view(), saved);
+}
+
+#[test]
+fn the_owner_adds_a_filter_and_answers_with_what_the_files_say() {
+    let (files, _folders, _root) =
+        settings_saying("owner-append", "[[repositories]]\nname = \"a/b\"\n");
+    let owner = SettingsOwner::start(Ok(files));
+
+    let saved = owner
+        .append_filter(repository("a/b"), filter("Bugs", "label:bug"))
+        .unwrap();
+
+    let filters: Vec<(&str, bool)> = (saved.loaded.settings.repositories[0].filters.iter())
+        .map(|filter| (filter.name.as_str(), filter.on_workbench.into()))
+        .collect();
+    assert_eq!(
+        filters,
+        [("Mine", false), ("Involved", false), ("Bugs", false)]
     );
     assert_eq!(owner.view(), saved);
 }
@@ -2937,6 +3177,7 @@ fn without_folders_the_owner_says_what_went_wrong_with_them() {
         MirrorSource::Download,
     );
     let switching = owner.put_on_workbench(repository("a/b"), query("label:bug"), OnWorkbench::On);
+    let appending = owner.append_filter(repository("a/b"), filter("Bugs", "label:bug"));
     let answering = owner.save_mirror_source(repository("a/b"), MirrorSource::Download);
     let resizing = owner.save_panes(WIDE);
     let running = owner.remember_command(CommandId::new("Reset Layout"));
@@ -2950,6 +3191,7 @@ fn without_folders_the_owner_says_what_went_wrong_with_them() {
     assert_eq!(applying.unwrap_err(), lost);
     assert_eq!(adding.unwrap_err(), lost);
     assert_eq!(switching.unwrap_err(), lost);
+    assert_eq!(appending.unwrap_err(), lost);
     assert_eq!(opening.unwrap_err(), lost);
     assert_eq!(answering.unwrap_err(), lost);
     assert_eq!(resizing.unwrap_err(), lost);

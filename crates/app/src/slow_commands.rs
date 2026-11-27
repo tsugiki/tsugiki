@@ -20,6 +20,7 @@ use tsugiki_core::definitions::{Answer, Index, ServerName, Waiting};
 use tsugiki_core::diff::{DiffRow, HeadLine};
 use tsugiki_core::error::{Error, ErrorKind};
 use tsugiki_core::facts::activity::ShowMuted;
+use tsugiki_core::filters::{FilterName, FilterQuery};
 use tsugiki_core::highlight::Span;
 use tsugiki_core::mirror::CloneRefusal;
 use tsugiki_core::mirror_source::MirrorSource;
@@ -108,6 +109,20 @@ pub(crate) fn put_filter_on_workbench(
     owner: State<'_, SettingsOwner>,
 ) -> Result<(), Error> {
     crate::switch_filter(change, &owner)
+}
+
+/// Saves a Filter named `name` that searches `query` at the end of `repository`'s Filters, off the Workbench,
+/// and starts its first search at once (#471). The window then opens it in place of the Inbox. This waits on
+/// a small file and never on GitHub or git.
+#[tauri::command(async)]
+#[specta::specta]
+pub(crate) fn save_filter(
+    repository: &str,
+    name: FilterName,
+    query: FilterQuery,
+    calls: State<'_, Calls>,
+) -> Result<(), Error> {
+    calls.save_filter(RepositoryName::parse(repository)?, name, query)
 }
 
 /// Turns "Show muted" on the Inbox of `repository` to `show` (#825), and returns once the store has kept it,

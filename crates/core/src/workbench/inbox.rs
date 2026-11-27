@@ -47,6 +47,7 @@ use crate::facts::activity::{ItemKey, ShowMuted};
 use crate::facts::inbox_search::{InboxSearch, RowKind};
 use crate::facts::issues::{IssuePlace, IssueState};
 use crate::facts::pull_requests::{PrLinks, PrState};
+use crate::filters::FilterQuery;
 use crate::login::Login;
 use crate::repository_settings::RepositorySettings;
 use crate::store::{Snapshot, StoreReader, Updates};
@@ -120,6 +121,9 @@ pub struct Inbox {
     /// How many results a search's answer listed of how many it reaches, when it stopped at GitHub's 1,000
     /// (#465).
     pub truncated: Option<Truncated>,
+    /// The Filter the box's search would save as: its text with Tsugiki's additions spelled out, or nothing
+    /// while the box is empty (#471).
+    pub filter_query: Option<FilterQuery>,
 }
 
 /// The line a search ends with when GitHub listed more than Tsugiki read (#465).
@@ -179,6 +183,7 @@ impl Inbox {
                         show_muted,
                         needs_github: false,
                         truncated: None,
+                        filter_query: None,
                     });
                 };
                 let inbox = Self::listed(read, &settings, show_muted);
@@ -201,7 +206,7 @@ impl Inbox {
         show: ShowMuted,
     ) -> Result<Self, Error> {
         if let Some(answer) = snapshot.inbox_search(search.text())? {
-            return Self::answered(snapshot, repository, &answer, show);
+            return Self::answered(snapshot, repository, search, &answer);
         }
         if search.needs_github() {
             return Ok(Self {
@@ -210,6 +215,7 @@ impl Inbox {
                 show_muted: show,
                 needs_github: true,
                 truncated: None,
+                filter_query: search.filter_query(),
             });
         }
         Self::matching(snapshot, repository, search, show)
@@ -223,6 +229,7 @@ impl Inbox {
         search: &Search,
         show: ShowMuted,
     ) -> Result<Self, Error> {
+        let filter_query = search.filter_query();
         let facts = snapshot.work_facts()?;
         let causes = Causes::of(&facts, repository.conventions);
         let rows = Index::of(&facts, &snapshot.brought_back()?);
@@ -250,6 +257,7 @@ impl Inbox {
             show_muted: show,
             needs_github: false,
             truncated: None,
+            filter_query,
         })
     }
 
@@ -259,9 +267,11 @@ impl Inbox {
     fn answered(
         snapshot: &Snapshot<'_>,
         repository: &RepositorySettings,
+        search: &Search,
         answer: &InboxSearch,
-        show: ShowMuted,
     ) -> Result<Self, Error> {
+        let show = snapshot.show_muted()?;
+        let filter_query = search.filter_query();
         let facts = snapshot.work_facts()?;
         let causes = Causes::of(&facts, repository.conventions);
         let rows = Index::of(&facts, &snapshot.brought_back()?);
@@ -324,6 +334,7 @@ impl Inbox {
             show_muted: show,
             needs_github: false,
             truncated,
+            filter_query,
         })
     }
 
@@ -347,6 +358,7 @@ impl Inbox {
             show_muted: show,
             needs_github: false,
             truncated: None,
+            filter_query: None,
         }
     }
 }

@@ -1101,6 +1101,7 @@ describe("Settings › Account", () => {
     await onAccount();
     const link = screen.getByRole("link", { name: "README" });
     expect(link.getAttribute("href")).toBe(README);
+    expect(link.getAttribute("title")).toBe(`Open in the browser: ${README}`);
 
     // The webview would follow the link itself, or open a window for it, if not stopped.
     expect(await fireEvent.click(link)).toBe(false);

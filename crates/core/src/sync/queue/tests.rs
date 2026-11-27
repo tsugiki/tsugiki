@@ -1,13 +1,15 @@
 use super::*;
 use crate::facts::issues::{IssueFacts, IssueState};
+use crate::filters::{Filter, FilterQuery, OnWorkbench};
 use crate::github::in_flight::Asking;
-use crate::github::testing::{dated, in_flight_heard, reply_ok, signed_in_as};
+use crate::github::testing::{answer, dated, filter_page, in_flight_heard, reply_ok, signed_in_as};
 use crate::github::{Reply, Unreachable};
 use crate::repository::RepositoryName;
+use crate::store::testing::pins_to_read;
 use crate::sync::testing::{
     Harness, RATE_LIMIT, a_tree_over_two_pages, cpython, cross_references, fetched, fetched_nodes,
-    hours_ago_text, issues, merged_node, nothing, plain, pr_node, run_to_the_end, search_page,
-    searches_finding, soon, window_issue, window_page,
+    fetched_titled, hours_ago_text, issue_references, issues, merged_node, nothing, plain, pr_node,
+    run_to_the_end, search_page, searches_finding, soon, window_issue, window_page,
 };
 use serde_json::{Value, json};
 
@@ -76,6 +78,230 @@ fn told_giving_up(syncs: &mut Syncs, failure: &StepFailure) -> Vec<Progress> {
     }
     assert_eq!(syncs.ready_at(), None, "the queue gave up the sync");
     told
+}
+
+#[test]
+fn a_filter_saved_while_a_sync_is_queued_searches_ahead_of_the_syncs_next_step() {
+    let harness = Harness::new(
+        "filter-saved-while-queued",
+        vec![filter_page(0, &[], None, RATE_LIMIT)],
+    );
+    let mut syncs = Syncs::default();
+    syncs.add_listed(plain(cpython()));
+    let query: FilterQuery = "label:bug".to_owned().try_into().unwrap();
+
+    // The queued sync was built with no Filters, so only the demand for the new one searches it.
+    syncs.search_filter(&cpython(), query.clone());
+    drop(syncs.step(&harness.github, &harness.db.store).unwrap());
+
+    assert_eq!(harness.operations(), ["SearchFilter"]);
+    assert!(
+        harness
+            .db
+            .store
+            .filter_results(&cpython())
+            .unwrap()
+            .contains_key(&query)
+    );
+    harness.finish();
+}
+
+#[test]
+fn a_saved_filter_s_results_stay_when_the_refresh_queued_before_it_keeps_its_filters() {
+    let (mut syncs, harness) = after_a_first_sync(
+        "filter-kept",
+        vec![filter_page(0, &[], None, RATE_LIMIT), polled_nothing()],
+    );
+    let query: FilterQuery = "label:bug".to_owned().try_into().unwrap();
+    // The refresh is queued with no Filters, as one is before the user saves this one.
+    syncs.add(cpython());
+    let saved = RepositorySettings {
+        filters: vec![Filter {
+            name: "Bugs".to_owned().try_into().unwrap(),
+            query: query.clone(),
+            on_workbench: OnWorkbench::Off,
+        }],
+        ..plain(cpython())
+    };
+    syncs.list(saved);
+    syncs.search_filter(&cpython(), query.clone());
+    let kept = || (harness.db.store.filter_results(&cpython()).unwrap()).contains_key(&query);
+
+    while !syncs.searches.is_empty() {
+        drop(syncs.step(&harness.github, &harness.db.store).unwrap());
+    }
+    assert!(kept(), "the saved Filter's search saved its results");
+
+    // The refresh now reaches its first phase, which keeps only the Filters the settings list now.
+    drop(syncs.step(&harness.github, &harness.db.store).unwrap());
+
+    assert!(kept(), "the queued refresh kept the saved Filter's results");
+    harness.finish();
+}
+
+#[test]
+fn a_saved_filter_s_search_marks_read_the_pin_trees_it_read() {
+    let harness = Harness::new(
+        "filter-search-pins",
+        vec![
+            filter_page(0, &[], None, RATE_LIMIT),
+            issue_references(&[(7, &[30])], RATE_LIMIT),
+            fetched_titled(&[30], RATE_LIMIT, |_| "gh-7: Fix it".to_owned()),
+        ],
+    );
+    let store = &harness.db.store;
+    store.save_issues(&cpython(), facts_of_issue(7)).unwrap();
+    store.pin(&cpython(), 7).unwrap();
+    let mut syncs = Syncs::default();
+    syncs.add_listed(plain(cpython()));
+    syncs.search_filter(&cpython(), "label:bug".to_owned().try_into().unwrap());
+
+    while !syncs.searches.is_empty() {
+        drop(syncs.step(&harness.github, store).unwrap());
+    }
+
+    let left = pins_to_read(store, &cpython());
+    assert!(left.is_empty(), "the search read the tree: {left:?}");
+    harness.finish();
+}
+
+#[test]
+fn a_saved_filter_s_search_that_cant_mark_its_pins_read_leaves_them_for_the_next_sync() {
+    let harness = Harness::new("filter-pins-unmarked", Vec::new());
+    let store = &harness.db.store;
+    store.save_issues(&cpython(), facts_of_issue(7)).unwrap();
+    store.pin(&cpython(), 7).unwrap();
+    let mut syncs = Syncs::default();
+    syncs.add_listed(plain(cpython()));
+    syncs.search_filter(&cpython(), "label:bug".to_owned().try_into().unwrap());
+    let mut search = syncs.searches.pop_front().unwrap();
+    // Nothing is left to ask GitHub, so the step's only work is to mark the pins read.
+    search.sync.phase = crate::sync::Resumable::FetchingNamedIssues(Vec::new()).into();
+    search.sync.pin_trees = pins_to_read(store, &cpython());
+    syncs.searches.push_back(search);
+    let broken = Store::stopped();
+
+    assert!(matches!(syncs.step(&harness.github, &broken), Ok(None)));
+
+    assert!(syncs.searches.is_empty());
+    assert!(
+        !pins_to_read(store, &cpython()).is_empty(),
+        "the pins stay for the next sync"
+    );
+    broken.close();
+    harness.finish();
+}
+
+#[test]
+fn a_saved_filter_s_search_queues_nothing_for_a_repository_the_window_does_not_show() {
+    let mut syncs = Syncs::default();
+    syncs.add_listed(plain(cpython()));
+    syncs.add_listed(plain(peps()));
+
+    syncs.search_filter(&cpython(), "label:bug".to_owned().try_into().unwrap());
+
+    assert!(syncs.searches.is_empty());
+}
+
+#[test]
+fn a_saved_filter_s_search_the_store_wont_save_ends_without_holding_the_queue() {
+    let harness = Harness::new(
+        "filter-search-broken",
+        vec![filter_page(0, &[], None, RATE_LIMIT)],
+    );
+    let broken = Store::stopped();
+    let mut syncs = Syncs::default();
+    syncs.add_listed(plain(cpython()));
+    syncs.search_filter(&cpython(), "label:bug".to_owned().try_into().unwrap());
+
+    assert!(matches!(syncs.step(&harness.github, &broken), Ok(None)));
+
+    assert!(syncs.searches.is_empty());
+    broken.close();
+    harness.finish();
+}
+
+#[test]
+fn a_saved_filter_s_search_waits_for_github_as_a_sync_does() {
+    let harness = Harness::new(
+        "filter-search-offline",
+        vec![
+            Err(Unreachable::Offline),
+            Err(Unreachable::Offline),
+            filter_page(0, &[], None, RATE_LIMIT),
+        ],
+    );
+    let mut syncs = Syncs::default();
+    syncs.add_listed(plain(cpython()));
+    let query: FilterQuery = "label:bug".to_owned().try_into().unwrap();
+    syncs.search_filter(&cpython(), query.clone());
+
+    let failed = syncs.step(&harness.github, &harness.db.store).unwrap_err();
+
+    assert_eq!(failed.problem.kind, ErrorKind::Offline);
+    assert_eq!(syncs.searches.len(), 1, "the search waits for the next try");
+    assert_eq!(syncs.after_failure(&failed, soon()), None);
+
+    while !syncs.searches.is_empty() {
+        drop(syncs.step(&harness.github, &harness.db.store).unwrap());
+    }
+
+    assert!(
+        (harness.db.store.filter_results(&cpython()).unwrap()).contains_key(&query),
+        "the search saved its results once GitHub answered"
+    );
+    harness.finish();
+}
+
+#[test]
+fn a_saved_filter_s_search_counts_no_try_when_github_answers_unauthorized() {
+    let mut syncs = Syncs::default();
+    syncs.add_listed(plain(cpython()));
+    syncs.search_filter(&cpython(), "label:bug".to_owned().try_into().unwrap());
+    let signed_out = StepFailure {
+        problem: Error::new(ErrorKind::Unauthorized, "Bad credentials."),
+        turn: Turn::Filter,
+    };
+
+    for _ in 0..TRIES {
+        assert_eq!(syncs.after_failure(&signed_out, soon()), None);
+    }
+
+    assert_eq!(
+        syncs.searches.len(),
+        1,
+        "the search waits for GitHub, not a try"
+    );
+}
+
+#[test]
+fn a_saved_filter_s_search_waits_for_its_repository_to_open_again() {
+    let harness = Harness::new("filter-switch", vec![filter_page(0, &[], None, RATE_LIMIT)]);
+    let mut syncs = Syncs::default();
+    syncs.add_listed(plain(cpython()));
+    let query: FilterQuery = "label:bug".to_owned().try_into().unwrap();
+    syncs.search_filter(&cpython(), query.clone());
+    assert_eq!(
+        syncs.activity().unwrap().open.unwrap().repository,
+        cpython()
+    );
+
+    // Another Repository opens: its sync takes the steps, and the search waits, set aside.
+    syncs.add_listed(plain(peps()));
+    assert_eq!(syncs.activity().unwrap().open.unwrap().repository, peps());
+
+    // CPython opens again, and the search it was saved in runs ahead of the queue.
+    syncs.add(cpython());
+    while !syncs.searches.is_empty() {
+        drop(syncs.step(&harness.github, &harness.db.store).unwrap());
+    }
+
+    assert_eq!(harness.operations(), ["SearchFilter"]);
+    assert!(
+        (harness.db.store.filter_results(&cpython()).unwrap()).contains_key(&query),
+        "the search saved its results once its Repository opened again"
+    );
+    harness.finish();
 }
 
 #[test]
@@ -1025,6 +1251,20 @@ fn facts_of_issue(number: u32) -> Vec<IssueFacts> {
 
 fn refused() -> Result<Reply, Unreachable> {
     reply_ok(r#"{"data":null,"errors":[{"type":"FORBIDDEN","message":"No."}]}"#)
+}
+
+/// GitHub's answer to a refresh's first look, with nothing changed.
+fn polled_nothing() -> Result<Reply, Unreachable> {
+    let page = json!({ "pageInfo": { "hasNextPage": false, "endCursor": null }, "nodes": [] });
+    answer(
+        json!({ "repository": {
+            "openIssues": { "totalCount": 0 },
+            "openPrs": { "totalCount": 0 },
+            "issues": page.clone(),
+            "pullRequests": page,
+        }}),
+        RATE_LIMIT,
+    )
 }
 
 #[test]

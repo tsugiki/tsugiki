@@ -79,6 +79,30 @@ fn a_token_names_a_state_or_a_sort_as_tsugiki_reads_it() {
 }
 
 #[test]
+fn a_filter_query_spells_out_is_open_unless_the_text_names_a_state() {
+    let spelled =
+        |text: &str| FilterQuery::with_additions(text).map(|query| query.as_str().to_owned());
+    assert_eq!(spelled("label:bug"), Some("label:bug is:open".to_owned()));
+    assert_eq!(
+        spelled("  author:@me  "),
+        Some("author:@me is:open".to_owned())
+    );
+    assert_eq!(
+        spelled("is:closed label:bug"),
+        Some("is:closed label:bug".to_owned())
+    );
+    assert_eq!(
+        spelled("-is:open label:bug"),
+        Some("-is:open label:bug".to_owned())
+    );
+    assert_eq!(
+        spelled("state:merged label:bug"),
+        Some("state:merged label:bug".to_owned())
+    );
+    assert_eq!(spelled("   "), None);
+}
+
+#[test]
 fn a_blank_name_or_query_is_refused_and_says_which() {
     let no_name = from_toml("name = '  '\nquery = 'label:bug'").unwrap_err();
     assert!(

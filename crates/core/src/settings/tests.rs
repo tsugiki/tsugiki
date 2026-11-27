@@ -1613,6 +1613,15 @@ fn edited(name: &str, query_text: &str, was: Option<&str>) -> EditedFilter {
         name: name.to_owned().try_into().unwrap(),
         query: query(query_text),
         was: was.map(query),
+        on_workbench: None,
+    }
+}
+
+/// A Filter as a Repository's page leaves it, with its "On the Workbench" switch as the page leaves it.
+fn edited_on(name: &str, query_text: &str, was: Option<&str>, on: OnWorkbench) -> EditedFilter {
+    EditedFilter {
+        on_workbench: Some(on),
+        ..edited(name, query_text, was)
     }
 }
 
@@ -1739,6 +1748,115 @@ theme = \"system\"
             ("Docs".to_owned(), "label:docs".to_owned(), false),
             ("Bugs".to_owned(), "label:bug".to_owned(), true),
         ]
+    );
+}
+
+#[test]
+fn apply_writes_a_switch_with_a_rename_and_a_reorder_in_one_go() {
+    let (mut files, folders, _root) = settings_saying("filters-switch", TWO_FILTERS);
+
+    files
+        .apply(filters_of(
+            &files.loaded().settings,
+            "a/b",
+            vec![
+                edited_on("Docs", "label:docs", Some("label:docs"), OnWorkbench::On),
+                edited_on(
+                    "Bug reports",
+                    "label:bug",
+                    Some("label:bug"),
+                    OnWorkbench::Off,
+                ),
+            ],
+        ))
+        .unwrap();
+    let after = fs::read_to_string(folders.settings_file()).unwrap();
+
+    assert_eq!(
+        after,
+        "\
+[[repositories]]
+name = \"a/b\"
+
+# Later.
+[[repositories.filters]]
+name = \"Docs\"
+query = \"label:docs\"
+on_workbench = true
+
+# Mine.
+[[repositories.filters]]
+name = \"Bug reports\" # The bugs.
+query = \" label:bug \"
+on_workbench = false
+colour = \"red\"
+
+[appearance]
+theme = \"system\"
+"
+    );
+    assert_eq!(
+        read_filters(&files),
+        [
+            ("Docs".to_owned(), "label:docs".to_owned(), true),
+            ("Bug reports".to_owned(), "label:bug".to_owned(), false),
+        ]
+    );
+}
+
+#[test]
+fn apply_writes_a_switch_the_page_changed_and_leaves_the_others_as_the_file_wrote_them() {
+    let (mut files, folders, _root) = settings_saying("filters-switch-only", TWO_FILTERS);
+
+    files
+        .apply(filters_of(
+            &files.loaded().settings,
+            "a/b",
+            vec![
+                edited_on("Bugs", "label:bug", Some("label:bug"), OnWorkbench::Off),
+                edited("Docs", "label:docs", Some("label:docs")),
+            ],
+        ))
+        .unwrap();
+    let after = fs::read_to_string(folders.settings_file()).unwrap();
+
+    assert_eq!(
+        after,
+        TWO_FILTERS.replace("on_workbench = true", "on_workbench = false")
+    );
+    assert_eq!(
+        read_filters(&files),
+        [
+            ("Bugs".to_owned(), "label:bug".to_owned(), false),
+            ("Docs".to_owned(), "label:docs".to_owned(), false),
+        ]
+    );
+}
+
+#[test]
+fn apply_keeps_a_switch_the_file_already_says_as_the_user_wrote_it() {
+    let (mut files, folders, _root) = settings_saying("filters-switch-same", TWO_FILTERS);
+
+    files
+        .apply(filters_of(
+            &files.loaded().settings,
+            "a/b",
+            vec![
+                edited_on(
+                    "Bug reports",
+                    "label:bug",
+                    Some("label:bug"),
+                    OnWorkbench::On,
+                ),
+                edited_on("Docs", "label:docs", Some("label:docs"), OnWorkbench::Off),
+            ],
+        ))
+        .unwrap();
+    let after = fs::read_to_string(folders.settings_file()).unwrap();
+
+    assert_eq!(
+        after,
+        TWO_FILTERS.replace("\"Bugs\" # The bugs.", "\"Bug reports\" # The bugs.")
     );
 }
 
@@ -1879,6 +1997,137 @@ fn apply_keeps_filters_written_inline_inline() {
             ("Docs".to_owned(), "label:docs".to_owned(), false),
             ("Bug reports".to_owned(), "label:bug".to_owned(), true),
             ("Mine".to_owned(), "author:@me".to_owned(), false),
+        ]
+    );
+}
+
+#[test]
+fn apply_switches_a_filter_in_an_inline_list_on() {
+    let (mut files, folders, _root) = settings_saying(
+        "filters-inline-switch",
+        "repositories = [{ name = \"a/b\", filters = [{ name = \"Bugs\", query = \"label:bug\" }] }]\n",
+    );
+
+    files
+        .apply(filters_of(
+            &files.loaded().settings,
+            "a/b",
+            vec![edited_on(
+                "Bugs",
+                "label:bug",
+                Some("label:bug"),
+                OnWorkbench::On,
+            )],
+        ))
+        .unwrap();
+    let after = fs::read_to_string(folders.settings_file()).unwrap();
+
+    assert_eq!(
+        after,
+        "repositories = [{ name = \"a/b\", filters = [{ name = \"Bugs\", query = \"label:bug\", \
+         on_workbench = true }] }]\n"
+    );
+    assert_eq!(
+        read_filters(&files),
+        [("Bugs".to_owned(), "label:bug".to_owned(), true)]
+    );
+}
+
+#[test]
+fn apply_switches_a_filter_in_an_inline_list_on_keeping_its_comment_and_lines() {
+    let (mut files, folders, _root) = settings_saying(
+        "filters-inline-comment",
+        "repositories = [{ name = \"a/b\", filters = [\n  { name = \"Bugs\", # open bugs\n    query = \
+         \"label:bug\" },\n] }]\n",
+    );
+
+    files
+        .apply(filters_of(
+            &files.loaded().settings,
+            "a/b",
+            vec![edited_on(
+                "Bugs",
+                "label:bug",
+                Some("label:bug"),
+                OnWorkbench::On,
+            )],
+        ))
+        .unwrap();
+    let after = fs::read_to_string(folders.settings_file()).unwrap();
+
+    assert_eq!(
+        after,
+        "repositories = [{ name = \"a/b\", filters = [\n  { name = \"Bugs\", # open bugs\n    query = \
+         \"label:bug\", on_workbench = true },\n] }]\n"
+    );
+    assert_eq!(
+        read_filters(&files),
+        [("Bugs".to_owned(), "label:bug".to_owned(), true)]
+    );
+}
+
+#[test]
+fn apply_switches_a_block_filter_on_and_leaves_its_last_key_s_comment_where_it_is() {
+    let (mut files, folders, _root) = settings_saying(
+        "filters-block-comment",
+        "[[repositories]]\nname = \"a/b\"\n\n[[repositories.filters]]\nname = \"Bugs\"\nquery = \
+         \"label:bug\" # note\n",
+    );
+
+    files
+        .apply(filters_of(
+            &files.loaded().settings,
+            "a/b",
+            vec![edited_on(
+                "Bugs",
+                "label:bug",
+                Some("label:bug"),
+                OnWorkbench::On,
+            )],
+        ))
+        .unwrap();
+    let after = fs::read_to_string(folders.settings_file()).unwrap();
+
+    assert_eq!(
+        after,
+        "[[repositories]]\nname = \"a/b\"\n\n[[repositories.filters]]\nname = \"Bugs\"\nquery = \
+         \"label:bug\" # note\non_workbench = true\n"
+    );
+    assert_eq!(
+        read_filters(&files),
+        [("Bugs".to_owned(), "label:bug".to_owned(), true)]
+    );
+}
+
+#[test]
+fn apply_adds_a_filter_to_an_inline_list_switched_on() {
+    let (mut files, folders, _root) = settings_saying(
+        "filters-inline-added-switch",
+        "repositories = [{ name = \"a/b\", filters = [{ name = \"Bugs\", query = \"label:bug\" }] }]\n",
+    );
+
+    files
+        .apply(filters_of(
+            &files.loaded().settings,
+            "a/b",
+            vec![
+                edited("Bugs", "label:bug", Some("label:bug")),
+                edited_on("Mine", "author:@me", None, OnWorkbench::On),
+            ],
+        ))
+        .unwrap();
+    let after = fs::read_to_string(folders.settings_file()).unwrap();
+
+    assert_eq!(
+        after,
+        "repositories = [{ name = \"a/b\", filters = [{ name = \"Bugs\", query = \"label:bug\" },{ \
+         name = \"Mine\", query = \"author:@me\", on_workbench = true }] }]\n"
+    );
+    assert_eq!(
+        read_filters(&files),
+        [
+            ("Bugs".to_owned(), "label:bug".to_owned(), false),
+            ("Mine".to_owned(), "author:@me".to_owned(), true),
         ]
     );
 }

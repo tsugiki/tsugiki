@@ -6,15 +6,18 @@ import type {
   RepositoryFilters_Deserialize,
 } from "$lib/data/bindings";
 
-/** A Filter on a Repository's page: its name and search as the user typed them, and the search it had when
- * the dialog read the files, which keeps its table in the file through a new name, a new search or a move, so
- * a key the page doesn't show, such as `on_workbench`, stays. Null for a Filter Add filter added. `id` keeps
- * its row on the page through a move. */
+/** A Filter on a Repository's page: its name, search and "On the Workbench" switch as the user left them,
+ * the search it had when the dialog read the files, which keeps its table in the file through a new name, a
+ * new search or a move, so a key the page doesn't show stays, and the switch the files held, which tells
+ * whether the page changed it. `was` is null for a Filter Add filter added; its switch starts off. `id`
+ * keeps its row on the page through a move. */
 export interface FilterRow {
   readonly id: number;
   name: string;
   query: string;
+  onWorkbench: boolean;
   readonly was: string | null;
+  readonly heldOnWorkbench: boolean;
 }
 
 /** A Repository as the files hold it, with its Filters. */
@@ -27,8 +30,10 @@ interface Held {
 export const isBlank = (row: FilterRow) => row.name.trim() === "" || row.query.trim() === "";
 
 /** A list of Filters as one string, in its order, to tell whether the rows still say what the files did. */
-const saying = (filters: { was: string | null; name: string; query: string }[]) =>
-  JSON.stringify(filters.map(({ was, name, query }) => [was, name.trim(), query.trim()]));
+const saying = (filters: { was: string | null; name: string; query: string; onWorkbench: boolean }[]) =>
+  JSON.stringify(
+    filters.map(({ was, name, query, onWorkbench }) => [was, name.trim(), query.trim(), onWorkbench]),
+  );
 
 /** The Filters of one Repository's page. */
 export class FilterPage {
@@ -41,13 +46,20 @@ export class FilterPage {
 
   constructor(filters: Filter_Serialize[]) {
     this.read = structuredClone(filters);
-    this.rows = filters.map(({ name, query }) => this.#row(name, query, query));
-    this.#held = saying(filters.map(({ name, query }) => ({ was: query, name, query })));
+    this.rows = filters.map(({ name, query, on_workbench }) => this.#row(name, query, query, on_workbench));
+    this.#held = saying(
+      filters.map(({ name, query, on_workbench }) => ({
+        was: query,
+        name,
+        query,
+        onWorkbench: on_workbench,
+      })),
+    );
   }
 
-  /** Adds a Filter with a blank name and search at the end. */
+  /** Adds a Filter with a blank name and search at the end, off the Workbench. */
   add() {
-    this.rows.push(this.#row("", "", null));
+    this.rows.push(this.#row("", "", null, false));
   }
 
   /** Moves the Filter at `at` one place up or down. The page offers no move past either end. */
@@ -70,14 +82,19 @@ export class FilterPage {
     return saying(this.rows) !== this.#held;
   }
 
-  /** The Filters as Apply saves them. */
+  /** The Filters as Apply saves them, each with its switch only when the page changed it. */
   get edited(): EditedFilter_Deserialize[] {
-    return this.rows.map(({ name, query, was }) => ({ name: name.trim(), query: query.trim(), was }));
+    return this.rows.map(({ name, query, was, onWorkbench, heldOnWorkbench }) => ({
+      name: name.trim(),
+      query: query.trim(),
+      was,
+      ...(onWorkbench !== heldOnWorkbench && { on_workbench: onWorkbench }),
+    }));
   }
 
-  #row(name: string, query: string, was: string | null): FilterRow {
+  #row(name: string, query: string, was: string | null, onWorkbench: boolean): FilterRow {
     this.#ids += 1;
-    return { id: this.#ids, name, query, was };
+    return { id: this.#ids, name, query, was, onWorkbench, heldOnWorkbench: onWorkbench };
   }
 }
 

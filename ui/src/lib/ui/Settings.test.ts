@@ -1417,6 +1417,34 @@ describe("Settings › a Repository's Filters", () => {
     });
   });
 
+  it("saves each Filter's switch only when the page changed it", async () => {
+    const onclose = vi.fn();
+    await onPage(onclose);
+    const box = (at: number) =>
+      within(filter(at)).getByRole<HTMLInputElement>("checkbox", { name: "On the Workbench" });
+    expect([box(1).checked, box(2).checked]).toEqual([true, false]);
+
+    await fireEvent.click(box(1));
+    await fireEvent.click(box(2));
+    await fireEvent.click(button("Apply"));
+
+    expect(core.applySettings).toHaveBeenCalledWith({
+      filters: [
+        {
+          repository: "python/cpython",
+          read: files.repositories[1]?.filters,
+          filters: [
+            { name: "Bugs", query: "label:bug", was: "label:bug", on_workbench: false },
+            { name: "Docs", query: "label:docs", was: "label:docs", on_workbench: true },
+          ],
+        },
+      ],
+    });
+    await vi.waitFor(() => {
+      expect(onclose).toHaveBeenCalledOnce();
+    });
+  });
+
   it("saves nothing on Cancel", async () => {
     const onclose = vi.fn();
     await onPage(onclose);

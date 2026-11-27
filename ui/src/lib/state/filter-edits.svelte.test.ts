@@ -42,7 +42,7 @@ describe("FilterEdits", () => {
     ]);
   });
 
-  it("deletes a Filter, and adds one with a blank name and search, which is blank", () => {
+  it("deletes a Filter, and adds one with a blank name and search, which is blank and off", () => {
     const held = edits();
     const page = held.page("python/cpython");
     page?.delete(1);
@@ -50,6 +50,7 @@ describe("FilterEdits", () => {
     const added = page?.rows.at(-1);
     expect(names(held)).toEqual(["Bugs", "Mine", ""]);
     expect(added?.was).toBeNull();
+    expect(added?.onWorkbench).toBe(false);
     expect(held.blankIn).toBe("python/cpython");
     if (added === undefined) throw new Error("no row added");
     added.name = "Open";
@@ -57,6 +58,40 @@ describe("FilterEdits", () => {
     expect(page?.rows.map(isBlank)).toEqual([false, false, true]);
     added.query = "is:open";
     expect(held.blankIn).toBeUndefined();
+  });
+
+  it("sends a Filter's switch only when the page changed it", () => {
+    const held = edits();
+    const page = held.page("python/cpython");
+    const docs = page?.rows[1];
+    if (docs === undefined) throw new Error("no Docs row");
+    docs.onWorkbench = true;
+    expect(held.changes[0]?.filters[1]).toEqual({
+      name: "Docs",
+      query: "label:docs",
+      was: "label:docs",
+      on_workbench: true,
+    });
+    docs.onWorkbench = false;
+    expect(held.changes).toEqual([]);
+  });
+
+  it("sends the switch of a Filter Add filter added once the user turns it on", () => {
+    const held = edits();
+    const page = held.page("python/cpython");
+    page?.add();
+    const added = page?.rows.at(-1);
+    if (added === undefined) throw new Error("no row added");
+    added.name = "Open";
+    added.query = "is:open";
+    expect(held.changes[0]?.filters[3]).toEqual({ name: "Open", query: "is:open", was: null });
+    added.onWorkbench = true;
+    expect(held.changes[0]?.filters[3]).toEqual({
+      name: "Open",
+      query: "is:open",
+      was: null,
+      on_workbench: true,
+    });
   });
 
   it("counts a name or search back as the files said it as no change, and saves them without spaces round them", () => {

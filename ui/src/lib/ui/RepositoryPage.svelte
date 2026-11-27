@@ -2,7 +2,8 @@
      whether Tsugiki can write there, with why not, its open Issues and PRs as GitHub last counted them, and
      its last sync, which moves on while the page shows. Each part waits for the core's answer, and the line
      shows once one has come. Its first row switches Read-only (#915). Its Filters follow, which the user
-     renames, edits, moves, deletes and adds. The dialog's Apply saves both (#535). -->
+     renames, edits, moves, deletes and adds, and switches on the Workbench (#1017). The dialog's Apply saves
+     both (#535). -->
 <script lang="ts">
   import { isBlank } from "$lib/state/filter-edits.svelte";
   import { RepositoryStateView } from "$lib/state/repository-state.svelte";
@@ -115,6 +116,10 @@
           disabled={dialog.applying}
           bind:value={row.query}
         />
+        <label class="switch">
+          <input type="checkbox" bind:checked={row.onWorkbench} disabled={dialog.applying} />
+          On the Workbench
+        </label>
         <button
           aria-label="Move up"
           title="Move up"
@@ -192,12 +197,24 @@
 
   .filter {
     display: grid;
-    grid-template-columns: 160px minmax(0, 1fr) auto auto auto;
+    grid-template-columns: 160px minmax(0, 1fr) auto auto auto auto;
     gap: 6px;
     align-items: center;
     margin-bottom: 4px;
     padding-left: 4px;
     border-left: 2px solid transparent;
+  }
+
+  .switch {
+    display: inline-flex;
+    gap: 6px;
+    align-items: center;
+    white-space: nowrap;
+    cursor: pointer;
+  }
+
+  .switch input {
+    margin: 0;
   }
 
   /* A Filter with a blank name or search, which Apply can't save. */

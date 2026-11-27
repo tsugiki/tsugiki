@@ -160,19 +160,19 @@
   {:else if event.kind === "disconnected"}
     disconnected this from {@render reference(event.reference)}
   {:else if event.kind === "labeled"}
-    added the {event.label} label
+    <span>{`added the ${event.label} label`}</span>
   {:else if event.kind === "unlabeled"}
-    removed the {event.label} label
+    <span>{`removed the ${event.label} label`}</span>
   {:else if event.kind === "assigned"}
-    assigned {event.assignee ?? "deleted user"}
+    <span>{`assigned ${event.assignee ?? "deleted user"}`}</span>
   {:else if event.kind === "unassigned"}
-    unassigned {event.assignee ?? "deleted user"}
+    <span>{`unassigned ${event.assignee ?? "deleted user"}`}</span>
   {:else if event.kind === "closed"}
     {event.completed ? "closed this as completed" : "closed this as not planned"}
   {:else if event.kind === "reopened"}
     reopened this
   {:else}
-    renamed this from "{event.previous_title}"
+    <span>{`renamed this from "${event.previous_title}"`}</span>
   {/if}
   <span class="muted" title={stampOf(event.created_at)}>{` · ${ago(event.created_at, now)}`}</span>
 {/snippet}

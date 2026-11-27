@@ -1,6 +1,6 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/svelte";
 import { expect, it, vi } from "vitest";
-import type { IssueContent } from "$lib/state/issue-view.svelte";
+import type { IssueContent, IssueEvent } from "$lib/state/issue-view.svelte";
 import type { PullRequestContent, Review, ThreadLine } from "$lib/state/pr-view.svelte";
 import Conversation from "./Conversation.svelte";
 import { stampOf } from "./time";
@@ -416,6 +416,120 @@ it("opens a cross-reference, a hand link and a commit as any link does, with its
 
   expect(onlink).toHaveBeenNthCalledWith(1, "https://github.com/python/cpython/pull/12");
   expect(onlink).toHaveBeenNthCalledWith(2, "https://github.com/python/cpython/commit/0123abcd");
+});
+
+it("shows every event kind in its own words", () => {
+  const reference = (number: number, title: string) => ({
+    repository: "python/cpython",
+    number,
+    title,
+    url: `https://github.com/python/cpython/pull/${String(number)}`,
+  });
+  const at = (hour: number, minute = 0) =>
+    `2026-11-04T${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}:00Z`;
+  const events: IssueEvent[] = [
+    { actor: "some-author", created_at: at(0), kind: "cross-referenced", reference: reference(1, "One") },
+    {
+      actor: "some-author",
+      created_at: at(1),
+      kind: "referenced",
+      commit: {
+        sha: "abc1234",
+        message: "Fix it",
+        url: "https://github.com/python/cpython/commit/abc1234",
+      },
+    },
+    { actor: "some-author", created_at: at(2), kind: "connected", reference: reference(3, "Three") },
+    { actor: "some-author", created_at: at(3), kind: "disconnected", reference: reference(4, "Four") },
+    { actor: "some-author", created_at: at(4), kind: "labeled", label: "type-bug" },
+    { actor: "some-author", created_at: at(5), kind: "unlabeled", label: "type-bug" },
+    { actor: "some-author", created_at: at(6), kind: "assigned", assignee: "some-assignee" },
+    { actor: "some-author", created_at: at(7), kind: "assigned", assignee: null },
+    { actor: "some-author", created_at: at(8), kind: "unassigned", assignee: "some-assignee" },
+    { actor: "some-author", created_at: at(9), kind: "unassigned", assignee: null },
+    { actor: "some-author", created_at: at(10), kind: "closed", completed: true },
+    { actor: "some-author", created_at: at(10, 30), kind: "closed", completed: false },
+    { actor: "some-author", created_at: at(11), kind: "reopened" },
+    { actor: "some-author", created_at: at(11, 30), kind: "renamed", previous_title: "Old title" },
+  ];
+  const container = shown({
+    body_html: "",
+    comments: [],
+    earlier_comments: 0,
+    opened_at: null,
+    earlier_events: 0,
+    events,
+  });
+
+  const lines = [...container.querySelectorAll(".event")].map((line) =>
+    line.textContent.replace(/\s+/g, " ").trim(),
+  );
+  expect(lines).toEqual([
+    "some-author mentioned this in python/cpython#1 One · 12h ago",
+    "some-author added a commit that references this: abc1234 Fix it · 11h ago",
+    "some-author connected this to python/cpython#3 Three · 10h ago",
+    "some-author disconnected this from python/cpython#4 Four · 9h ago",
+    "some-author added the type-bug label · 8h ago",
+    "some-author removed the type-bug label · 7h ago",
+    "some-author assigned some-assignee · 6h ago",
+    "some-author assigned deleted user · 5h ago",
+    "some-author unassigned some-assignee · 4h ago",
+    "some-author unassigned deleted user · 3h ago",
+    "some-author closed this as completed · 2h ago",
+    "some-author closed this as not planned · 1h ago",
+    "some-author reopened this · 1h ago",
+    'some-author renamed this from "Old title" · 30m ago',
+  ]);
+});
+
+it("follows an event's links on a middle click, and only with its button", async () => {
+  const onlink = vi.fn();
+  render(Conversation, {
+    now: NOW,
+    onlink,
+    content: {
+      body_html: "",
+      comments: [],
+      earlier_comments: 0,
+      opened_at: null,
+      earlier_events: 0,
+      events: [
+        {
+          actor: "some-author",
+          created_at: "2026-11-04T09:00:00Z",
+          kind: "cross-referenced",
+          reference: {
+            repository: "python/cpython",
+            number: 12,
+            title: "Fix it",
+            url: "https://github.com/python/cpython/pull/12",
+          },
+        },
+        {
+          actor: "some-author",
+          created_at: "2026-11-04T10:00:00Z",
+          kind: "referenced",
+          commit: {
+            sha: "abc1234",
+            message: "Fix it",
+            url: "https://github.com/python/cpython/commit/abc1234",
+          },
+        },
+      ],
+    },
+  });
+  const [reference, commit] = screen.getAllByRole("link");
+  const auxclick = (link: Element, button: number) => {
+    link.dispatchEvent(new MouseEvent("auxclick", { bubbles: true, cancelable: true, button }));
+  };
+  // Another button's auxclick leaves the link alone.
+  auxclick(reference!, 0);
+  auxclick(commit!, 0);
+  auxclick(reference!, 1);
+  auxclick(commit!, 1);
+
+  expect(onlink).toHaveBeenNthCalledWith(1, "https://github.com/python/cpython/pull/12");
+  expect(onlink).toHaveBeenNthCalledWith(2, "https://github.com/python/cpython/commit/abc1234");
 });
 
 it("says how many earlier events only GitHub shows", () => {

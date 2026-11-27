@@ -171,62 +171,46 @@ struct CommentsWire {
     nodes: Vec<Option<CommentWire>>,
 }
 
-/// A PR or an Issue that kind of event points at.
+/// A PR or an Issue that kind of event points at. Both carry the same fields, so the kind only says whether
+/// a hand link names a PR.
 #[derive(Deserialize)]
-#[serde(tag = "__typename", rename_all_fields = "camelCase")]
-enum SubjectWire {
-    Issue {
-        number: u32,
-        title: String,
-        url: String,
-        repository: NamedRepository,
-    },
-    PullRequest {
-        number: u32,
-        title: String,
-        url: String,
-        repository: NamedRepository,
-    },
+#[serde(rename_all = "camelCase")]
+struct SubjectWire {
+    #[serde(rename = "__typename")]
+    kind: SubjectKind,
+    number: u32,
+    title: String,
+    url: String,
+    repository: NamedRepository,
+}
+
+#[derive(Deserialize)]
+enum SubjectKind {
+    Issue,
+    PullRequest,
 }
 
 impl SubjectWire {
     fn reference(self) -> Reference {
-        let (number, title, url, repository) = match self {
-            Self::Issue {
-                number,
-                title,
-                url,
-                repository,
-            }
-            | Self::PullRequest {
-                number,
-                title,
-                url,
-                repository,
-            } => (number, title, url, repository),
-        };
         Reference {
-            repository: repository.name_with_owner,
-            number,
-            title,
-            url,
+            repository: self.repository.name_with_owner,
+            number: self.number,
+            title: self.title,
+            url: self.url,
         }
     }
 
     fn is_pull_request(&self) -> bool {
-        matches!(self, Self::PullRequest { .. })
+        matches!(self.kind, SubjectKind::PullRequest)
     }
 }
 
-/// The PR of a hand link. GitHub puts it on the event's subject, but its source may hold it too, so this
-/// takes the PR of the two.
+/// The PR of a hand link. GitHub puts the PR on one side of the event, so this names whichever side is one.
 fn linked(source: SubjectWire, subject: SubjectWire) -> Reference {
     if source.is_pull_request() {
         source.reference()
-    } else if subject.is_pull_request() {
-        subject.reference()
     } else {
-        source.reference()
+        subject.reference()
     }
 }
 

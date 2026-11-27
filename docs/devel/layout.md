@@ -131,8 +131,13 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
     - Atop the Issue and PR views of a **Read-only** Repository, a line says why, for each reason it holds
       ([token.md](token.md)). "you chose it in this Repository's settings" links to the Repository's page in
       Settings, which switches the choice ([settings.md](settings.md)).
-    - The Issue view shows the title, an author line, the Origin PRs, the description, and recent comments,
-      with a box to comment. The author line says who opened the Issue and how long ago, with the date and
+    - The Issue view shows the title, an author line, the Origin PRs, the description, and recent comments
+      and events, with a box to comment. Between the comments it shows the recent events, one line each, in
+      time order: who did what, and how long ago, with the date and time in the tooltip. A cross-reference
+      and a hand link name the PR or Issue they point at, a referenced commit its short SHA and first line,
+      a close whether it was completed or not planned, a rename the title it had, a label event the label,
+      and an assignment the assignee. Each list says how many earlier comments or events only GitHub holds.
+      The author line says who opened the Issue and how long ago, with the date and
       time in its tooltip, how many comments it has, and whom it is assigned to, if anyone. Each PR's line
       in the Origin PRs gives its last update in its tooltip, as does each Backport's, and the line that
       folds the merged PRs gives the latest of theirs, so no PR's time takes room on a line

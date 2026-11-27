@@ -7,7 +7,7 @@ use time::OffsetDateTime;
 
 use crate::facts::CommitSha;
 use crate::facts::inbox_search::RowKind;
-use crate::facts::issue_content::{CommentId, HiddenReason};
+use crate::facts::issue_content::{CommentId, HiddenReason, IssueEvent};
 use crate::facts::issues::IssueState;
 use crate::facts::labels::Label;
 use crate::facts::patch_ids::PatchId;
@@ -75,6 +75,28 @@ impl FromSql for NodeColumn {
     fn column_result(value: ValueRef<'_>) -> FromSqlResult<Self> {
         let text = serde_json::Value::String(value.as_str()?.to_owned());
         serde_json::from_value(text)
+            .map(Self)
+            .map_err(Cause::from)
+            .map_err(FromSqlError::Other)
+    }
+}
+
+/// An Issue event in a column, as JSON: its kind carries what the event names, and only the Issue view reads
+/// it (#1067).
+pub(super) struct EventColumn(pub(super) IssueEvent);
+
+impl ToSql for EventColumn {
+    fn to_sql(&self) -> rusqlite::Result<ToSqlOutput<'_>> {
+        serde_json::to_string(&self.0)
+            .map(ToSqlOutput::from)
+            .map_err(Cause::from)
+            .map_err(rusqlite::Error::ToSqlConversionFailure)
+    }
+}
+
+impl FromSql for EventColumn {
+    fn column_result(value: ValueRef<'_>) -> FromSqlResult<Self> {
+        serde_json::from_str(value.as_str()?)
             .map(Self)
             .map_err(Cause::from)
             .map_err(FromSqlError::Other)

@@ -1,11 +1,13 @@
 //! An Issue's description and recent comments, as the Conversation shows them.
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use specta::Type;
 use time::OffsetDateTime;
 
+use crate::facts::labels::Label;
 use crate::facts::pull_requests::NodeId;
 use crate::login::Login;
+use crate::repository::RepositoryName;
 
 /// The reason someone gave for hiding a comment on GitHub. The comment folds to it until the user opens it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Type)]
@@ -60,7 +62,86 @@ pub struct Comment {
     pub hidden: Option<HiddenReason>,
 }
 
-/// An Issue's description and its recent comments.
+/// A PR or an Issue that an event names: a cross-reference, or the PR a hand link connected.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize, Type)]
+pub struct Reference {
+    /// Its Repository, as `owner/name`.
+    pub repository: RepositoryName,
+    pub number: u32,
+    /// Its title, so the line says what it is.
+    pub title: String,
+    /// The address a click opens.
+    pub url: String,
+}
+
+/// A commit an event names, as GitHub spells it.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize, Type)]
+pub struct CommitReference {
+    /// GitHub's short SHA.
+    pub sha: String,
+    /// The first line of its message.
+    pub message: String,
+    /// The address a click opens.
+    pub url: String,
+}
+
+/// An event on an Issue, of the kinds the Issue view shows. The kinds it leaves out change none of the
+/// fields it draws, as `docs/devel/layout.md` says.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize, Type)]
+#[serde(tag = "kind", rename_all = "kebab-case")]
+pub enum IssueEventKind {
+    /// A PR or an Issue mentions this one.
+    CrossReferenced {
+        reference: Reference,
+    },
+    /// A commit mentions this one.
+    Referenced {
+        commit: CommitReference,
+    },
+    /// Someone linked a PR to this Issue by hand, in GitHub's Development panel.
+    Connected {
+        reference: Reference,
+    },
+    /// Someone removed a PR's hand link.
+    Disconnected {
+        reference: Reference,
+    },
+    Labeled {
+        label: Label,
+    },
+    Unlabeled {
+        label: Label,
+    },
+    Assigned {
+        assignee: Option<Login>,
+    },
+    Unassigned {
+        assignee: Option<Login>,
+    },
+    /// It closed. `completed` is false when it closed as not planned, a duplicate included.
+    Closed {
+        completed: bool,
+    },
+    Reopened,
+    /// Its title changed, from `previous_title`.
+    Renamed {
+        previous_title: String,
+    },
+}
+
+/// One thing that happened on an Issue, as the Issue view shows it between the comments.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize, Type)]
+pub struct IssueEvent {
+    /// Nothing, for an event whose actor's account has gone.
+    pub actor: Option<Login>,
+    #[serde(with = "time::serde::rfc3339")]
+    #[specta(type = String)]
+    pub created_at: OffsetDateTime,
+    #[serde(flatten)]
+    pub kind: IssueEventKind,
+}
+
+/// An Issue's description, its recent comments, and the events the Issue view shows.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
 pub struct IssueContent {
     /// GitHub's ID of the Issue or PR, which a write names it by (#914). Nothing, for a read kept from
@@ -74,6 +155,11 @@ pub struct IssueContent {
     pub comments: Vec<IssueComment>,
     /// The count of older comments that only GitHub shows.
     pub earlier_comments: u32,
+    /// The events the Issue view shows, oldest first (#1067). Empty for a PR's Conversation, whose events
+    /// wait for a later ticket.
+    pub events: Vec<IssueEvent>,
+    /// The count of older events that only GitHub shows.
+    pub earlier_events: u32,
     /// The time its author opened it. Nothing, for a read kept from before Tsugiki asked, until the next
     /// read.
     #[serde(with = "time::serde::rfc3339::option")]

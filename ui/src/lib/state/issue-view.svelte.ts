@@ -4,6 +4,7 @@ import {
   type HiddenReason as HiddenReasonData,
   type IssueComment_Serialize,
   type IssueContent_Serialize,
+  type IssueEvent_Serialize,
   type IssueView_Serialize,
 } from "$lib/data/bindings";
 import { DetailState } from "./detail-view.svelte";
@@ -11,7 +12,9 @@ import { DetailState } from "./detail-view.svelte";
 export type IssueComment = IssueComment_Serialize;
 /** Why someone hid a comment on GitHub. */
 export type HiddenReason = HiddenReasonData;
-/** The description and recent comments of an Issue or a PR. */
+/** One event on an Issue, between the comments. */
+export type IssueEvent = IssueEvent_Serialize;
+/** The description, recent comments and events of an Issue or a PR. */
 export type IssueContent = IssueContent_Serialize;
 export type IssueView = IssueView_Serialize;
 

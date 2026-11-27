@@ -10,8 +10,13 @@ use time::OffsetDateTime;
 use super::pull_requests::{Person, RateLimit};
 use super::{GitHub, RATE_LIMIT_FIELDS, Request};
 use crate::error::{Error, ErrorKind};
-use crate::facts::issue_content::{Comment, CommentId, HiddenReason, IssueComment, IssueContent};
+use crate::facts::issue_content::{
+    Comment, CommentId, CommitReference, HiddenReason, IssueComment, IssueContent, IssueEvent,
+    IssueEventKind, Reference,
+};
+use crate::facts::labels::Label;
 use crate::facts::pull_requests::NodeId;
+use crate::login::Login;
 use crate::repository::RepositoryName;
 
 /// Whose conversation a query reads. GitHub gives an Issue and a PR the same description and comments, and
@@ -47,7 +52,7 @@ impl Thread {
 
     const fn more_fields(self) -> &'static str {
         match self {
-            Self::Issue => "",
+            Self::Issue => EVENTS_FIELDS,
             Self::PullRequest => super::pull_request_content::REVIEW_FIELDS,
         }
     }
@@ -69,6 +74,36 @@ impl Thread {
 pub(super) const CONVERSATION_FIELDS: &str = "id bodyHTML createdAt comments(last: 30) { totalCount \
                                               nodes { fullDatabaseId author { login } createdAt bodyHTML \
                                               isMinimized minimizedReason } }";
+
+/// The events the Issue view shows, the last 30 of the kinds it draws, in time order (#1067). They come from
+/// `timelineItems`, whose own connection keeps the count of the older ones GitHub still holds.
+pub(super) const EVENTS_FIELDS: &str = "events: timelineItems(last: 30, itemTypes: [\
+     CROSS_REFERENCED_EVENT, REFERENCED_EVENT, CONNECTED_EVENT, DISCONNECTED_EVENT, LABELED_EVENT, \
+     UNLABELED_EVENT, ASSIGNED_EVENT, UNASSIGNED_EVENT, CLOSED_EVENT, REOPENED_EVENT, RENAMED_TITLE_EVENT]) \
+     { totalCount nodes { __typename \
+     ... on CrossReferencedEvent { createdAt actor { login } source { __typename \
+       ... on Issue { number title url repository { nameWithOwner } } \
+       ... on PullRequest { number title url repository { nameWithOwner } } } } \
+     ... on ReferencedEvent { createdAt actor { login } commit { abbreviatedOid messageHeadline url } } \
+     ... on ConnectedEvent { createdAt actor { login } source { __typename \
+       ... on Issue { number title url repository { nameWithOwner } } \
+       ... on PullRequest { number title url repository { nameWithOwner } } } subject { __typename \
+       ... on Issue { number title url repository { nameWithOwner } } \
+       ... on PullRequest { number title url repository { nameWithOwner } } } } \
+     ... on DisconnectedEvent { createdAt actor { login } source { __typename \
+       ... on Issue { number title url repository { nameWithOwner } } \
+       ... on PullRequest { number title url repository { nameWithOwner } } } subject { __typename \
+       ... on Issue { number title url repository { nameWithOwner } } \
+       ... on PullRequest { number title url repository { nameWithOwner } } } } \
+     ... on LabeledEvent { createdAt actor { login } label { name } } \
+     ... on UnlabeledEvent { createdAt actor { login } label { name } } \
+     ... on AssignedEvent { createdAt actor { login } assignee { ... on User { login } \
+       ... on Bot { login } ... on Organization { login } ... on Mannequin { login } } } \
+     ... on UnassignedEvent { createdAt actor { login } assignee { ... on User { login } \
+       ... on Bot { login } ... on Organization { login } ... on Mannequin { login } } } \
+     ... on ClosedEvent { createdAt actor { login } stateReason } \
+     ... on ReopenedEvent { createdAt actor { login } } \
+     ... on RenamedTitleEvent { createdAt actor { login } previousTitle } } }";
 
 /// GitHub's `BigInt`, such as a `fullDatabaseId`, which it sends as a string of digits. Its `databaseId` is
 /// a 32-bit `Int`, too small for the numbers of comments and Reviews today. Nothing, for null.
@@ -135,6 +170,318 @@ struct CommentsWire {
     nodes: Vec<Option<CommentWire>>,
 }
 
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RepositoryWire {
+    name_with_owner: RepositoryName,
+}
+
+/// The actor of an event. A bot's events show too, so this keeps the login whether a person or an app did it.
+#[derive(Deserialize)]
+struct EventActorWire {
+    login: Login,
+}
+
+/// A PR or an Issue that kind of event points at.
+#[derive(Deserialize)]
+#[serde(tag = "__typename", rename_all_fields = "camelCase")]
+enum SubjectWire {
+    Issue {
+        number: u32,
+        title: String,
+        url: String,
+        repository: RepositoryWire,
+    },
+    PullRequest {
+        number: u32,
+        title: String,
+        url: String,
+        repository: RepositoryWire,
+    },
+}
+
+impl SubjectWire {
+    fn reference(self) -> Reference {
+        let (number, title, url, repository) = match self {
+            Self::Issue {
+                number,
+                title,
+                url,
+                repository,
+            }
+            | Self::PullRequest {
+                number,
+                title,
+                url,
+                repository,
+            } => (number, title, url, repository),
+        };
+        Reference {
+            repository: repository.name_with_owner,
+            number,
+            title,
+            url,
+        }
+    }
+
+    fn is_pull_request(&self) -> bool {
+        matches!(self, Self::PullRequest { .. })
+    }
+}
+
+/// The PR of a hand link. GitHub puts it on the event's subject, but its source may hold it too, so this
+/// takes the PR of the two.
+fn linked(source: SubjectWire, subject: SubjectWire) -> Reference {
+    if source.is_pull_request() {
+        source.reference()
+    } else if subject.is_pull_request() {
+        subject.reference()
+    } else {
+        source.reference()
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CommitReferenceWire {
+    abbreviated_oid: String,
+    message_headline: String,
+    url: String,
+}
+
+#[derive(Deserialize)]
+struct LabelWire {
+    name: Label,
+}
+
+#[derive(Deserialize)]
+struct AssigneeWire {
+    login: Login,
+}
+
+/// GitHub's reason for a close. A duplicate is a close as not planned too.
+#[derive(Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+enum StateReasonWire {
+    Completed,
+    NotPlanned,
+    Duplicate,
+    Reopened,
+}
+
+/// One item of the Issue's `timelineItems`, of the kinds [`EVENTS_FIELDS`] asks for.
+#[derive(Deserialize)]
+#[expect(
+    clippy::enum_variant_names,
+    reason = "GitHub's `__typename` names each kind, and each ends with Event"
+)]
+#[serde(tag = "__typename", rename_all_fields = "camelCase")]
+enum EventWire {
+    CrossReferencedEvent {
+        #[serde(with = "time::serde::rfc3339")]
+        created_at: OffsetDateTime,
+        actor: Option<EventActorWire>,
+        source: SubjectWire,
+    },
+    ReferencedEvent {
+        #[serde(with = "time::serde::rfc3339")]
+        created_at: OffsetDateTime,
+        actor: Option<EventActorWire>,
+        commit: CommitReferenceWire,
+    },
+    ConnectedEvent {
+        #[serde(with = "time::serde::rfc3339")]
+        created_at: OffsetDateTime,
+        actor: Option<EventActorWire>,
+        source: SubjectWire,
+        subject: SubjectWire,
+    },
+    DisconnectedEvent {
+        #[serde(with = "time::serde::rfc3339")]
+        created_at: OffsetDateTime,
+        actor: Option<EventActorWire>,
+        source: SubjectWire,
+        subject: SubjectWire,
+    },
+    LabeledEvent {
+        #[serde(with = "time::serde::rfc3339")]
+        created_at: OffsetDateTime,
+        actor: Option<EventActorWire>,
+        label: LabelWire,
+    },
+    UnlabeledEvent {
+        #[serde(with = "time::serde::rfc3339")]
+        created_at: OffsetDateTime,
+        actor: Option<EventActorWire>,
+        label: LabelWire,
+    },
+    AssignedEvent {
+        #[serde(with = "time::serde::rfc3339")]
+        created_at: OffsetDateTime,
+        actor: Option<EventActorWire>,
+        assignee: Option<AssigneeWire>,
+    },
+    UnassignedEvent {
+        #[serde(with = "time::serde::rfc3339")]
+        created_at: OffsetDateTime,
+        actor: Option<EventActorWire>,
+        assignee: Option<AssigneeWire>,
+    },
+    ClosedEvent {
+        #[serde(with = "time::serde::rfc3339")]
+        created_at: OffsetDateTime,
+        actor: Option<EventActorWire>,
+        state_reason: Option<StateReasonWire>,
+    },
+    ReopenedEvent {
+        #[serde(with = "time::serde::rfc3339")]
+        created_at: OffsetDateTime,
+        actor: Option<EventActorWire>,
+    },
+    RenamedTitleEvent {
+        #[serde(with = "time::serde::rfc3339")]
+        created_at: OffsetDateTime,
+        actor: Option<EventActorWire>,
+        previous_title: String,
+    },
+}
+
+impl EventWire {
+    fn event(self) -> IssueEvent {
+        let (created_at, actor, kind) = match self {
+            Self::CrossReferencedEvent {
+                created_at,
+                actor,
+                source,
+            } => (
+                created_at,
+                actor,
+                IssueEventKind::CrossReferenced {
+                    reference: source.reference(),
+                },
+            ),
+            Self::ReferencedEvent {
+                created_at,
+                actor,
+                commit,
+            } => (
+                created_at,
+                actor,
+                IssueEventKind::Referenced {
+                    commit: CommitReference {
+                        sha: commit.abbreviated_oid,
+                        message: commit.message_headline,
+                        url: commit.url,
+                    },
+                },
+            ),
+            Self::ConnectedEvent {
+                created_at,
+                actor,
+                source,
+                subject,
+            } => (
+                created_at,
+                actor,
+                IssueEventKind::Connected {
+                    reference: linked(source, subject),
+                },
+            ),
+            Self::DisconnectedEvent {
+                created_at,
+                actor,
+                source,
+                subject,
+            } => (
+                created_at,
+                actor,
+                IssueEventKind::Disconnected {
+                    reference: linked(source, subject),
+                },
+            ),
+            Self::LabeledEvent {
+                created_at,
+                actor,
+                label,
+            } => (
+                created_at,
+                actor,
+                IssueEventKind::Labeled { label: label.name },
+            ),
+            Self::UnlabeledEvent {
+                created_at,
+                actor,
+                label,
+            } => (
+                created_at,
+                actor,
+                IssueEventKind::Unlabeled { label: label.name },
+            ),
+            Self::AssignedEvent {
+                created_at,
+                actor,
+                assignee,
+            } => (
+                created_at,
+                actor,
+                IssueEventKind::Assigned {
+                    assignee: assignee.map(|assignee| assignee.login),
+                },
+            ),
+            Self::UnassignedEvent {
+                created_at,
+                actor,
+                assignee,
+            } => (
+                created_at,
+                actor,
+                IssueEventKind::Unassigned {
+                    assignee: assignee.map(|assignee| assignee.login),
+                },
+            ),
+            Self::ClosedEvent {
+                created_at,
+                actor,
+                state_reason,
+            } => (
+                created_at,
+                actor,
+                IssueEventKind::Closed {
+                    completed: !matches!(
+                        state_reason,
+                        Some(StateReasonWire::NotPlanned | StateReasonWire::Duplicate)
+                    ),
+                },
+            ),
+            Self::ReopenedEvent { created_at, actor } => {
+                (created_at, actor, IssueEventKind::Reopened)
+            }
+            Self::RenamedTitleEvent {
+                created_at,
+                actor,
+                previous_title,
+            } => (
+                created_at,
+                actor,
+                IssueEventKind::Renamed { previous_title },
+            ),
+        };
+        IssueEvent {
+            actor: actor.map(|actor| actor.login),
+            created_at,
+            kind,
+        }
+    }
+}
+
+#[derive(Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+struct EventsWire {
+    total_count: u32,
+    #[serde(default)]
+    nodes: Vec<Option<EventWire>>,
+}
+
 /// The answer to [`CONVERSATION_FIELDS`].
 #[derive(Deserialize)]
 pub(super) struct IssueWire {
@@ -144,6 +491,9 @@ pub(super) struct IssueWire {
     #[serde(rename = "createdAt", with = "time::serde::rfc3339")]
     created_at: OffsetDateTime,
     comments: CommentsWire,
+    /// A PR's query asks for no events, so its Conversation keeps none until an Issue's ticket adds them.
+    #[serde(default)]
+    events: EventsWire,
 }
 
 impl From<IssueWire> for IssueContent {
@@ -164,11 +514,21 @@ impl From<IssueWire> for IssueContent {
             })
             .collect();
         let held = u32::try_from(comments.len()).unwrap_or(u32::MAX);
+        let events: Vec<IssueEvent> = wire
+            .events
+            .nodes
+            .into_iter()
+            .flatten()
+            .map(EventWire::event)
+            .collect();
+        let held_events = u32::try_from(events.len()).unwrap_or(u32::MAX);
         Self {
             id: Some(wire.id),
             body_html: wire.body_html,
             comments,
             earlier_comments: wire.comments.total_count.saturating_sub(held),
+            events,
+            earlier_events: wire.events.total_count.saturating_sub(held_events),
             opened_at: Some(wire.created_at),
         }
     }

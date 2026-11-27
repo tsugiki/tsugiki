@@ -12,7 +12,7 @@ import {
   home,
   palette,
 } from "./fixtures.ts";
-import { changeAnswer, emitFromCore, mockCore } from "./mock-core.ts";
+import { callsOf, changeAnswer, emitFromCore, mockCore } from "./mock-core.ts";
 import { cspViolations, imageHosts, serveUnderTauriCsp, watchCspViolations } from "./tauri-csp.ts";
 import { themes } from "./themes.ts";
 
@@ -83,6 +83,8 @@ const view = (bodyHtml: string): IssueView => ({
       },
     ],
     earlier_comments: 0,
+    events: [],
+    earlier_events: 0,
     opened_at: "2026-11-01T09:00:00Z",
   },
 });
@@ -118,6 +120,64 @@ test("an Issue opens in the Detail pane and stops looking unread", async ({ page
   await changeAnswer(page, "workbench", listing(false));
   await emitFromCore(page, "changed", { repository: "python/cpython", items: [7] });
   await expect(page.getByRole("button", { name: "#7 Issue 7" }).locator("strong")).toHaveCount(0);
+});
+
+test("an Issue's events show between the comments, naming what they point at", async ({ page }) => {
+  const withEvents: IssueView = {
+    ...view("<p>It crashes</p>"),
+    content: {
+      body_html: "<p>It crashes</p>",
+      comments: [
+        {
+          id: 1,
+          author: "some-reviewer",
+          created_at: "2026-11-04T09:00:00Z",
+          body_html: "<p>Which build?</p>",
+          hidden: null,
+        },
+      ],
+      earlier_comments: 0,
+      events: [
+        {
+          actor: "some-author",
+          created_at: "2026-11-04T08:00:00Z",
+          kind: "labeled",
+          label: "type-bug",
+        },
+        {
+          actor: "some-author",
+          created_at: "2026-11-04T10:00:00Z",
+          kind: "cross-referenced",
+          reference: {
+            repository: "python/cpython",
+            number: 12,
+            title: "Fix it",
+            url: "https://github.com/python/cpython/pull/12",
+          },
+        },
+      ],
+      earlier_events: 2,
+      opened_at: "2026-11-01T09:00:00Z",
+    },
+  };
+  await mockCore(page, { ...answers("<p>It crashes</p>"), issue: ok(withEvents) });
+  await page.goto("/");
+  await page.getByRole("button", { name: "#7 Issue 7" }).click();
+
+  const pane = page.getByRole("region", { name: "Issue view" });
+  await expect(pane.locator(".event").first()).toContainText("some-author added the type-bug label");
+  await expect(pane.locator(".event").last()).toContainText(
+    "some-author mentioned this in python/cpython#12 Fix it",
+  );
+  await expect(pane.getByText("2 earlier events are on GitHub.")).toBeVisible();
+  // The event's link says where it goes, as any link in the window does (#1079).
+  const link = pane.getByRole("link", { name: "python/cpython#12" });
+  await expect(link).toHaveAttribute(
+    "title",
+    "Open in the browser: https://github.com/python/cpython/pull/12",
+  );
+  await link.click();
+  expect(await callsOf(page, "openLink")).toBe(1);
 });
 
 test("a title that wraps keeps the state icon on its first line", async ({ page }) => {

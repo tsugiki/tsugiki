@@ -129,7 +129,14 @@ test("the HUD times an Issue whose text comes from GitHub", async ({ page }) => 
   await expect(value(page, "Issue from the database")).toHaveText(/^\d+\.\d ms$/);
   await expect(value(page, "Issue from GitHub")).toHaveText("waiting");
 
-  const content = { body_html: "<p>It crashes</p>", comments: [], earlier_comments: 0, opened_at: null };
+  const content = {
+    body_html: "<p>It crashes</p>",
+    comments: [],
+    earlier_comments: 0,
+    events: [],
+    earlier_events: 0,
+    opened_at: null,
+  };
   await changeAnswer(page, "issue", ok({ ...unread, content }));
   await emitFromCore(page, "changed", { repository: repository.name, items: [7] });
   await expect(value(page, "Issue from GitHub")).toHaveText(/^\d+\.\d ms$/);

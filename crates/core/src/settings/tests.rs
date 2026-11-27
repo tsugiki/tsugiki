@@ -2007,6 +2007,39 @@ fn apply_switches_a_filter_in_an_inline_list_on() {
 }
 
 #[test]
+fn apply_switches_a_filter_in_an_inline_list_on_keeping_its_comment_and_lines() {
+    let (mut files, folders, _root) = settings_saying(
+        "filters-inline-comment",
+        "repositories = [{ name = \"a/b\", filters = [\n  { name = \"Bugs\", # open bugs\n    query = \
+         \"label:bug\" },\n] }]\n",
+    );
+
+    files
+        .apply(filters_of(
+            &files.loaded().settings,
+            "a/b",
+            vec![edited_on(
+                "Bugs",
+                "label:bug",
+                Some("label:bug"),
+                OnWorkbench::On,
+            )],
+        ))
+        .unwrap();
+    let after = fs::read_to_string(folders.settings_file()).unwrap();
+
+    assert_eq!(
+        after,
+        "repositories = [{ name = \"a/b\", filters = [\n  { name = \"Bugs\", # open bugs\n    query = \
+         \"label:bug\", on_workbench = true },\n] }]\n"
+    );
+    assert_eq!(
+        read_filters(&files),
+        [("Bugs".to_owned(), "label:bug".to_owned(), true)]
+    );
+}
+
+#[test]
 fn apply_adds_a_filter_to_an_inline_list_switched_on() {
     let (mut files, folders, _root) = settings_saying(
         "filters-inline-added-switch",
@@ -2029,6 +2062,13 @@ fn apply_adds_a_filter_to_an_inline_list_switched_on() {
         after,
         "repositories = [{ name = \"a/b\", filters = [{ name = \"Bugs\", query = \"label:bug\" },{ \
          name = \"Mine\", query = \"author:@me\", on_workbench = true }] }]\n"
+    );
+    assert_eq!(
+        read_filters(&files),
+        [
+            ("Bugs".to_owned(), "label:bug".to_owned(), false),
+            ("Mine".to_owned(), "author:@me".to_owned(), true),
+        ]
     );
 }
 

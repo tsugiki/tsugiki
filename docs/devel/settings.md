@@ -87,7 +87,7 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
   list the user wrote, keeping the user's comments. A Filter the page read keeps its table, with each key the
   page doesn't show and each comment on it, through a new name, a new search or a move, and its name and
   search change in place. A Filter
-  Add filter added is written with its name and search alone, so it is off the Workbench unless the user
+  Add filter added is written with its name and search alone, or with `on_workbench = true` when the user
   switched it on. A Repository the file holds without `filters` gets the Filters it reads as written out
   first, as the switch writes them. No Filters left writes `filters = []`, since a Repository without the
   key reads as having the starters, and the comments above the first block go above it; blocks put in place

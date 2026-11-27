@@ -183,8 +183,8 @@ pub struct RepositoryFilters {
 
 /// A Filter as a Repository's page leaves it. `was` is the search it had when the dialog read the files,
 /// which finds its table in the file, so each key the page doesn't show stays with it through a new name, a
-/// new search or a move. It is none for a Filter Add filter added, which the file gets with its name and
-/// search alone, so it is off the Workbench unless the user switched it on (#819, #535, #1017).
+/// new search or a move. It is none for a Filter Add filter added, whose table the file gets with its name
+/// and search alone, or with `on_workbench = true` when the user switched it on (#819, #535, #1017).
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Type)]
 pub struct EditedFilter {
     pub name: FilterName,
@@ -2430,10 +2430,6 @@ fn block_filters(blocks: Vec<Table>, edits: &[EditedFilter]) -> ArrayOfTables {
     for (at, edit) in edits.iter().enumerate() {
         let mut filter = claim(&mut kept, edit).unwrap_or_default();
         put_name_and_search(&mut filter, edit);
-        #[expect(
-            unused_results,
-            reason = "a block needs no formatting around a key it gains"
-        )]
         put_switch(&mut filter, edit);
         // A block past the old ones' places follows the block before it.
         filter.set_position(places.get(at).copied().flatten());
@@ -2458,19 +2454,12 @@ fn put_inline_filters(list: &mut Array, edits: &[EditedFilter]) {
         let filter = match claim(&mut kept, edit) {
             Some(mut filter) => {
                 put_name_and_search(&mut filter, edit);
-                // A key added to an inline table would follow the space before its `}`.
-                if put_switch(&mut filter, edit) {
-                    filter.fmt();
-                }
+                put_switch(&mut filter, edit);
                 filter
             }
             None => {
                 let mut added = InlineTable::new();
                 put_name_and_search(&mut added, edit);
-                #[expect(
-                    unused_results,
-                    reason = "`fmt` below formats the table around its keys"
-                )]
                 put_switch(&mut added, edit);
                 added.fmt();
                 added
@@ -2504,23 +2493,26 @@ fn put_name_and_search(filter: &mut dyn TableLike, edit: &EditedFilter) {
 
 /// Gives `filter` the "On the Workbench" switch of `edit`, when the page changed it and the file says
 /// other, keeping a comment the user wrote on the key. A Filter switched off says so, as `switch_filter`
-/// writes it. It leaves the key as the user wrote it otherwise, and says whether it added the key, which an
-/// inline table formats around.
-fn put_switch(filter: &mut dyn TableLike, edit: &EditedFilter) -> bool {
+/// writes it, and it leaves the key as the user wrote it otherwise. A key added at the end of an inline
+/// table moves the user's space before the `}` to the new last value, as `put_read_only` does, so the rest
+/// of the table stays as the user wrote it, a list over several lines with its comments included.
+fn put_switch(filter: &mut dyn TableLike, edit: &EditedFilter) {
     let Some(wanted) = edit.on_workbench else {
-        return false;
+        return;
     };
     if switch_of(&*filter) == wanted {
-        return false;
+        return;
     }
-    let added = filter.get(ON_WORKBENCH).is_none();
+    let closing = closing_space(&*filter);
     merge_value(
         filter,
         ON_WORKBENCH,
         &toml_edit::value(bool::from(wanted)),
         None,
     );
-    added
+    if let Some(closing) = closing {
+        keep_closing_space(filter, closing);
+    }
 }
 
 /// The "On the Workbench" switch `filter` says: a Filter without the key is off.
@@ -2531,14 +2523,10 @@ fn switch_of(filter: &dyn TableLike) -> OnWorkbench {
 /// Whether the Filters of `filters`, in their order, say the switch each `wants` gives it. A `None` leaves
 /// the file's key be, so it never stops an Apply.
 fn switches_as_wanted(filters: Option<&mut Item>, wants: &[Option<OnWorkbench>]) -> bool {
-    let held: Vec<OnWorkbench> = (filters.map(tables_of).unwrap_or_default().into_iter())
-        .map(|filter| switch_of(&*filter))
-        .collect();
-    held.len() == wants.len()
-        && held
-            .iter()
-            .zip(wants)
-            .all(|(held, wanted)| wanted.is_none_or(|wanted| *held == wanted))
+    let held =
+        (filters.map(tables_of).unwrap_or_default().into_iter()).map(|filter| switch_of(&*filter));
+    held.zip(wants)
+        .all(|(held, wanted)| wanted.is_none_or(|wanted| held == wanted))
 }
 
 /// Sets `on_workbench` on the first Filter of `filters` that searches `query`, the one the settings read,

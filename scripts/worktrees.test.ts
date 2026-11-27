@@ -2,12 +2,15 @@ import { describe, expect, it } from "vitest";
 
 import {
   addRefusal,
+  keepReason,
   pullRefusal,
   ticketBranch,
   ticketNumber,
   ticketTitle,
   titleSlug,
   worktreeFolder,
+  worktreeTicket,
+  worktrees,
 } from "./worktrees.ts";
 
 describe("ticketNumber", () => {
@@ -85,6 +88,77 @@ describe("ticketBranch", () => {
 describe("worktreeFolder", () => {
   it("puts the worktree under .temp", () => {
     expect(worktreeFolder(738)).toBe(".temp/wt-738");
+  });
+});
+
+describe("worktrees", () => {
+  const LIST = [
+    "worktree X:/Work/gh-rev",
+    "HEAD 1a2b3c",
+    "branch refs/heads/main",
+    "",
+    "worktree X:/Work/gh-rev/.temp/wt-471",
+    "HEAD 4d5e6f",
+    "branch refs/heads/471-save-filter",
+    "",
+    "worktree X:/Work/gh-rev/.temp/proto",
+    "HEAD 7a8b9c",
+    "detached",
+    "",
+  ].join("\n");
+
+  it("reads each worktree and its branch", () => {
+    expect(worktrees(LIST)).toEqual([
+      { path: "X:/Work/gh-rev", branch: "main" },
+      { path: "X:/Work/gh-rev/.temp/wt-471", branch: "471-save-filter" },
+      { path: "X:/Work/gh-rev/.temp/proto", branch: undefined },
+    ]);
+  });
+
+  it("reads nothing from an empty listing, or a branch before any worktree", () => {
+    expect(worktrees("")).toEqual([]);
+    expect(worktrees("branch refs/heads/main")).toEqual([]);
+  });
+});
+
+describe("worktreeTicket", () => {
+  it("reads the ticket whose worktree folder it is", () => {
+    expect(worktreeTicket("X:/Work/gh-rev/.temp/wt-471")).toBe(471);
+    expect(worktreeTicket("X:\\Work\\gh-rev\\.temp\\wt-471")).toBe(471);
+  });
+
+  it("gives nothing for another folder", () => {
+    expect(worktreeTicket("X:/Work/gh-rev/.temp/proto")).toBeUndefined();
+    expect(worktreeTicket("X:/Work/gh-rev/.temp/wt-zero")).toBeUndefined();
+    expect(worktreeTicket("X:/Work/gh-rev")).toBeUndefined();
+  });
+});
+
+describe("keepReason", () => {
+  const LIST = [
+    "worktree X:/Work/gh-rev",
+    "HEAD 1a2b3c",
+    "branch refs/heads/main",
+    "",
+    "worktree X:/Work/gh-rev/.temp/wt-471",
+    "HEAD 4d5e6f",
+    "branch refs/heads/471-save-filter",
+    "",
+  ].join("\n");
+
+  it("lets git delete a branch no worktree has", () => {
+    expect(keepReason(LIST, "472-other")).toBeUndefined();
+  });
+
+  it("names the recipe that deletes a ticket's worktree and its branch", () => {
+    expect(keepReason(LIST, "471-save-filter")).toContain("`just worktree-remove 471` deletes both.");
+  });
+
+  it("leaves another worktree for the user to remove", () => {
+    const foreign = ["worktree X:/Work/elsewhere", "HEAD 1a2b3c", "branch refs/heads/472-other", ""].join(
+      "\n",
+    );
+    expect(keepReason(foreign, "472-other")).toContain("It stays until you remove that worktree.");
   });
 });
 

@@ -21,7 +21,9 @@ default:
 install:
     npm ci
 
-# After GitHub merges a PR, switch to main, pull, and delete the PR's local branch, by default the current one
+# After GitHub merges a PR, switch to main, pull, and delete the PR's local branch, by default the current
+# one. On main it only pulls, and it keeps a branch a worktree holds, saying which: `just worktree-remove`
+# deletes the branch with the worktree.
 merged branch="":
     node scripts/merged.ts {{quote(branch)}}
 

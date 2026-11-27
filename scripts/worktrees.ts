@@ -1,5 +1,5 @@
-// The decisions behind `just worktree` and `just worktree-remove`, kept apart from the git, GitHub and npm
-// calls in worktree.ts so that tests can reach them.
+// The decisions behind `just worktree`, `just worktree-remove` and `just merged`, kept apart from the git,
+// GitHub and npm calls in worktree.ts and merged.ts so that tests can reach them.
 
 /** Words a branch name leaves out of a ticket's title, as our branches do. */
 const FILLER = new Set(
@@ -68,6 +68,49 @@ export function ticketBranch(ticket: number, slug: string, title: () => string):
 /** The worktree's folder for ticket `ticket`, relative to the main checkout. */
 export function worktreeFolder(ticket: number): string {
   return `.temp/wt-${String(ticket)}`;
+}
+
+/** One worktree that `git worktree list --porcelain` names. */
+export interface Worktree {
+  path: string;
+  /** Its branch, without `refs/heads/`, or `undefined` when it is detached or bare. */
+  branch: string | undefined;
+}
+
+/** The worktrees in what `git worktree list --porcelain` prints, in its order. */
+export function worktrees(list: string): Worktree[] {
+  const trees: Worktree[] = [];
+  for (const line of list.split(/\r?\n/)) {
+    if (line.startsWith("worktree ")) {
+      trees.push({ path: line.slice("worktree ".length), branch: undefined });
+    } else if (line.startsWith("branch refs/heads/")) {
+      const tree = trees.at(-1);
+      if (tree !== undefined) tree.branch = line.slice("branch refs/heads/".length);
+    }
+  }
+  return trees;
+}
+
+/** The ticket whose worktree folder `path` is, or `undefined` when it is some other folder. */
+export function worktreeTicket(path: string): number | undefined {
+  const match = /(?:^|\/)\.temp\/wt-([^/]*)$/.exec(path.replace(/\\/g, "/"));
+  return match === null ? undefined : ticketNumber(match[1]);
+}
+
+/**
+ * What `just merged` prints instead of deleting `branch`, when a worktree `list` names has it checked out, or
+ * `undefined` when git can delete the branch.
+ */
+export function keepReason(list: string, branch: string): string | undefined {
+  const holder = worktrees(list).find((tree) => tree.branch === branch);
+  if (holder === undefined) return undefined;
+  const ticket = worktreeTicket(holder.path);
+  return (
+    `Kept the branch ${branch}: the worktree ${holder.path} has it checked out. ` +
+    (ticket === undefined
+      ? "It stays until you remove that worktree."
+      : `\`just worktree-remove ${String(ticket)}\` deletes both.`)
+  );
 }
 
 /**

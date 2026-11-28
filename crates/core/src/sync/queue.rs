@@ -37,7 +37,7 @@ pub enum Progress {
     Recorded(RepositoryName),
 }
 
-/// A step that failed: the problem, for the status bar, and the work it holds back.
+/// A step that failed: the problem, for the status bar, and the work that failed.
 #[derive(Debug)]
 pub struct StepFailure {
     /// It names the Repository when that isn't the open one, unless it speaks for all of GitHub.
@@ -104,6 +104,8 @@ struct StateFill {
 /// requests, as an opened Issue's tree does.
 struct FilterSearch {
     sync: UserWorkSync,
+    /// The current step has used its retry for a failure of this search alone.
+    retried_step: bool,
 }
 
 /// The work that takes a step.
@@ -273,6 +275,7 @@ impl Syncs {
         let settings = self.settings_of(repository);
         self.searches.push_back(FilterSearch {
             sync: UserWorkSync::filter_of(&settings, query),
+            retried_step: false,
         });
     }
 
@@ -414,8 +417,9 @@ impl Syncs {
 
     /// Holds back the work whose step failed: all of it if the problem speaks for all of GitHub, or else that
     /// sync alone, so the other Repositories carry on. It waits until `next_refresh`, or for the rate limit
-    /// until GitHub's points come back. It also takes a sync that keeps failing out of the queue, and answers
-    /// with the news of a step it saved before its place failed to save, which the retry would have told.
+    /// until GitHub's points come back. A saved Filter's own failure uses the next sync turn for its retry.
+    /// A sync that keeps failing leaves the queue, and this answers with the news of any step it saved before
+    /// its place failed to save, which the retry would have told.
     #[must_use = "a given-up sync's news has to reach the window, which no retry will tell"]
     pub fn after_failure(
         &mut self,
@@ -435,8 +439,8 @@ impl Syncs {
                     queued.held_until = Some(hold.until());
                 }
             }
-            // A tree's, a search's or a fill's own trouble ends it in the step, so they fail only for all of
-            // GitHub.
+            // A Filter retries its own failure on the next sync turn, without holding any work.
+            Turn::Filter if !problem.kind.speaks_for_all_of_github() => {}
             Turn::Sync(_) | Turn::Tree | Turn::Filter | Turn::Fill => {
                 self.not_before = Some(hold);
             }
@@ -458,7 +462,7 @@ impl Syncs {
         match turn {
             // A fill costs a request a try, and waits for the next refresh like the rest.
             Turn::Fill => None,
-            // A search ended in its step, so it holds no step whose place failed to save.
+            // A search keeps no place and handles its own retry in its step.
             Turn::Filter => None,
             // A tree keeps no place, so it holds no step whose place failed to save.
             Turn::Tree => {
@@ -562,8 +566,8 @@ impl Syncs {
 
     /// Runs a step of `search`, the whole search of a Filter the user just saved, which goes back to the
     /// front until it finishes (#471). It is not a sync of the Repository, so it moves neither the time of
-    /// the last one nor any other Filter's results. A trouble of its own ends it, as one ends a tree, and
-    /// one that speaks for all of GitHub waits for the next refresh.
+    /// the last one nor any other Filter's results. A failure of its own gets one retry on the next sync
+    /// turn, ahead of other searches and syncs. A global failure holds back the sync queue.
     fn step_search(
         &mut self,
         mut search: FilterSearch,
@@ -574,22 +578,20 @@ impl Syncs {
         let settings = self.settings_of(&search.sync.repository);
         let step = match search.sync.step(github, store, &settings) {
             Ok(step) => step,
-            Err(problem) if !problem.kind.speaks_for_all_of_github() => {
-                let query = search.sync.filters.first().map_or("", FilterQuery::as_str);
-                log::warn!(
-                    "Tsugiki couldn't search the saved Filter {query:?}: {}",
-                    problem.message
-                );
-                return Ok(None);
-            }
             Err(problem) => {
-                self.searches.push_front(search);
+                if problem.kind.speaks_for_all_of_github() {
+                    self.searches.push_front(search);
+                } else if !search.retried_step {
+                    search.retried_step = true;
+                    self.searches.push_front(search);
+                }
                 return Err(StepFailure {
                     problem,
                     turn: Turn::Filter,
                 });
             }
         };
+        search.retried_step = false;
         let repository = search.sync.repository.clone();
         let Some(stepped) = unfinished(step) else {
             // The queue drops a search once its steps end, so no `finish` marks read the pin trees it read.

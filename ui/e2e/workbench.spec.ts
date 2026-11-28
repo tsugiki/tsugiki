@@ -68,6 +68,42 @@ test("the Workbench lists what waits on the user", async ({ page }) => {
   await expect(rows.nth(3)).toContainText("Own PR · octocat · into 3.14 · Open · Draft · CI failed");
 });
 
+for (const view of ["Workbench", "Inbox", "Mine"] as const) {
+  test(`clicking a state icon opens its Issue in ${view}`, async ({ page }) => {
+    await mockCore(page, {
+      home,
+      workbench: workbenchPage([review], { count: 1, filters: [mine] }),
+      inbox: inboxPage([review]),
+      openIssue: done,
+    });
+    await page.goto("/");
+
+    if (view !== "Workbench") {
+      const sidebar = page.getByRole("navigation", { name: "Sidebar" });
+      const entry = sidebar.getByRole("button", { name: view === "Mine" ? "Mine 1" : "Inbox" });
+      await entry.click();
+      await expect(entry).toHaveAttribute("aria-current", "true");
+    }
+
+    const row = page.getByRole("listitem").first();
+    const icon = row.getByTitle("Open issue", { exact: true });
+    const fold = row.getByRole("button", { name: "PRs of #112564" });
+    await fold.click();
+    await expect(fold).toHaveAttribute("aria-expanded", "true");
+    await fold.click();
+    await expect(fold).toHaveAttribute("aria-expanded", "false");
+    expect(await callsOf(page, "openIssue")).toBe(0);
+
+    await icon.hover();
+    await icon.click();
+    await expect.poll(() => callsOf(page, "openIssue")).toBe(1);
+    await expect(row.getByRole("button", { name: "#112564 GIL drop during collection" })).toHaveAttribute(
+      "aria-current",
+      "true",
+    );
+  });
+}
+
 test("a row's state icon and fold chevron centre on its title's line, in either theme", async ({ page }) => {
   await mockCore(page, {
     themes: ok(themes),
@@ -116,8 +152,9 @@ test("an item that Needs attention shows an accent bar and title, and a long tit
   await expect(unread.locator(".people")).toHaveCSS("font-weight", "600");
   await expect(title(read)).not.toHaveCSS("color", accent);
   await expect(read).toHaveCSS("border-left-color", "rgba(0, 0, 0, 0)");
-  expect(await title(read).evaluate((button) => button.scrollWidth > button.clientWidth)).toBe(true);
-  await expect(title(read)).toHaveCSS("text-overflow", "ellipsis");
+  const text = title(read).getByText(long.title.trim(), { exact: false });
+  expect(await text.evaluate((span) => span.scrollWidth > span.clientWidth)).toBe(true);
+  await expect(text).toHaveCSS("text-overflow", "ellipsis");
 });
 
 test("an item with nothing waiting sits in the one list below what does, and Alt+← goes back to it", async ({

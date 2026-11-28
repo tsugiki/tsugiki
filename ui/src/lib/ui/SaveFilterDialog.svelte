@@ -34,6 +34,10 @@
     problem = undefined;
   }
 
+  function cancel() {
+    if (!saving) onclose();
+  }
+
   async function submit(event: SubmitEvent) {
     event.preventDefault();
     if (incomplete || saving) return;
@@ -44,7 +48,7 @@
   }
 </script>
 
-<Dialog label="Save as Filter" testid="save-filter" size="wide" childTakesFocus {onclose}>
+<Dialog label="Save as Filter" testid="save-filter" size="wide" childTakesFocus onclose={cancel}>
   <form onsubmit={submit}>
     <label>
       Name
@@ -65,7 +69,7 @@
       <p role="alert">{problem}</p>
     {/if}
     <div class="buttons">
-      <button type="button" onclick={onclose}>Cancel</button>
+      <button type="button" disabled={saving} onclick={cancel}>Cancel</button>
       <button type="submit" disabled={incomplete || saving}>Save</button>
     </div>
   </form>

@@ -336,12 +336,23 @@ it("reopens the Repository the core names, and the window title names it", async
   expect(document.title).toBe("some-maintainer/gcmon · Tsugiki 1.2.3");
 });
 
+async function tryClosingWhileSaving(dialog: HTMLElement) {
+  const cancel = within(dialog).getByRole("button", { name: "Cancel" });
+  await fireEvent.click(cancel);
+  expect(screen.queryByRole("dialog", { name: "Save as Filter" })).toBe(dialog);
+  await fireEvent.keyDown(within(dialog).getByRole("textbox", { name: "Name" }), { key: "Escape" });
+  expect(screen.queryByRole("dialog", { name: "Save as Filter" })).toBe(dialog);
+  await fireEvent.mouseDown(screen.getByTestId("save-filter-scrim"));
+  expect(screen.queryByRole("dialog", { name: "Save as Filter" })).toBe(dialog);
+}
+
 it("saves the Inbox search as a Filter from its Save dialog, then opens it with the box cleared", async () => {
   core.home.mockResolvedValue(gcmonHome);
   core.inbox.mockResolvedValue(inboxPage([]));
   const bugs = { name: "Bugs", query: "label:bug is:open", on_workbench: false, count: 0, problem: null };
   core.workbench.mockResolvedValue(workbenchPage([], { filters: [bugs] }));
-  core.saveFilter.mockResolvedValue(done);
+  const saving = Promise.withResolvers<typeof done>();
+  core.saveFilter.mockReturnValue(saving.promise);
   render(Page);
   await fireEvent.click(await screen.findByRole("button", { name: "Inbox" }));
   await screen.findByRole("heading", { name: "Inbox" });
@@ -363,6 +374,8 @@ it("saves the Inbox search as a Filter from its Save dialog, then opens it with 
   expect(query.value).toBe("label:bug is:open");
   await fireEvent.input(name, { target: { value: "Bugs" } });
   await fireEvent.click(within(dialog).getByRole("button", { name: "Save" }));
+  await tryClosingWhileSaving(dialog);
+  saving.resolve(done);
 
   await vi.waitFor(() => {
     expect(core.saveFilter).toHaveBeenCalledExactlyOnceWith(
@@ -386,7 +399,8 @@ it("keeps the Save dialog open and says why the core refused the Filter's name",
   core.home.mockResolvedValue(gcmonHome);
   core.inbox.mockResolvedValue(inboxPage([]));
   const refusal = "some-maintainer/gcmon already has a Filter named Bugs. Choose another name.";
-  core.saveFilter.mockResolvedValue(refused(refusal));
+  const saving = Promise.withResolvers<ReturnType<typeof refused>>();
+  core.saveFilter.mockReturnValue(saving.promise);
   render(Page);
   await fireEvent.click(await screen.findByRole("button", { name: "Inbox" }));
   await screen.findByRole("heading", { name: "Inbox" });
@@ -404,6 +418,9 @@ it("keeps the Save dialog open and says why the core refused the Filter's name",
     target: { value: "Bugs" },
   });
   await fireEvent.click(within(dialog).getByRole("button", { name: "Save" }));
+
+  await tryClosingWhileSaving(dialog);
+  saving.resolve(refused(refusal));
 
   expect((await within(dialog).findByRole("alert")).textContent).toBe(refusal);
   expect(screen.getByRole("dialog", { name: "Save as Filter" })).toBeTruthy();

@@ -863,13 +863,21 @@ const diff = ok(
 
 /** The core with #70 alone on the Workbench, its view and its diff. */
 function listOnePr() {
+  const key = { kind: "pull_request", number: pr.number } as const;
   core.workbench.mockResolvedValue(
-    workbenchPage([{ kind: "standalone_pr", ...pr, backports: [], attention: null }]),
+    workbenchPage([{ kind: "standalone_pr", ...pr, key, backports: [], attention: null }]),
   );
   core.openPullRequest.mockResolvedValue(done);
   core.pullRequest.mockResolvedValue({
     status: "ok",
-    data: { ...pr, content: null, shares_review_of: null, hidden: null, issues: [] },
+    data: {
+      ...pr,
+      content: null,
+      shares_review_of: null,
+      hidden: null,
+      issues: [],
+      holding: { key, mark: pr.seen.mark },
+    },
   });
   core.mirrorsHeld.mockResolvedValue(false);
   core.pullRequestFiles.mockResolvedValue(diff);

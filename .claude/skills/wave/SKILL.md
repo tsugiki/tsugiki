@@ -37,9 +37,9 @@ waves. Step 3 writes its Start, and step 8 the other cells from the entry:
 - **Conflicts**: how many merges of main conflicted, with the hardest in brackets, as `2 (1 moderate)`, or
   `0`.
 
-Read and write the description with `gh api repos/tsugiki/tsugiki/milestones/<number> --jq .description`
-and `gh api -X PATCH repos/tsugiki/tsugiki/milestones/<number> -F description=@<file>`, from a file in
-`.temp/scratchpad/`.
+Read the description with `gh api repos/tsugiki/tsugiki/milestones/<number> --jq .description`.
+Save the edited description in `.temp/scratchpad/` and publish it with
+`just milestone-description <number> <file>`.
 
 ### 1. Check the wave
 

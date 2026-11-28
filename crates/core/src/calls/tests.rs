@@ -10,7 +10,7 @@ use crate::definitions::Sources;
 use crate::diff::testing::Mirrored;
 use crate::facts::pull_requests::PrHead;
 use crate::fetching::testing::{handle_with_headless, named};
-use crate::fetching::{Fetched, Headless, Item, NoHead, SessionMessage};
+use crate::fetching::{Fetched, Headless, InboxSearchAsk, Item, NoHead, SessionMessage};
 use crate::latest::{self, LatestWriter};
 use crate::mirror::HeardRequests;
 use crate::mirror_source::MirrorSources;
@@ -79,7 +79,7 @@ impl Setup {
                 | SessionMessage::Stop
                 | SessionMessage::Check { .. }
                 | SessionMessage::FetchUnstored { .. }
-                | SessionMessage::Search { .. }
+                | SessionMessage::Search(_)
                 | SessionMessage::FillPlaceholders { .. }
                 | SessionMessage::FilterSearch { .. }
                 | SessionMessage::ShowMuted { .. }
@@ -213,7 +213,7 @@ fn synced_and_saved(messages: &Receiver<SessionMessage>) -> Vec<String> {
             | SessionMessage::Stop
             | SessionMessage::Check { .. }
             | SessionMessage::FetchUnstored { .. }
-            | SessionMessage::Search { .. }
+            | SessionMessage::Search(_)
             | SessionMessage::FillPlaceholders { .. }
             | SessionMessage::FilterSearch { .. }
             | SessionMessage::ShowMuted { .. }
@@ -763,10 +763,22 @@ fn a_search_the_window_types_goes_to_the_session_with_its_text_and_a_blank_one_s
     };
     let calls = Calls::launched(fetching, db.reader.clone(), copy, parts);
 
-    calls.search_inbox(cpython(), "  review:approved  ");
-    calls.search_inbox(cpython(), "   ");
+    calls.search_inbox(cpython(), "   ").unwrap();
+    let searching =
+        std::thread::spawn(move || calls.search_inbox(cpython(), "  review:approved  "));
+    let SessionMessage::Search(InboxSearchAsk {
+        repository,
+        text,
+        reply,
+    }) = session.recv_timeout(Duration::from_secs(10)).unwrap()
+    else {
+        panic!("expected the Inbox search");
+    };
+    reply.send(Ok(())).unwrap();
+    searching.join().unwrap().unwrap();
     db.close();
 
-    let sent: Vec<String> = (session.try_iter()).map(named).collect();
-    assert_eq!(sent, ["search review:approved"]);
+    assert_eq!(repository, cpython());
+    assert_eq!(text, "review:approved");
+    assert_eq!(session.try_iter().count(), 0);
 }

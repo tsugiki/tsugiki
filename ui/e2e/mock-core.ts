@@ -63,7 +63,7 @@ export const mockCore = (page: Page, answers: CoreAnswers, unanswered: (keyof Co
       windowShown: null,
       paneLayout: panes,
       // A search typed in the Inbox goes to GitHub, and the test answers what its rows become (#465).
-      searchInbox: null,
+      searchInbox: { status: "ok", data: null },
       // A placeholder the Inbox shows is filled from GitHub once the user scrolls to it (#466): by default
       // the core handles none, and the window asks again.
       fillInboxPlaceholders: [],

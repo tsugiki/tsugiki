@@ -174,11 +174,13 @@ impl Calls {
 
     /// Sends the Inbox's search box text `text` to GitHub, which answers which results it finds and how many,
     /// ahead of the sync's next step (#465). The `changed` event follows the answer, and the Inbox then reads
-    /// the rows it listed. A blank text sends nothing.
-    pub fn search_inbox(&self, repository: RepositoryName, text: &str) {
+    /// the rows it listed. Returns why a search failed (#1109). A blank text sends nothing.
+    pub fn search_inbox(&self, repository: RepositoryName, text: &str) -> Result<(), Error> {
         let text = text.trim();
-        if !text.is_empty() {
-            self.fetching.search(repository, text.to_owned());
+        if text.is_empty() {
+            Ok(())
+        } else {
+            self.fetching.search(repository, text.to_owned())
         }
     }
 

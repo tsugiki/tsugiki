@@ -202,6 +202,7 @@ beforeEach(() => {
   core.actedListen.mockResolvedValue(core.actedStop);
   core.openIssue.mockResolvedValue(done);
   core.openPullRequest.mockResolvedValue(done);
+  core.searchInbox.mockResolvedValue(done);
   for (const move of [core.hideItem, core.showItem, core.closeItem]) move.mockResolvedValue(done);
   core.pullRequestFiles.mockResolvedValue({ status: "ok", data: { state: "fetching" } });
   core.pullRequestFind.mockResolvedValue({ status: "ok", data: { matches: [], more: false } });
@@ -6519,6 +6520,61 @@ it("sends the Inbox search to GitHub on Enter", async () => {
   await waitFor(() => {
     expect(core.searchInbox).toHaveBeenCalledExactlyOnceWith("python/cpython", "review:approved");
   });
+});
+
+it("shows a refused Inbox search's reason and retries it on Enter", async () => {
+  core.workbench.mockResolvedValue(workbenchPage([]));
+  core.inbox.mockResolvedValue(inboxPage([], null, "off", true));
+  const first = Promise.withResolvers<ReturnType<typeof refused>>();
+  const retry = Promise.withResolvers<typeof done>();
+  core.searchInbox.mockReturnValueOnce(first.promise).mockReturnValueOnce(retry.promise);
+  render(RepositoryHome, {
+    name: "python/cpython",
+    onpick: () => {},
+    onsettings: () => {},
+    onsavefilter: () => {},
+  });
+  await fireEvent.click(await screen.findByRole("button", { name: "Inbox" }));
+  const box = await screen.findByRole("searchbox", { name: "Search the Inbox" });
+  await fireEvent.input(box, { target: { value: "review:unknown-value" } });
+  await fireEvent.keyDown(box, { key: "Enter" });
+  expect(await screen.findByText(/Tsugiki is asking it/)).toBeTruthy();
+
+  first.resolve(refused("GitHub refused this search."));
+  expect(await screen.findByText("GitHub refused this search.")).toBeTruthy();
+  expect(screen.queryByText(/Tsugiki is asking it/)).toBeNull();
+
+  await fireEvent.keyDown(box, { key: "Enter" });
+  expect(await screen.findByText(/Tsugiki is asking it/)).toBeTruthy();
+  expect(screen.queryByText("GitHub refused this search.")).toBeNull();
+  expect(core.searchInbox).toHaveBeenCalledTimes(2);
+  retry.resolve(done);
+});
+
+it("drops an Inbox search's refusal after the box is edited", async () => {
+  core.workbench.mockResolvedValue(workbenchPage([]));
+  core.inbox.mockResolvedValue(pageOf([{ ...issue, attention: null }]));
+  const reply = Promise.withResolvers<ReturnType<typeof refused>>();
+  core.searchInbox.mockReturnValueOnce(reply.promise);
+  render(RepositoryHome, {
+    name: "python/cpython",
+    onpick: () => {},
+    onsettings: () => {},
+    onsavefilter: () => {},
+  });
+  await fireEvent.click(await screen.findByRole("button", { name: "Inbox" }));
+  const box = await screen.findByRole("searchbox", { name: "Search the Inbox" });
+  await fireEvent.input(box, { target: { value: "parser" } });
+  await fireEvent.keyDown(box, { key: "Enter" });
+  expect(await screen.findByText(/Tsugiki is asking it/)).toBeTruthy();
+
+  await fireEvent.input(box, { target: { value: "parsers" } });
+  await fireEvent.input(box, { target: { value: "parser" } });
+  reply.resolve(refused("The older request failed."));
+  await nextTask();
+
+  expect(screen.queryByText("The older request failed.")).toBeNull();
+  expect(screen.queryByText(/Tsugiki is asking it/)).toBeNull();
 });
 
 it("offers to save the Inbox search as a Filter, named after the text and querying what the core spelled", async () => {

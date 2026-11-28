@@ -281,15 +281,6 @@ fn refresh(calls: State<'_, Calls>) {
     calls.refresh();
 }
 
-/// Sends the Inbox's search box text `search` to GitHub, which answers which rows it finds and how many,
-/// ahead of the sync's next step (#465), and returns at once. A blank text sends nothing.
-#[tauri::command]
-#[specta::specta]
-fn search_inbox(repository: &str, search: &str, calls: State<'_, Calls>) -> Result<(), Error> {
-    calls.search_inbox(RepositoryName::parse(repository)?, search);
-    Ok(())
-}
-
 /// Tells the core the user opened an Issue, which reads what it says from GitHub, and returns at once. Its
 /// Last seen stays: only Mark Seen moves it.
 #[tauri::command]
@@ -1199,7 +1190,7 @@ pub fn specta_builder<R: tauri::Runtime>() -> Builder<R> {
             slow_commands::on_this_machine,
             slow_commands::workbench,
             slow_commands::inbox,
-            search_inbox,
+            slow_commands::search_inbox,
             slow_commands::fill_inbox_placeholders,
             slow_commands::issue,
             slow_commands::repository_state,

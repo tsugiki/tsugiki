@@ -150,6 +150,32 @@ test("Enter sends the whole search to GitHub, and its rows show with a placehold
   );
 });
 
+test("a refused Inbox search shows GitHub's reason and Enter tries again", async ({ page }) => {
+  const message = "GitHub said: Invalid search qualifier";
+  await mockCore(page, {
+    home,
+    workbench,
+    inbox: inboxPage([], null, "off", true),
+    searchInbox: { status: "error", error: { kind: "query_refused", message } },
+  });
+  await page.goto("/");
+  await openInbox(page);
+  const search = page.getByRole("searchbox", { name: "Search the Inbox" });
+  await search.fill("review:approved");
+  await search.press("Enter");
+  const status = page.locator(".list").getByRole("status");
+  await expect(status).toHaveText(message);
+  await expect.poll(() => callsOf(page, "searchInbox")).toBe(1);
+
+  await changeAnswer(page, "searchInbox", ok(null));
+  await changeAnswer(page, "inbox", pageOf([issue(1)], false));
+  await search.press("Enter");
+  await expect.poll(() => callsOf(page, "searchInbox")).toBe(2);
+  await emitFromCore(page, "changed", { repository: repository.name, items: [] });
+  await expect(page.getByRole("button", { name: "#1 Issue 1" })).toBeVisible();
+  await expect(status).toHaveCount(0);
+});
+
 test("fills a placeholder only once the list scrolls to it, and asks for it once", async ({ page }) => {
   await page.setViewportSize({ width: 1200, height: 600 });
   const placeholder = placeholderItem(4242, "pull_request");

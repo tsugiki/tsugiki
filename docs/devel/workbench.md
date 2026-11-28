@@ -64,8 +64,10 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
   Placeholders the user never scrolls to cost no request, and a placeholder the core handled is fetched once;
   one it couldn't handle comes back for a later ask. Past 1,000 results, the list ends
   with "1,000 of 1,712 shown. Narrow the search, or save it as a Filter." Until GitHub answers, a query the
-  cache can't read lists nothing and says it needs GitHub. A matching PR stays in its Issue's fold, whose
-  header stays even when the Issue doesn't match, and a matching Issue with no matching PR shows alone.
+  cache can't read lists nothing and says it needs GitHub. If the search fails or there is no token, the
+  Inbox says why. Enter or a pause after editing the query tries again. A matching PR stays in its Issue's
+  fold, whose header stays even when the Issue doesn't match, and a matching Issue with no matching PR
+  shows alone.
   Pinned, Archived and Muted items never appear in its results. Save turns a search into a Filter: it opens a
   dialog with a Name, the query by default, and a Query, editable, with Tsugiki's additions spelled out, such
   as `is:open` ([#471](https://github.com/tsugiki/tsugiki/issues/471)). Save is off while either field is

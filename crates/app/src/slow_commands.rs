@@ -74,6 +74,19 @@ pub(crate) async fn fetch_item(
     check_aside(move || crate::fetch_unstored(&repository, number, &calls)).await
 }
 
+/// Sends the Inbox search to GitHub ahead of the sync's next step (#465). Returns why it failed (#1109).
+/// A blank text sends nothing.
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn search_inbox(
+    repository: String,
+    search: String,
+    calls: State<'_, Calls>,
+) -> Result<(), Error> {
+    let calls = calls.inner().clone();
+    check_aside(move || calls.search_inbox(RepositoryName::parse(&repository)?, &search)).await
+}
+
 /// Fills the Inbox's placeholders `numbers`, which the user scrolled to, in batches of 50, and keeps them in
 /// the cache (#466). Answers the numbers the core handled, so the window asks again for the rest. It waits
 /// for GitHub, so it stays off the thread that answers the window's other commands.

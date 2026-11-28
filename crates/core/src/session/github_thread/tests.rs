@@ -35,10 +35,11 @@ fn an_answer_to_a_search_typed_past_changes_nothing() {
     // A query typed after the one GitHub is answering waits in the thread's queue.
     to_github.send(GitHubMessage::Refresh).unwrap();
     to_github
-        .send(GitHubMessage::Search {
+        .send(GitHubMessage::Search(InboxSearchAsk {
             repository: cpython(),
             text: "newer".to_owned(),
-        })
+            reply: mpsc::channel().0,
+        }))
         .unwrap();
     let (script, _asked) = Scripted::new(vec![filter_page(0, &[], None, RATE_LIMIT)]);
     let github = github(script);
@@ -53,11 +54,13 @@ fn an_answer_to_a_search_typed_past_changes_nothing() {
         queue: &refreshes,
         syncs: &mut syncs,
         due: &due,
-        request: SearchRequest {
+        request: &InboxSearchAsk {
             repository: cpython(),
             text: "older".to_owned(),
+            reply: mpsc::channel().0,
         },
-    });
+    })
+    .unwrap();
 
     let answer = db
         .reader

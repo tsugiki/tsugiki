@@ -1955,6 +1955,15 @@ describe("the Home page", () => {
         ["a/never", "Read-only"],
       ]);
     });
+
+    reasons.set(gcmon.name, ["token"]);
+    for (const listener of repositoryChanges) listener({ payload: { repository: gcmon.name } });
+    await within(rowOf(gcmon.name)).findByText("Read-only");
+
+    core.repositoryState.mockImplementation(() => new Promise(() => {}));
+    await fireEvent.keyDown(window, { key: "Escape" });
+    expect(homeHeading()).toBeNull();
+    expect(screen.getByRole("status").textContent).toContain("Read-only");
   });
 
   it("opens from Go to Home in the palette, whose rows there open a Repository or add one", async () => {

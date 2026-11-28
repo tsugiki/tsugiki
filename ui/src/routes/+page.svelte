@@ -421,10 +421,10 @@
     const all = home.rows.map((row) => row.name);
     return [...switchRows(all, "Repository: "), addRow];
   };
-  /** The state on the Repository's screen (#398). On Home each row follows its own Repository's state. */
+  /** The open Repository's state (#398), shared by its screen, its Home row and the status bar. */
   let repositoryState = $state<RepositoryStateView>();
   $effect(() => {
-    if (openName === undefined || home.page) return;
+    if (openName === undefined) return;
     const view = new RepositoryStateView(openName);
     repositoryState = view;
     void view.load();
@@ -559,6 +559,7 @@
     {#if home.page}
       <HomePage
         rows={home.rows}
+        openState={() => repositoryState?.state}
         {keysActive}
         onopen={openNamed}
         onback={leaveHome}

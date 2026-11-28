@@ -1,10 +1,17 @@
 <script lang="ts">
-  import { RepositoryStateView } from "$lib/state/repository-state.svelte";
+  import { type RepositoryState, RepositoryStateView } from "$lib/state/repository-state.svelte";
 
-  let { name }: { name: string } = $props();
+  let {
+    name,
+    openState,
+  }: {
+    name: string;
+    openState: (() => RepositoryState | undefined) | undefined;
+  } = $props();
 
   let view = $state<RepositoryStateView>();
   $effect(() => {
+    if (openState) return;
     const state = new RepositoryStateView(name);
     view = state;
     void state.load();
@@ -12,10 +19,11 @@
       state.stop();
     };
   });
+  const latest = $derived(openState ? openState() : view?.state);
 </script>
 
 <span class="name mono">{name}</span>
-{#if (view?.state?.read_only.length ?? 0) > 0}
+{#if (latest?.read_only.length ?? 0) > 0}
   <span class="read-only">Read-only</span>
 {/if}
 

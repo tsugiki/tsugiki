@@ -4,6 +4,7 @@
      too, as Go Back, which the window runs among its own actions, as `[keys]` may give it another key. -->
 <script lang="ts">
   import type { Opened } from "$lib/state/home.svelte";
+  import type { RepositoryState } from "$lib/state/repository-state.svelte";
   import { minuteClock } from "./clock.svelte";
   import HomeRepositoryName from "./HomeRepositoryName.svelte";
   import { currentOs, keyName, withKey } from "./keys";
@@ -11,6 +12,7 @@
 
   let {
     rows,
+    openState,
     keysActive,
     onopen,
     onback,
@@ -19,6 +21,8 @@
   }: {
     /** The Repositories, the one the user came from first. */
     rows: readonly Opened[];
+    /** The window already follows the open Repository, which is first in rows. */
+    openState: () => RepositoryState | undefined;
     /** Whether the page's keys work: a dialog, the palette or a picker on top keeps them. */
     keysActive: boolean;
     /** Opens the Repository named so on its Workbench. */
@@ -118,7 +122,7 @@
             picked = row.name;
           }}
         >
-          <HomeRepositoryName name={row.name} />
+          <HomeRepositoryName name={row.name} openState={at === 0 ? openState : undefined} />
           {#if time}
             <span class="opened" title={time.title}>{time.words}</span>
           {/if}

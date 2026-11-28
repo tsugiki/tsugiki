@@ -204,7 +204,7 @@ fn a_saved_filter_s_search_queues_nothing_for_a_repository_the_window_does_not_s
 }
 
 #[test]
-fn a_saved_filter_s_search_the_store_wont_save_ends_without_holding_the_queue() {
+fn a_saved_filter_s_search_retries_the_save_without_asking_github_again() {
     let harness = Harness::new(
         "filter-search-broken",
         vec![filter_page(0, &[], None, RATE_LIMIT)],
@@ -212,11 +212,44 @@ fn a_saved_filter_s_search_the_store_wont_save_ends_without_holding_the_queue() 
     let broken = Store::stopped();
     let mut syncs = Syncs::default();
     syncs.add_listed(plain(cpython()));
+    let query: FilterQuery = "label:bug".to_owned().try_into().unwrap();
+    syncs.search_filter(&cpython(), query.clone());
+
+    let failure = syncs.step(&harness.github, &broken).unwrap_err();
+    assert_eq!(failure.problem.kind, ErrorKind::Internal);
+    let later = soon();
+    fails_telling_nothing(&mut syncs, &failure, later);
+    assert!(syncs.ready_at().unwrap() < later);
+
+    assert!(matches!(
+        syncs.step(&harness.github, &harness.db.store),
+        Ok(Some(Progress::Changed(_)))
+    ));
+    assert_eq!(harness.operations(), ["SearchFilter"]);
+    assert!((harness.db.store.filter_results(&cpython()).unwrap()).contains_key(&query));
+    broken.close();
+    harness.finish();
+}
+
+#[test]
+fn a_saved_filter_s_search_that_fails_its_retry_lets_the_sync_run() {
+    let harness = Harness::new(
+        "filter-retry-broken",
+        vec![filter_page(0, &[], None, RATE_LIMIT)],
+    );
+    let broken = Store::stopped();
+    let mut syncs = Syncs::default();
+    syncs.add_listed(plain(cpython()));
     syncs.search_filter(&cpython(), "label:bug".to_owned().try_into().unwrap());
+    let later = soon();
 
-    assert!(matches!(syncs.step(&harness.github, &broken), Ok(None)));
-
+    for _ in 0..2 {
+        let failure = syncs.step(&harness.github, &broken).unwrap_err();
+        assert_eq!(failure.problem.kind, ErrorKind::Internal);
+        fails_telling_nothing(&mut syncs, &failure, later);
+    }
     assert!(syncs.searches.is_empty());
+    assert!(syncs.ready_at().unwrap() < later);
     broken.close();
     harness.finish();
 }

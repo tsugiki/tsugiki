@@ -73,10 +73,12 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
   as `is:open` ([#471](https://github.com/tsugiki/tsugiki/issues/471)). Save is off while either field is
   empty, and a name the Repository's Filters already use is refused. Confirming writes the Filter at the end
   of the Repository's Filters in `settings.toml`, opens it in place of the Inbox, clears the box, and starts
-  its first whole search at once, ahead of the sync's next step, with `created:` splitting past 1,000. The
-  new Filter starts with "On the Workbench" off, so its view lists its items as they land and the Workbench
-  doesn't change. From the Inbox the user reads, comments on and pins Issues and opens PRs. "View: Inbox" in
-  the command palette opens it.
+  its first whole search at once, ahead of the sync's next step, with `created:` splitting past 1,000.
+  A failure of this search alone shows in the status bar. The search retries the step once on the next
+  sync turn. If the retry fails, a later Repository sync can search the Filter again.
+  The new Filter starts with "On the Workbench" off, so its view lists its items as they land and the
+  Workbench doesn't change. From the Inbox the user reads, comments on and pins Issues and opens PRs.
+  "View: Inbox" in the command palette opens it.
   - **Show muted** ([#825](https://github.com/tsugiki/tsugiki/issues/825)), a switch atop the list, starts
     off and leaves out each row a **Muted author** wrote. It hides rows, not groups: a row stays while a
     row under it does, so a Muted author's Issue stays as the header of a PR someone else wrote and goes

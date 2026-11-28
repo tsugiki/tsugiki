@@ -481,9 +481,8 @@
     if (focused?.isConnected === false) focusCursor();
   }
 
-  /** The item Mark Seen and Mark Unseen act on: the item on show, or the line `stop` of the list. With the
-   * key of the Archived item that holds it, if the window draws one, Mark Seen keeps that item Archived
-   * (#490). */
+  /** The item Mark Seen and Mark Unseen act on: the item on show, or the line `stop` of the list. The key
+   * of its Archived item lets Mark Seen keep that item Archived (#490). */
   type Marked = {
     stop: Stop | undefined;
     number: number;
@@ -498,9 +497,9 @@
     const view = detail?.view;
     if (!view || detailMuted()) return undefined;
     const stop = detailLine();
-    // The Issue view knows whether its Issue is Archived, listed or not.
     const issue = detail instanceof IssueViewState ? detail.view : undefined;
-    const archived = issue ? issueArchived(issue) : stop && workbench.hiddenHolding(stop, "archived");
+    const pr = detail instanceof PrViewState ? detail.view : undefined;
+    const archived = issue ? issueArchived(issue) : pr?.hidden === "archived" ? pr.holding.key : undefined;
     return {
       stop,
       number: view.number,
@@ -718,12 +717,13 @@
   }
 
   /** What Archive and Mute act on in the Detail pane: the Issue on show, or the item that holds the PR on
-   * show, once its view has arrived. */
+   * show. A loaded PR view knows its item even while the list shows another view. */
   function detailHiding(): Hiding | undefined {
     if (detail instanceof IssueViewState) {
       const view = detail.view;
       return view ? { key: { kind: "issue", number: view.number }, mark: view.seen.mark } : undefined;
     }
+    if (detail?.view) return detail.view.holding;
     const line = detailLine();
     return line && workbench.hidingBy(line);
   }

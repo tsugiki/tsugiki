@@ -6,10 +6,10 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
   a web page.
   - Each link in a description, a comment or a NEWS entry that a click follows says in its tooltip where that
     click takes it, with the full address. Until the routing below lands, it says `Open in the browser:
-    <address>`. A link within the text (`#…`), or one with nowhere to go, is not followed, even with `Ctrl`,
-    and has no tooltip until the routing below lands. The address comes from the link's `href`, not its
-    words, so a link whose text names another place shows where it really goes. It shows whole: the native
-    tooltip wraps, and no middle ellipsis can hide the owner or repository of a long `github.com` path.
+    <address>`. A fragment link (`#…`) scrolls to its target within the same rendered text. A fragment
+    without a target there does nothing. Fragment links and links without an address have no browser
+    tooltip. The tooltip shows the full `href` even when the link text names another place. The native
+    tooltip wraps, so the owner and repository stay visible in a long `github.com` path.
     Holding `Ctrl` leaves the tooltip as it is.
   - An Issue or PR in the current Repository opens in the Detail pane. `Alt+←` / `Alt+→` go back and forward
     through what was opened, and move the cursor and the focus to its row. A slim bar over the Detail pane

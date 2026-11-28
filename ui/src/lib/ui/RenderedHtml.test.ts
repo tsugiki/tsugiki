@@ -48,14 +48,63 @@ it("leaves a right click and the side buttons alone", () => {
   expect(onlink).not.toHaveBeenCalled();
 });
 
-it("keeps a link within the text and one with nowhere to go from leaving", () => {
-  const onlink = shown('<a href="#a-heading">Near</a><a>Nowhere</a>');
+it("keeps fragments without a target in the same text from moving the window", () => {
+  const onlink = shown('<a href="#near">Near</a><a href="#">Empty</a><a>Nowhere</a>');
+  shown('<p id="near">In another comment</p>');
 
   expect(clickFollows(screen.getByText("Near"))).toBe(false);
+  expect(clickFollows(screen.getByText("Empty"))).toBe(false);
   expect(clickFollows(screen.getByText("Nowhere"))).toBe(false);
 
   expect(onlink).not.toHaveBeenCalled();
 });
+
+it.each([
+  ["target", "target"],
+  ["section-%C3%A9", "section-é"],
+  ["half%", "half%"],
+])("leaves a click to the browser when #%s points inside the text", (fragment, id) => {
+  const onlink = shown(`<a href="#${fragment}">Near</a><p id="${id}">Target</p>`);
+  const link = screen.getByText("Near");
+
+  expect(clickFollows(link)).toBe(true);
+  expect(clickFollows(link, "auxclick", 1)).toBe(false);
+  expect(onlink).not.toHaveBeenCalled();
+});
+
+it("scrolls to the local target when another comment uses the same ID", () => {
+  shown('<p id="near">In another comment</p>');
+  const onlink = shown('<a href="#near">Near</a><p id="near">Target</p>');
+  const scrollIntoView = vi.fn();
+  screen.getByText("Target").scrollIntoView = scrollIntoView;
+
+  expect(clickFollows(screen.getByText("Near"))).toBe(false);
+  expect(scrollIntoView).toHaveBeenCalledOnce();
+  expect(onlink).not.toHaveBeenCalled();
+});
+
+it.each([
+  ['target="_blank"', {}],
+  ["download", {}],
+  ["", { ctrlKey: true }],
+  ["", { metaKey: true }],
+  ["", { shiftKey: true }],
+  ["", { altKey: true }],
+] satisfies [string, MouseEventInit][])(
+  "keeps a local fragment in the pane even if the browser would open it elsewhere (%s, %o)",
+  (attributes, modifier) => {
+    const onlink = shown(`<a href="#near" ${attributes}>Near</a><p id="near">Target</p>`);
+    const scrollIntoView = vi.fn();
+    screen.getByText("Target").scrollIntoView = scrollIntoView;
+    const click = new MouseEvent("click", { bubbles: true, cancelable: true, ...modifier });
+
+    void fireEvent(screen.getByText("Near"), click);
+
+    expect(click.defaultPrevented).toBe(true);
+    expect(scrollIntoView).toHaveBeenCalledOnce();
+    expect(onlink).not.toHaveBeenCalled();
+  },
+);
 
 it("says where a link goes in its tooltip, from its address rather than its words", () => {
   shown('<p><a href="https://discuss.python.org/t/original-3-13-patch/123">original 3.13 patch</a></p>');

@@ -48,7 +48,7 @@
   class="rendered reading"
   {@attach show}
   onclick={(e) => {
-    followLink(e, onlink);
+    followLink(e, onlink, e.currentTarget);
   }}
   onauxclick={(e) => {
     // A right click opens a menu, and the side buttons go back and forward.

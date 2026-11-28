@@ -624,7 +624,7 @@ it("marks what Needs attention the way unread mail is, and says why", async () =
   const item = await screen.findByRole("listitem");
 
   const title = within(item).getByRole("button", { name: "#160662 gh-112564: Fix UAF for gc debug print" });
-  expect(title.firstElementChild?.tagName).toBe("STRONG");
+  expect(title.querySelector("strong")?.textContent).toBe("#160662 gh-112564: Fix UAF for gc debug print");
   expect(item.classList.contains("attention")).toBe(true);
   expect(
     within(item).getByText("Changes requested by some-reviewer · Review requested from you"),
@@ -3457,7 +3457,9 @@ const answerMoved = (moved: boolean) => {
 
 /** The headlines of the list's items, in its order. */
 const itemOrder = () =>
-  Array.from(document.querySelectorAll(".list .item > .row [data-item]"), (button) => button.textContent);
+  Array.from(document.querySelectorAll(".list .item > .row [data-item]"), (button) =>
+    button.textContent.trim(),
+  );
 
 it("scrolls the list to the Detail pane's row once a change moves the row off the screen (#796)", async () => {
   const send = catchEveryListener();

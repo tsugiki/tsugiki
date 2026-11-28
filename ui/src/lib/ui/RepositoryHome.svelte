@@ -1554,30 +1554,34 @@
 {#snippet label(item: { number: number; title: string })}<code>{`#${String(item.number)}`}</code
   >{` ${item.title}`}{/snippet}
 
-<!-- The icon sits beside the button, so the button's name stays the item's headline. The button's `::after`
-     covers its row, so a click anywhere on the row opens the item. -->
+<!-- The icon and title open the same item. The button's `::after` extends its hit area over the row. -->
 {#snippet line(
   stop: Stop,
   item: { number: number; title: string },
   attention: boolean,
   icon: Octicon | undefined,
 )}
-  {#if icon}
-    <span class="state-icon"><StateIcon {icon} /></span>
-  {/if}
+  {@const rowId = lineName(stop)}
   <button
     class="link title"
-    data-item={lineName(stop)}
+    data-item={rowId}
+    aria-labelledby={`title-${rowId}`}
+    aria-describedby={icon ? `state-${rowId}` : undefined}
     aria-current={sameStop(workbench.cursor, stop) ? "true" : undefined}
     onclick={() => {
       open(stop);
     }}
   >
-    {#if attention}
-      <strong>{@render label(item)}</strong>
-    {:else}
-      {@render label(item)}
+    {#if icon}
+      <span class="state-icon" id={`state-${rowId}`}><StateIcon {icon} /></span>
     {/if}
+    <span class="title-text" id={`title-${rowId}`}>
+      {#if attention}
+        <strong>{@render label(item)}</strong>
+      {:else}
+        {@render label(item)}
+      {/if}
+    </span>
   </button>
 {/snippet}
 
@@ -2195,6 +2199,16 @@
   .title {
     flex: 1;
     min-width: 0;
+  }
+
+  button.title {
+    display: flex;
+    align-items: baseline;
+    gap: inherit;
+  }
+
+  .title-text,
+  .placeholder .title {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -2206,16 +2220,14 @@
     inset: 0;
   }
 
-  /* The state icon sits above the title's cover, so its tooltip names the state, and a Stale review does too,
-     so its tooltip lists the files. Inside its wrapper, one line tall, the icon centres on the title's
-     line. */
-  .headline > .state-icon,
+  /* Keep the state and Stale review tooltips above the title's cover. */
+  .title > .state-icon,
   .stale {
     position: relative;
     z-index: 1;
   }
 
-  .headline > .state-icon {
+  .title > .state-icon {
     align-self: center;
   }
 

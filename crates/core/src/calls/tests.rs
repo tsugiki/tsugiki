@@ -79,7 +79,7 @@ impl Setup {
                 | SessionMessage::Stop
                 | SessionMessage::Check { .. }
                 | SessionMessage::FetchUnstored { .. }
-                | SessionMessage::Search { .. }
+                | SessionMessage::Search(_)
                 | SessionMessage::FillPlaceholders { .. }
                 | SessionMessage::FilterSearch { .. }
                 | SessionMessage::ShowMuted { .. }
@@ -213,7 +213,7 @@ fn synced_and_saved(messages: &Receiver<SessionMessage>) -> Vec<String> {
             | SessionMessage::Stop
             | SessionMessage::Check { .. }
             | SessionMessage::FetchUnstored { .. }
-            | SessionMessage::Search { .. }
+            | SessionMessage::Search(_)
             | SessionMessage::FillPlaceholders { .. }
             | SessionMessage::FilterSearch { .. }
             | SessionMessage::ShowMuted { .. }
@@ -763,10 +763,17 @@ fn a_search_the_window_types_goes_to_the_session_with_its_text_and_a_blank_one_s
     };
     let calls = Calls::launched(fetching, db.reader.clone(), copy, parts);
 
-    calls.search_inbox(cpython(), "  review:approved  ");
-    calls.search_inbox(cpython(), "   ");
+    calls.search_inbox(cpython(), "   ").unwrap();
+    let searching =
+        std::thread::spawn(move || calls.search_inbox(cpython(), "  review:approved  "));
+    let SessionMessage::Search(ask) = session.recv_timeout(Duration::from_secs(10)).unwrap() else {
+        panic!("expected the Inbox search");
+    };
+    ask.reply.send(Ok(())).unwrap();
+    searching.join().unwrap().unwrap();
     db.close();
 
-    let sent: Vec<String> = (session.try_iter()).map(named).collect();
-    assert_eq!(sent, ["search review:approved"]);
+    assert_eq!(ask.repository, cpython());
+    assert_eq!(named(SessionMessage::Search(ask)), "search review:approved");
+    assert_eq!(session.try_iter().count(), 0);
 }

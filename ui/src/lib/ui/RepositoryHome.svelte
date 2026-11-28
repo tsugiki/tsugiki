@@ -1846,6 +1846,9 @@
     />
   {/if}
   {#if !panes.hidden("list")}
+    {@const searchProgress = workbench.selected.kind === "inbox" ? workbench.searchProgress : undefined}
+    {@const noRows = workbench.items?.length === 0 && workbench.muted.length === 0}
+    {@const emptySearch = noRows && workbench.selected.kind === "inbox" && workbench.search.trim() !== ""}
     <!-- The list keeps the width the user gave it beside the Detail pane, and fills the window without
          one. -->
     <section
@@ -1916,14 +1919,17 @@
         {/if}
       </header>
       {@render problems()}
-      {#if workbench.items?.length === 0 && workbench.muted.length === 0}
-        {#if workbench.selected.kind === "inbox" && workbench.search.trim() !== ""}
-          <p role="status">
-            {workbench.needsGitHub
-              ? "This search needs GitHub, so Tsugiki is asking it. Clearing the box brings the whole list back."
-              : "Nothing matches this search. Clearing the box brings the whole list back."}
-          </p>
-        {:else}
+      {#if searchProgress?.kind === "failed"}
+        <p role="status">{searchProgress.message}</p>
+      {:else if searchProgress?.kind === "asking" || (emptySearch && workbench.needsGitHub)}
+        <p role="status">
+          This search needs GitHub, so Tsugiki is asking it. Clearing the box brings the whole list back.
+        </p>
+      {:else if emptySearch}
+        <p role="status">Nothing matches this search. Clearing the box brings the whole list back.</p>
+      {/if}
+      {#if noRows}
+        {#if !emptySearch}
           <p>{EMPTY[workbench.selected.kind]}</p>
         {/if}
       {:else if workbench.items}

@@ -2948,7 +2948,7 @@ fn stopping_hands_the_session_a_settings_change_that_ends_during_the_stop() {
 }
 
 #[test]
-fn a_search_the_window_types_is_sent_and_a_blank_one_sends_nothing() {
+fn a_search_the_window_types_answers_why_it_failed_and_a_blank_one_sends_nothing() {
     let (folders, _root) = temp_folders("wired-inbox-search");
     let wired = Wired::start(Ok(folders), no_network());
     let search = |text: &str| json!({ "repository": CPYTHON, "search": text });
@@ -2961,7 +2961,7 @@ fn a_search_the_window_types_is_sent_and_a_blank_one_sends_nothing() {
     );
     drop(wired.stop());
 
-    assert_eq!(sent, Ok(Value::Null));
+    assert_eq!(sent.unwrap_err()["kind"], "offline");
     assert_eq!(blank, Ok(Value::Null));
     assert!(unknown.is_err(), "{unknown:?}");
 }

@@ -234,6 +234,14 @@ pub(crate) enum ScreenMove {
     WindowLoaded,
 }
 
+/// A request to run the Inbox's search on GitHub and reply to the caller.
+#[derive(Debug)]
+pub(crate) struct InboxSearchAsk {
+    pub(crate) repository: RepositoryName,
+    pub(crate) text: String,
+    pub(crate) reply: Sender<Result<(), Error>>,
+}
+
 /// What the session's thread is asked. It takes each at once: it saves a mark or the Mirror's patch-ids
 /// itself, and passes a demand on GitHub to the GitHub thread, which alone holds the token and the client,
 /// and takes it between two sync steps, so the user's demands go ahead of the sync's tiers.
@@ -280,10 +288,7 @@ pub(crate) enum SessionMessage {
         reply: Sender<ItemFetch>,
     },
     /// The user typed `text` in the Inbox's search box, which GitHub answers (#465).
-    Search {
-        repository: RepositoryName,
-        text: String,
-    },
+    Search(InboxSearchAsk),
     /// The Inbox shows placeholders `numbers`, which the user scrolled to, so the session fetches their
     /// facts in batches of `PLACEHOLDER_BATCH` (#466). The answer names the numbers the core handled, so the
     /// window can ask again for the rest.
@@ -617,9 +622,16 @@ impl Fetching {
     }
 
     /// The user typed the Inbox search `text` in `repository`: the session asks GitHub for its results ahead
-    /// of the sync's next step, and the `changed` event follows their answer (#465).
-    pub fn search(&self, repository: RepositoryName, text: String) {
-        self.to_session(SessionMessage::Search { repository, text });
+    /// of the sync's next step. The `changed` event follows a saved answer (#465), and the reply tells
+    /// the caller of a failure (#1109).
+    pub fn search(&self, repository: RepositoryName, text: String) -> Result<(), Error> {
+        answered(&self.session, |reply| {
+            SessionMessage::Search(InboxSearchAsk {
+                repository,
+                text,
+                reply,
+            })
+        })
     }
 
     /// The Inbox shows placeholders `numbers` of `repository`, which the user scrolled to: the session

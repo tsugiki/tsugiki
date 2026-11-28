@@ -279,8 +279,8 @@ export const commands = {
 	 */
 	inbox: (repository: string, page: InboxPage_Deserialize, search: string) => typedError<Inbox_Serialize, Error_Serialize>(__TAURI_INVOKE("inbox", { repository, page, search })),
 	/**
-	 *  Sends the Inbox's search box text `search` to GitHub, which answers which rows it finds and how many,
-	 *  ahead of the sync's next step (#465), and returns at once. A blank text sends nothing.
+	 *  Sends the Inbox search to GitHub ahead of the sync's next step (#465). Returns why it failed (#1109).
+	 *  A blank text sends nothing.
 	 */
 	searchInbox: (repository: string, search: string) => typedError<null, Error_Serialize>(__TAURI_INVOKE("search_inbox", { repository, search })),
 	/**

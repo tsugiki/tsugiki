@@ -17,8 +17,8 @@ use crate::error::{Error, ErrorKind};
 use crate::facts::issue_content::IssueContent;
 use crate::facts::pull_request_content::PullRequestContent;
 use crate::fetching::{
-    Fetched, Fetching, Headless, Item, ItemFetch, ItemUnfetched, NoHead, PLACEHOLDER_BATCH,
-    ScreenMove,
+    Fetched, Fetching, Headless, InboxSearchAsk, Item, ItemFetch, ItemUnfetched, NoHead,
+    PLACEHOLDER_BATCH, ScreenMove,
 };
 use crate::filters::FilterQuery;
 use crate::github::in_flight::{self, AnnounceInFlight, Asking};
@@ -74,10 +74,7 @@ pub(super) enum GitHubMessage {
         reply: Sender<ItemFetch>,
     },
     /// The user typed `text` in the Inbox's search box, which GitHub answers (#465).
-    Search {
-        repository: RepositoryName,
-        text: String,
-    },
+    Search(InboxSearchAsk),
     /// The Inbox shows placeholders `numbers`, which the user scrolled to, so GitHub answers what they say
     /// (#466). The reply names the numbers the thread handled, so the window can ask for the rest.
     FillPlaceholders {
@@ -255,10 +252,7 @@ pub(super) enum Turn {
     /// The user asked for an Issue or a PR the database lacks, and waits for what the fetch found.
     FetchUnstored(Item, Sender<ItemFetch>),
     /// The user typed a search in the Inbox's box, which GitHub answers (#465).
-    Search {
-        repository: RepositoryName,
-        text: String,
-    },
+    Search(InboxSearchAsk),
     /// The Inbox shows placeholders `numbers`, which the user scrolled to, so GitHub answers what they say
     /// (#466). The reply names the numbers the thread handled, so the window can ask for the rest.
     FillPlaceholders {
@@ -359,14 +353,10 @@ impl Refreshes {
         let mut backlog = self.backlog.borrow_mut();
         backlog.extend(self.incoming.try_iter());
         backlog.iter().any(|message| {
-            let GitHubMessage::Search {
-                repository: waiting,
-                text: asked,
-            } = message
-            else {
+            let GitHubMessage::Search(asked) = message else {
                 return false;
             };
-            waiting.is_same(repository) && asked != text
+            asked.repository.is_same(repository) && asked.text != text
         })
     }
 
@@ -434,14 +424,19 @@ impl Refreshes {
                 Ok(GitHubMessage::Screen(moved)) => {
                     self.on_screen.borrow_mut().moved(moved, Instant::now());
                 }
-                // Each dropped reply answers its caller that GitHub can't be asked. A search while there is
-                // no token waits for the next one the user types: the list keeps the rows it showed (#465).
+                // Each dropped reply answers its caller that GitHub can't be asked.
                 Ok(
                     GitHubMessage::Check { .. }
                     | GitHubMessage::FetchUnstored { .. }
-                    | GitHubMessage::Size { .. }
-                    | GitHubMessage::Search { .. },
+                    | GitHubMessage::Size { .. },
                 ) => {}
+                Ok(GitHubMessage::Search(ask)) => answer(
+                    &ask.reply,
+                    Err(Error::new(
+                        ErrorKind::NoToken,
+                        "Tsugiki needs a GitHub token to search the Inbox.",
+                    )),
+                ),
                 // A fill while there is no token asks nothing, and the window may ask again once there is.
                 Ok(GitHubMessage::FillPlaceholders { reply, .. }) => {
                     #[expect(
@@ -475,9 +470,7 @@ impl Refreshes {
                 Ok(GitHubMessage::FetchUnstored { item, reply }) => {
                     return Turn::FetchUnstored(item, reply);
                 }
-                Ok(GitHubMessage::Search { repository, text }) => {
-                    return Turn::Search { repository, text };
-                }
+                Ok(GitHubMessage::Search(ask)) => return Turn::Search(ask),
                 Ok(GitHubMessage::FillPlaceholders {
                     repository,
                     numbers,
@@ -728,15 +721,18 @@ pub(super) fn watch(
                 let _ = reply.send(answer);
             }
             // GitHub's answer to a search typed in the Inbox (#465).
-            Turn::Search { repository, text } => searched(Searching {
-                board: &mut *board,
-                store,
-                github: &github,
-                queue: refreshes,
-                syncs: &mut syncs,
-                due: &due,
-                request: SearchRequest { repository, text },
-            }),
+            Turn::Search(request) => answer(
+                &request.reply,
+                searched(Searching {
+                    board: &mut *board,
+                    store,
+                    github: &github,
+                    queue: refreshes,
+                    syncs: &mut syncs,
+                    due: &due,
+                    request: &request,
+                }),
+            ),
             // What the placeholders an Inbox search left say (#466).
             Turn::FillPlaceholders {
                 repository,
@@ -799,12 +795,6 @@ pub(super) fn watch(
     }
 }
 
-/// A search typed in the Inbox's box, and the Repository it runs in (#465).
-struct SearchRequest {
-    repository: RepositoryName,
-    text: String,
-}
-
 /// What an answer to a typed Inbox search needs (#465).
 struct Searching<'a> {
     board: &'a mut StatusBoard,
@@ -813,12 +803,11 @@ struct Searching<'a> {
     queue: &'a Refreshes,
     syncs: &'a mut Syncs,
     due: &'a Due,
-    request: SearchRequest,
+    request: &'a InboxSearchAsk,
 }
 
-/// Runs the typed Inbox search `text` in `repository`, and tells the window of its answer or its problem. An
-/// answer to a query the user has typed past changes nothing, and the newer query ran before it is saved.
-fn searched(parts: Searching<'_>) {
+/// Runs the typed Inbox search and lets the window know when its rows change or the search fails.
+fn searched(parts: Searching<'_>) -> Result<(), Error> {
     let Searching {
         board,
         store,
@@ -828,18 +817,26 @@ fn searched(parts: Searching<'_>) {
         due,
         request,
     } = parts;
-    match keep_search(github, store, queue, &request) {
-        Ok(Some(change)) => board.changed(&change),
-        Ok(None) => {}
-        Err(problem) if problem.kind.speaks_for_all_of_github() => {
-            syncs.after_fetch_failure(&problem, due.status);
-            tell_problem(board, problem, store);
+    match keep_search(github, store, queue, request) {
+        Ok(change) => {
+            if let Some(change) = change {
+                board.changed(&change);
+            }
+            Ok(())
         }
-        Err(problem) => log::warn!(
-            "GitHub wouldn't answer the Inbox search in {}: {}",
-            request.repository,
-            problem.message
-        ),
+        Err(problem) => {
+            if problem.kind.speaks_for_all_of_github() {
+                syncs.after_fetch_failure(&problem, due.status);
+                tell_problem(board, problem.clone(), store);
+            } else {
+                log::warn!(
+                    "GitHub wouldn't answer the Inbox search in {}: {}",
+                    request.repository,
+                    problem.message
+                );
+            }
+            Err(problem)
+        }
     }
 }
 
@@ -849,7 +846,7 @@ fn keep_search(
     github: &GitHub,
     store: &Store,
     queue: &Refreshes,
-    search: &SearchRequest,
+    search: &InboxSearchAsk,
 ) -> Result<Option<Change>, Error> {
     let asked = Asking::Search {
         repository: search.repository.clone(),

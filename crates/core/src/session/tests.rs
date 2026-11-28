@@ -574,10 +574,11 @@ fn a_query_typed_after_a_search_makes_the_older_answers_out_of_date() {
     let (refreshes, _done) =
         Refreshes::new(HOURLY, incoming, unheard(), listed(vec![plain_gcmon()]));
     to_github
-        .send(GitHubMessage::Search {
+        .send(GitHubMessage::Search(crate::fetching::InboxSearchAsk {
             repository: cpython(),
             text: "newer".to_owned(),
-        })
+            reply: mpsc::channel().0,
+        }))
         .unwrap();
 
     assert!(
@@ -629,16 +630,16 @@ fn wait_for_search(asked: &Receiver<(String, Value)>) {
     }
 }
 
-/// A session that searches gcmon for `text`, and what the database then holds as its answer.
+/// The reply to a search of gcmon for `text` and what the database then holds as its answer.
 fn after_searching(
     name: &str,
     (access, asked): (GitHubAccess, Receiver<(String, Value)>),
     text: &str,
-) -> Option<InboxSearch> {
+) -> (Result<(), Error>, Option<InboxSearch>) {
     let (folders, folder) = temp_folders(name);
     let (board, _seen) = watched_board();
     let session = Session::start(board, Ok(folders.clone()), reaching(access), HOURLY);
-    session.fetching().search(gcmon(), text.to_owned());
+    let result = session.fetching().search(gcmon(), text.to_owned());
     wait_for_search(&asked);
     session.stop(PLENTY);
 
@@ -649,14 +650,16 @@ fn after_searching(
         .read_snapshot(&gcmon(), move |snapshot| snapshot.inbox_search(&query))
         .unwrap();
     db.close();
-    answer
+    (result, answer)
 }
 
 #[test]
 fn a_search_the_window_types_is_asked_of_github_and_kept_for_the_inbox() {
     let access = scripted(vec![signed_in(), gcmon_issue_page()]);
 
-    let answer = after_searching("session-search-saved", access, "review:approved").unwrap();
+    let (result, answer) = after_searching("session-search-saved", access, "review:approved");
+    result.unwrap();
+    let answer = answer.unwrap();
 
     assert_eq!(answer.hits.len(), 1);
     assert_eq!(answer.hits[0].number, 7);
@@ -667,17 +670,39 @@ fn a_search_the_window_types_is_asked_of_github_and_kept_for_the_inbox() {
 fn a_search_github_cant_answer_says_the_problem_and_keeps_no_answer() {
     let access = scripted(vec![signed_in(), Err(Unreachable::Offline)]);
 
-    assert!(after_searching("session-search-offline", access, "fix").is_none());
+    let (result, cached) = after_searching("session-search-offline", access, "fix");
+    assert_eq!(result.unwrap_err().kind, ErrorKind::Offline);
+    assert!(cached.is_none());
 }
 
 #[test]
-fn a_search_github_refuses_is_logged_and_keeps_no_answer() {
+fn a_search_github_refuses_answers_why_and_keeps_no_answer() {
     let access = scripted(vec![
         signed_in(),
         reply_ok(r#"{"errors":[{"message":"Something broke"}]}"#),
     ]);
 
-    assert!(after_searching("session-search-refused", access, "fix").is_none());
+    let (result, cached) = after_searching("session-search-refused", access, "fix");
+    assert_eq!(
+        result.unwrap_err(),
+        Error::new(ErrorKind::QueryRefused, "GitHub said: Something broke")
+    );
+    assert!(cached.is_none());
+}
+
+#[test]
+fn an_inbox_search_with_no_token_answers_why() {
+    let access = GitHubAccess {
+        transport: Box::new(Canned(Err(Unreachable::Offline))),
+        token_from: NO_GH,
+    };
+    let (folders, _folder) = temp_folders("session-search-no-token");
+    let (board, _seen) = watched_board();
+    let session = Session::start(board, Ok(folders), reaching(access), HOURLY);
+    let result = session.fetching().search(gcmon(), "fix".to_owned());
+    session.stop(PLENTY);
+
+    assert_eq!(result.unwrap_err().kind, ErrorKind::NoToken);
 }
 
 /// Waits until GitHub is asked for the placeholders' facts, so the thread has answered before the session
@@ -840,7 +865,10 @@ fn a_placeholder_github_has_nothing_under_isnt_fetched_again() {
     );
     wait_for_placeholders(&asked);
     // The search's answer proves the fill's turn is over, so the next call is not racing it.
-    session.fetching().search(gcmon(), "fix".to_owned());
+    session
+        .fetching()
+        .search(gcmon(), "fix".to_owned())
+        .unwrap();
     wait_for_search(&asked);
     let again = session
         .fetching()
@@ -2038,7 +2066,7 @@ fn named_for_github(message: GitHubMessage) -> String {
         GitHubMessage::FetchUnstored { item, reply } => {
             SessionMessage::FetchUnstored { item, reply }
         }
-        GitHubMessage::Search { repository, text } => SessionMessage::Search { repository, text },
+        GitHubMessage::Search(ask) => SessionMessage::Search(ask),
         GitHubMessage::FillPlaceholders {
             repository,
             numbers,

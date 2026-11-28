@@ -212,6 +212,7 @@ beforeEach(() => {
   core.turnWindow.mockResolvedValue(null);
   core.tokenSource.mockResolvedValue("gh");
   core.workbench.mockResolvedValue(workbenchPage([]));
+  core.searchInbox.mockResolvedValue(done);
   core.settings.mockResolvedValue(structuredClone(SETTINGS));
   core.recentCommands.mockResolvedValue([]);
   core.quickOpen.mockResolvedValue({ status: "ok", data: { named: null, others: [] } });

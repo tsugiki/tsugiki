@@ -184,6 +184,8 @@ export class WorkbenchState {
   search = $state("");
   /** Whether the search the last answer read needs GitHub, so the Inbox lists no local rows (#464). */
   needsGitHub = $state(false);
+  /** The current Inbox search's request in flight or its result (#1109). */
+  searchProgress = $state<{ kind: "asking" } | { kind: "answered" } | { kind: "failed"; message: string }>();
   /** How many results the search's answer listed of how many it reaches, past GitHub's 1,000 (#465). */
   truncated = $state<Truncated | null>(null);
   /** The Filter the Inbox's search would save as, with the trimmed box text it was read for, as the last
@@ -191,8 +193,8 @@ export class WorkbenchState {
   #filterQuery = $state<{ search: string; query: string }>();
   /** The timer that sends a paused search to GitHub (#465). */
   #searchTimer: ReturnType<typeof setTimeout> | undefined;
-  /** The trimmed search Tsugiki last sent to GitHub, so entering the Inbox can send one it dropped (#465). */
-  #searchAsked = "";
+  /** Each send or edit advances this number, including an edit back to an earlier query. */
+  #searchRequest = 0;
   /** A change to "Show muted" is saving. */
   savingShowMuted = $state(false);
   /** The reason the core refused the last change to "Show muted", if it did. */
@@ -293,8 +295,7 @@ export class WorkbenchState {
     // a text Tsugiki never sent sends it now, so the box's text and the list agree again (#465).
     this.#clearSearchTimer();
     if (view.kind === "inbox") {
-      const text = this.search.trim();
-      if (text !== "" && text !== this.#searchAsked) void this.sendSearch();
+      if (this.search.trim() !== "" && this.searchProgress === undefined) void this.sendSearch();
     } else {
       this.needsGitHub = false;
       this.truncated = null;
@@ -309,7 +310,7 @@ export class WorkbenchState {
    * drops it like a change of view does. */
   async setSearch(text: string) {
     if (text === this.search) return;
-    this.search = text;
+    this.#replaceSearch(text);
     this.#reach = undefined;
     this.#pending.clear();
     // A pause of about a second sends the whole query to GitHub (#465). A new text drops the timer of the
@@ -322,13 +323,23 @@ export class WorkbenchState {
   }
 
   /** Sends the Inbox's search box text to GitHub, which answers which rows it finds and how many (#465). The
-   * `changed` event reads the Inbox again once the answer lands, and a newer text drops that answer. */
+   * `changed` event reads the Inbox again once the answer lands. The request itself says why it failed. */
   async sendSearch() {
     this.#clearSearchTimer();
     const text = this.search.trim();
     if (text === "") return;
-    this.#searchAsked = text;
-    await commands.searchInbox(this.#repository, text);
+    const request = ++this.#searchRequest;
+    this.searchProgress = { kind: "asking" };
+    const message = await problemIn(() => commands.searchInbox(this.#repository, text));
+    if (request !== this.#searchRequest) return;
+    this.searchProgress = message === undefined ? { kind: "answered" } : { kind: "failed", message };
+  }
+
+  #replaceSearch(text: string) {
+    if (text === this.search) return;
+    this.search = text;
+    this.#searchRequest += 1;
+    this.searchProgress = undefined;
   }
 
   #clearSearchTimer() {
@@ -348,7 +359,7 @@ export class WorkbenchState {
       return false;
     }
     // The resets the box's own typing makes, before the Inbox sends and asks for the query below.
-    this.search = spelled.data;
+    this.#replaceSearch(spelled.data);
     this.#reach = undefined;
     this.needsGitHub = false;
     this.truncated = null;
@@ -378,8 +389,7 @@ export class WorkbenchState {
   async saveFilter(name: string, query: string): Promise<string | undefined> {
     const problem = await problemIn(commands.saveFilter(this.#repository, name, query));
     if (problem !== undefined) return problem;
-    this.search = "";
-    this.#searchAsked = "";
+    this.#replaceSearch("");
     this.#clearSearchTimer();
     this.needsGitHub = false;
     this.truncated = null;
@@ -841,6 +851,7 @@ export class WorkbenchState {
 
   stop() {
     this.#stopped = true;
+    this.#searchRequest += 1;
     this.#pending.clear();
     this.#clearSearchTimer();
     this.#stopListening?.();

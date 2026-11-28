@@ -1703,6 +1703,7 @@ const pagesAsked = () => vi.mocked(commands.inbox).mock.calls.map(([, asked]) =>
 describe("WorkbenchState's Inbox", () => {
   beforeEach(() => {
     vi.resetAllMocks();
+    vi.mocked(commands.searchInbox).mockResolvedValue(done);
   });
 
   /** A state that has the Inbox on show. */
@@ -1828,7 +1829,6 @@ describe("WorkbenchState's Inbox", () => {
     catchChanged();
     vi.mocked(commands.personQuery).mockResolvedValue(ok("is:open author:alice"));
     vi.mocked(commands.workbench).mockResolvedValue(answer());
-    vi.mocked(commands.searchInbox).mockResolvedValue(done);
     const state = new WorkbenchState("python/cpython");
     await state.load();
 
@@ -1838,6 +1838,7 @@ describe("WorkbenchState's Inbox", () => {
     expect(commands.personQuery).toHaveBeenCalledExactlyOnceWith("alice");
     expect(state.search).toBe("is:open author:alice");
     expect(state.selected).toEqual({ kind: "inbox" });
+    await state.openPerson("alice");
     expect(commands.searchInbox).toHaveBeenCalledExactlyOnceWith("python/cpython", "is:open author:alice");
     state.stop();
   });
@@ -1874,7 +1875,6 @@ describe("WorkbenchState's Inbox", () => {
     });
     vi.mocked(commands.personQuery).mockReturnValueOnce(alice).mockReturnValueOnce(bob);
     vi.mocked(commands.workbench).mockResolvedValue(answer());
-    vi.mocked(commands.searchInbox).mockResolvedValue(done);
     const state = new WorkbenchState("python/cpython");
     await state.load();
 

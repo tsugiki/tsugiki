@@ -2,7 +2,6 @@ import { fireEvent, render, screen } from "@testing-library/svelte";
 import { tick } from "svelte";
 import { afterEach, expect, it, vi } from "vitest";
 import { ActionNotice, NOTICE_MS, PANEL_EDGE, PANEL_GAP } from "$lib/state/action-notice.svelte";
-import { HUD_BOTTOM } from "$lib/state/hud.svelte";
 import { measureHeight } from "$lib/testing/helpers";
 import { testHud } from "$lib/testing/state";
 import ActionPanel from "./ActionPanel.svelte";
@@ -172,7 +171,7 @@ it("says the room a list that fills the window must leave for it, above the bar 
   hud.visible = true;
   hud.height = 100;
   await tick();
-  expect(onclearance).toHaveBeenLastCalledWith(HUD_BOTTOM + 100 + PANEL_GAP + 28 - 24);
+  expect(onclearance).toHaveBeenLastCalledWith(8 + 100 + PANEL_GAP + 28);
 });
 
 it("sits above the status bar at the height it draws, at the edge while it draws nothing, and above the HUD", async () => {
@@ -186,5 +185,8 @@ it("sits above the status bar at the height it draws, at the edge while it draws
   hud.visible = true;
   hud.height = 100;
   await tick();
-  expect(panel().style.bottom).toBe(`${String(HUD_BOTTOM + 100 + PANEL_GAP)}px`);
+  expect(panel().style.bottom).toBe("140px");
+
+  await rerender({ notice, hud, statusBarHeight: 43 });
+  expect(panel().style.bottom).toBe("159px");
 });

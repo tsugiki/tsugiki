@@ -3,7 +3,7 @@
   // last action on an item did. It never takes the focus, and it is a polite live region that stays in the
   // page empty, so a screen reader announces each change as the status bar's status does.
   import { type ActionNotice, PANEL_EDGE, PANEL_GAP, overBox } from "$lib/state/action-notice.svelte";
-  import { HUD_BOTTOM, type HudState } from "$lib/state/hud.svelte";
+  import { hudBottom, type HudState } from "$lib/state/hud.svelte";
 
   let {
     notice,
@@ -21,7 +21,11 @@
   /** How far the panel sits above the window's bottom edge: above the HUD while it shows, and otherwise above
    * the status bar at the height it draws, or at the edge itself while it draws nothing. */
   const bottom = $derived(
-    hud.visible ? HUD_BOTTOM + hud.height + PANEL_GAP : statusBarHeight > 0 ? statusBarHeight + PANEL_GAP : 0,
+    hud.visible
+      ? hudBottom(statusBarHeight) + hud.height + PANEL_GAP
+      : statusBarHeight > 0
+        ? statusBarHeight + PANEL_GAP
+        : 0,
   );
 
   /** The panel's painted size, which the browser reports as its text wraps and the window changes. It is the

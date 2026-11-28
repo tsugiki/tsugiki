@@ -66,6 +66,9 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
   `Enter` on the open PR's row switch the PR view's tabs and leave the focus where it was: in the Issue list
   it stays there, and in the Detail pane it follows to the new tab's content. The focus reaches the pane by a
   click in it, by hiding the list, or with `F6`.
+- With the focus in an open PR's Detail pane, Archive and Mute act on the item that holds the PR even
+  when the list shows another view. Mark Seen and Mark Unseen act on the PR and use its item's Archived
+  state. Mute Author in the palette acts on the PR's author.
 - `Ctrl+K O`, "one", switches the Files tab between all files and one file at a time. It is a `Ctrl+K`
   chord, as `Ctrl+K Z` is for the panes, because a free `Ctrl+Alt` letter would clash with AltGr, which
   Windows sends as `Ctrl+Alt` to type characters such as Polish ó on `AltGr+O`. VS Code's own `Ctrl+K O`

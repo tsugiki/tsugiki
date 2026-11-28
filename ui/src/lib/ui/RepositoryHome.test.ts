@@ -2610,12 +2610,13 @@ const threeAlone = async ({ inbox = false } = {}) => {
     seen: { mark: { numbers: [number], up_to: "2026-11-04T10:00:00Z", findings: [] }, state: "new_activity" },
   });
   const [first, next, last] = [alone(5, "Alone"), alone(6, "Next"), alone(8, "Last")];
-  core.pullRequest.mockImplementation((_repository: string, number: number) =>
-    Promise.resolve({
+  core.pullRequest.mockImplementation((_repository: string, number: number) => {
+    const item = alone(number, `PR ${String(number)}`);
+    return Promise.resolve({
       status: "ok",
-      data: { ...row, ...alone(number, `PR ${String(number)}`), content: null, issues: [] },
-    }),
-  );
+      data: { ...row, ...item, content: null, issues: [], holding: { key: item.key, mark: item.seen.mark } },
+    });
+  });
   const answer = (items: object[]) => {
     core.workbench.mockResolvedValue(workbenchPage(items, { count: items.length }));
     core.inbox.mockResolvedValue(pageOf(items));
@@ -4170,6 +4171,83 @@ it("unarchives an Archived Standalone PR from its button", async () => {
 
   expect(core.unarchive).toHaveBeenCalledExactlyOnceWith("python/cpython", standalone.key, expect.anything());
 });
+
+it.each(["keys", "palette"] as const)(
+  "archives and mutes the item that holds the PR through %s while the list shows another view",
+  async (entry) => {
+    const { component, treeRow } = await listing();
+    await fireEvent.click(treeRow);
+    const pane = await screen.findByRole("region", { name: "PR view" });
+    await within(pane).findByRole("button", { name: "Mark Seen" });
+
+    core.workbench.mockResolvedValue(workbenchPage([]));
+    await fireEvent.click(screen.getByRole("button", { name: "Archived" }));
+    await screen.findByText("Nothing archived. E archives the item under the cursor.");
+    pane.focus();
+
+    if (entry === "keys") {
+      await fireEvent.keyDown(pane, { key: "e" });
+      await fireEvent.keyDown(pane, { key: "m" });
+    } else {
+      paletteRow(component, "archive", pane)?.run();
+      paletteRow(component, "mute", pane)?.run();
+    }
+    const muteAuthor = paletteRow(component, "mute_author", pane);
+    expect(muteAuthor?.title).toBe("Mute Author");
+    muteAuthor?.run();
+
+    const holding = { key: issue.key, mark: issue.seen.mark };
+    for (const hide of [core.archive, core.mute]) {
+      expect(hide).toHaveBeenCalledExactlyOnceWith("python/cpython", holding, expect.anything());
+    }
+    expect(core.muteAuthor).toHaveBeenCalledExactlyOnceWith("python/cpython", row.author, expect.anything());
+  },
+);
+
+it.each(["keys", "palette"] as const)(
+  "marks the PR on show seen or unseen through %s with its Archived key while the list shows another view",
+  async (entry) => {
+    const holding = { key: { kind: "issue" as const, number: issue.number }, mark: issue.seen.mark };
+    core.pullRequest.mockResolvedValue(
+      ok({
+        ...row,
+        content: null,
+        hidden: "archived",
+        issues: [{ number: issue.number, pinned: false }],
+        holding,
+      }),
+    );
+    const { component, treeRow } = await listing();
+    await fireEvent.click(treeRow);
+    const pane = await screen.findByRole("region", { name: "PR view" });
+    await within(pane).findByRole("button", { name: "Mark Seen" });
+
+    core.workbench.mockResolvedValue(workbenchPage([]));
+    await fireEvent.click(screen.getByRole("button", { name: /^Pinned issues/i }));
+    await screen.findByText(/^No Pinned issue to show/);
+    pane.focus();
+
+    if (entry === "keys") {
+      await fireEvent.keyDown(pane, { key: "q" });
+      await fireEvent.keyDown(pane, { key: "Q", shiftKey: true });
+    } else {
+      paletteRow(component, "mark_seen", pane)?.run();
+      paletteRow(component, "mark_unseen", pane)?.run();
+    }
+
+    expect(core.keepArchived).toHaveBeenCalledExactlyOnceWith(
+      "python/cpython",
+      { key: holding.key, mark: row.seen.mark },
+      expect.anything(),
+    );
+    expect(core.markSeen).not.toHaveBeenCalled();
+    expect(core.markUnseen).toHaveBeenCalledExactlyOnceWith(
+      "python/cpython",
+      { number: row.number, archived: holding.key },
+      expect.anything(),
+    );
+  },
+);
 
 it("mutes the Standalone PR on show from its button, and offers Unmute once it is Muted", async () => {
   const { prRow } = await listing();

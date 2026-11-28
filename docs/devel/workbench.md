@@ -71,9 +71,11 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
   Pinned, Archived and Muted items never appear in its results. Save turns a search into a Filter: it opens a
   dialog with a Name, the query by default, and a Query, editable, with Tsugiki's additions spelled out, such
   as `is:open` ([#471](https://github.com/tsugiki/tsugiki/issues/471)). Save is off while either field is
-  empty, and a name the Repository's Filters already use is refused. Confirming writes the Filter at the end
-  of the Repository's Filters in `settings.toml`, opens it in place of the Inbox, clears the box, and starts
-  its first whole search at once, ahead of the sync's next step, with `created:` splitting past 1,000.
+  empty. While the save runs, Cancel, Escape and a press outside leave the dialog open. A refusal, such as
+  a name the Repository's Filters already use, shows its reason in the dialog. A successful save closes
+  the dialog, adds the Filter at the end of the Repository's Filters in `settings.toml`, opens it in place
+  of the Inbox, clears the box, and starts its first whole search at once, ahead of the sync's next step,
+  with `created:` splitting past 1,000.
   A failure of this search alone shows in the status bar. The search retries the step once on the next
   sync turn. If the retry fails, a later Repository sync can search the Filter again.
   The new Filter starts with "On the Workbench" off, so its view lists its items as they land and the

@@ -125,11 +125,15 @@ function add(ticket: number, slug: string): void {
 }
 
 function remove(ticket: number): void {
-  const main = mainCheckout();
+  const main = realpathSync(mainCheckout());
   const folder = worktreeFolder(ticket);
   const path = join(main, folder);
   if (!existsSync(path)) stop(`There's no worktree ${folder}.`);
-  const here = relative(path, process.cwd());
+  const resolved = realpathSync(path);
+  if (!samePath(path, resolved)) {
+    stop(`Expected ${path}, but ${folder} resolves to ${resolved}.`);
+  }
+  const here = relative(path, realpathSync(process.cwd()));
   if (!here.startsWith("..") && !isAbsolute(here)) {
     stop(`Run it from outside ${folder}, which it deletes.`);
   }

@@ -6,8 +6,7 @@
 /** What a click follows: a link, or an image map's area. */
 export const LINK_SELECTOR = "a, area";
 
-/** Whether a click follows the link at `address`. A link within the text (`#…`) moves to a heading in a page
- * Tsugiki doesn't show whole, and one with nowhere to go has no address. */
+/** Whether a click sends the address to the link handler. */
 function follows(address: string | null): address is string {
   if (!address) return false;
   return !address.startsWith("#");
@@ -30,13 +29,53 @@ export function linkTitle(href: string | null): string | undefined {
   return follows(href) ? linkTooltip(href) : undefined;
 }
 
-/** Follows the link `e` clicked in the system browser, if a click follows it, and keeps the window where it
- * is. Enter on a link arrives as a click, so keys need nothing more. */
-export function followLink(e: MouseEvent, onlink: (address: string) => void): void {
+/** Decodes a fragment after the browser's literal ID lookup. */
+function decodedFragment(fragment: string): string {
+  try {
+    return decodeURIComponent(fragment);
+  } catch {
+    return fragment;
+  }
+}
+
+function scrollToFragment(e: MouseEvent, link: Element, scope: HTMLElement, fragment: string): boolean {
+  const elements = Array.from(scope.querySelectorAll("[id]"));
+  const decoded = decodedFragment(fragment);
+  const target =
+    elements.find((element) => element.id === fragment) ?? elements.find((element) => element.id === decoded);
+  if (!target) return false;
+
+  // The browser looks across comments and can open a new window for a modified click or link target.
+  const first = document.getElementById(fragment) ?? document.getElementById(decoded);
+  const sameWindow = ["", "_self"].includes((link.getAttribute("target") ?? "").toLowerCase());
+  if (
+    first !== target ||
+    !sameWindow ||
+    link.hasAttribute("download") ||
+    e.ctrlKey ||
+    e.metaKey ||
+    e.shiftKey ||
+    e.altKey
+  ) {
+    e.preventDefault();
+    target.scrollIntoView();
+  }
+  return true;
+}
+
+/** Follows the link `e` clicked, allowing fragments only inside the supplied rendered text. */
+export function followLink(e: MouseEvent, onlink: (address: string) => void, scope?: HTMLElement): void {
   // Only an element takes a click.
   const link = (e.target as Element).closest(LINK_SELECTOR);
   if (!link) return;
-  e.preventDefault();
   const address = link.getAttribute("href");
+  if (
+    scope &&
+    address?.startsWith("#") &&
+    address.length > 1 &&
+    scrollToFragment(e, link, scope, address.slice(1))
+  )
+    return;
+  e.preventDefault();
   if (follows(address)) onlink(address);
 }

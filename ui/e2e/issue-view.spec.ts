@@ -46,7 +46,7 @@ const issue = (number: number, waiting: boolean, pullRequests: TreeEntry[] = [])
 
 const listing = (waiting: boolean) => workbenchPage([issue(7, waiting), issue(8, false)]);
 
-const view = (bodyHtml: string): IssueView => ({
+const view = (bodyHtml: string, commentHtml = "<p>Which build?</p>"): IssueView => ({
   number: 7,
   title: "Issue 7",
   state: "OPEN",
@@ -78,7 +78,7 @@ const view = (bodyHtml: string): IssueView => ({
         id: 1,
         author: "some-reviewer",
         created_at: "2026-11-04T09:00:00Z",
-        body_html: "<p>Which build?</p>",
+        body_html: commentHtml,
         hidden: null,
       },
     ],
@@ -460,6 +460,31 @@ test("the Issue view starts at the top when the user opens it from the list", as
   await expect(pane).toBeVisible();
   expect(await scrolled(pane)).toBe(0);
 });
+
+for (const duplicate of [false, true]) {
+  test(`a footnote reference scrolls to its comment's footnote${duplicate ? " despite a repeated ID" : ""}`, async ({
+    page,
+  }) => {
+    const body = duplicate
+      ? '<p id="user-content-fn-1">A footnote in the description.</p>'
+      : "<p>It crashes</p>";
+    const paragraphs = "<p>Details of the crash</p>".repeat(60);
+    const comment = `
+        <p>A build failed.<sup><a href="#user-content-fn-1">1</a></sup></p>
+        ${paragraphs}
+        <ol><li id="user-content-fn-1">The debug build.</li></ol>`;
+    await mockCore(page, { ...answers(""), issue: ok(view(body, comment)) });
+    await page.goto("/");
+    await inList(page, "#7 Issue 7").click();
+    const footnote = page.getByText("The debug build.");
+    await expect(footnote).not.toBeInViewport();
+
+    await page.getByRole("link", { name: "1", exact: true }).click();
+
+    await expect(footnote).toBeInViewport();
+    expect(await callsOf(page, "openLink")).toBe(0);
+  });
+}
 
 test("a link in a description leaves the window where it is", async ({ page }) => {
   await mockCore(page, answers('<p><a href="https://github.com/python/cpython">the code</a></p>'));

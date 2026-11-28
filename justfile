@@ -65,6 +65,10 @@ tree *tickets:
 waves *args:
     node scripts/print-waves.ts {{args}}
 
+# Replace a milestone's description with the contents of a file.
+milestone-description $milestone $description_file:
+    node scripts/milestone-description.ts
+
 # Run the app with hot reload
 dev:
     npm run dev

@@ -88,6 +88,8 @@ const THEMES = {
 
 /** The listener for the mirrors' states, so a test can send it what the core would. */
 const mirrorStates = vi.hoisted(() => ({ changed: vi.fn<(payload: unknown) => void>() }));
+/** The listeners for repository changes, including changes to Repositories that have never been opened. */
+const repositoryChanges = vi.hoisted(() => new Set<(event: { payload: unknown }) => void>());
 /** The listeners for the status, so a test can send them what the core would. */
 const statuses = vi.hoisted(() => {
   const listeners = new Set<(event: { payload: unknown }) => void>();
@@ -122,6 +124,14 @@ vi.mock("$lib/data/bindings", async () => {
     },
     events: {
       ...prFilesEvents(() => async () => () => {}),
+      changed: {
+        listen: async (callback: (event: { payload: unknown }) => void) => {
+          repositoryChanges.add(callback);
+          return () => {
+            repositoryChanges.delete(callback);
+          };
+        },
+      },
       acted: { listen: async () => () => {} },
       statusChanged: {
         // The status bar listens, and so does the open Repository's state.
@@ -1911,6 +1921,40 @@ describe("the Home page", () => {
     expect(screen.queryByRole("navigation", { name: "Sidebar" })).toBeNull();
     expect(screen.getByRole("status")).toBeTruthy();
     expect(document.title).toBe("Home · Tsugiki 1.2.3");
+  });
+
+  it("shows Read-only for either reason, and follows changes to each Repository while Home shows", async () => {
+    const reasons = new Map<string, ("chosen" | "token")[]>([
+      [gcmon.name, ["chosen"]],
+      [peps.name, ["token"]],
+    ]);
+    core.repositoryState.mockImplementation(async (name: string) =>
+      ok({ read_only: reasons.get(name) ?? [], connection: "online" }),
+    );
+    await goHome();
+
+    await vi.waitFor(() => {
+      expect(repositoryRows()).toEqual([
+        [gcmon.name, "Read-only", "opened 1 h ago"],
+        [peps.name, "Read-only", "opened 1 d ago"],
+        ["a/never"],
+      ]);
+    });
+
+    reasons.delete(gcmon.name);
+    reasons.delete(peps.name);
+    reasons.set("a/never", ["chosen", "token"]);
+    for (const name of [gcmon.name, peps.name, "a/never"]) {
+      for (const listener of repositoryChanges) listener({ payload: { repository: name } });
+    }
+
+    await vi.waitFor(() => {
+      expect(repositoryRows()).toEqual([
+        [gcmon.name, "opened 1 h ago"],
+        [peps.name, "opened 1 d ago"],
+        ["a/never", "Read-only"],
+      ]);
+    });
   });
 
   it("opens from Go to Home in the palette, whose rows there open a Repository or add one", async () => {

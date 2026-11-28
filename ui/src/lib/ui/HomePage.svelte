@@ -5,6 +5,7 @@
 <script lang="ts">
   import type { Opened } from "$lib/state/home.svelte";
   import { minuteClock } from "./clock.svelte";
+  import HomeRepositoryName from "./HomeRepositoryName.svelte";
   import { currentOs, keyName, withKey } from "./keys";
   import { agoWords, stampOf } from "./time";
 
@@ -117,7 +118,7 @@
             picked = row.name;
           }}
         >
-          <span class="name mono">{row.name}</span>
+          <HomeRepositoryName name={row.name} />
           {#if time}
             <span class="opened" title={time.title}>{time.words}</span>
           {/if}
@@ -161,15 +162,8 @@
     background: var(--selected);
   }
 
-  .name {
-    flex: 1;
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
   .opened {
+    margin-left: auto;
     font-size: 12px;
     color: var(--fg-muted);
     white-space: nowrap;

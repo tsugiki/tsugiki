@@ -533,10 +533,10 @@
   /** The pane a press on `target` went to, as `keyTarget` asks. A press that reaches no control, on the
    * page's body, goes to the list. */
   export function paneOf(target: EventTarget | null): Pane {
+    if (inDetailPane(target)) return "detail";
     const inList =
       target === document.body || (target instanceof HTMLElement && target.closest(".list") !== null);
-    const inDetail = inDetailPane(target);
-    return inList ? "list" : inDetail ? "detail" : null;
+    return inList ? "list" : null;
   }
 
   /** Whether a press `at` goes to the Detail pane: the pane holds the focus, or the list is hidden. ↑ ↓,

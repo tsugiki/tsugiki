@@ -2559,6 +2559,85 @@ it("moves the focus with the cursor on Alt+← and Alt+→", async () => {
 /** The PR view's item as the core reads it after the list did: newer activity, so another mark. */
 const laterMark = { numbers: [160662], up_to: "2026-11-05T10:00:00Z", findings: [] };
 
+it.each(["Changed files", "Search results"])(
+  "routes item actions from the %s tree to the open PR",
+  async (treeName) => {
+    const holding = { key: issue.key, mark: issue.seen.mark };
+    core.pullRequest.mockResolvedValue(
+      ok({
+        ...row,
+        seen: { mark: laterMark, state: "new_activity" },
+        mute_author: { kind: "mute", login: "open-pr-author" },
+        issues: [{ number: issue.number, pinned: false }],
+        holding,
+      }),
+    );
+    remapKeys({ pin: "p" });
+    onTestFinished(() => remapKeys({}));
+    core.pullRequestFiles.mockResolvedValue(
+      ok(
+        readyFiles(0, {
+          files: [diffFile("Lib/eggs.py", 0)],
+          tree: { rows: [fileRow(0, "eggs.py", 0)], folded: false },
+        }),
+      ),
+    );
+    core.textSearch.mockResolvedValue(ok({ kind: "running", id: 1 }));
+    core.textSearchState.mockResolvedValue({
+      state: "results",
+      id: 1,
+      files: [
+        {
+          path: "Lib/eggs.py",
+          generated: false,
+          lines: [{ line: 1, text: "eggs", ranges: [{ start: 0, end: 4 }], cut: "neither" }],
+        },
+      ],
+      matches: 1,
+      end: "done",
+    });
+    const { component, treeRow, prRow } = await listing();
+    await fireEvent.click(treeRow);
+    await screen.findByRole("tab", { name: "Conversation" });
+    await fireEvent.keyDown(treeRow, { key: "ArrowDown" });
+    expect(prRow.getAttribute("aria-current")).toBe("true");
+
+    if (treeName === "Search results") {
+      paletteRow(component, "search_in_rail")?.run();
+      const box = await screen.findByRole("textbox", { name: "Search the PR's code" });
+      await fireEvent.input(box, { target: { value: "eggs" } });
+    } else {
+      component.runChord("toggle_rail_files", chordEnd());
+    }
+    const tree = await screen.findByRole("tree", { name: treeName });
+    tree.focus();
+    expect(document.activeElement).toBe(tree);
+
+    await fireEvent.keyDown(tree, { key: "e" });
+    await fireEvent.keyDown(tree, { key: "m" });
+    await fireEvent.keyDown(tree, { key: "q" });
+    await fireEvent.keyDown(tree, { key: "Q", shiftKey: true });
+    paletteRow(component, "mute_author", tree)?.run();
+    await fireEvent.keyDown(tree, { key: "p" });
+
+    for (const action of [core.archive, core.mute]) {
+      expect(action).toHaveBeenCalledExactlyOnceWith("python/cpython", holding, expect.anything());
+    }
+    expect(core.markSeen).toHaveBeenCalledExactlyOnceWith("python/cpython", laterMark, expect.anything());
+    expect(core.markUnseen).toHaveBeenCalledExactlyOnceWith(
+      "python/cpython",
+      { number: row.number, archived: null },
+      expect.anything(),
+    );
+    expect(core.muteAuthor).toHaveBeenCalledExactlyOnceWith(
+      "python/cpython",
+      "open-pr-author",
+      expect.anything(),
+    );
+    expect(core.pin).toHaveBeenCalledExactlyOnceWith("python/cpython", issue.number, expect.anything());
+  },
+);
+
 it("marks the line under the cursor on Q and Shift+Q, and the Detail pane's item when it holds the focus", async () => {
   core.pullRequest.mockResolvedValue({
     status: "ok",

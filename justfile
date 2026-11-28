@@ -6,7 +6,7 @@
 #
 # `sh` is not on PATH in PowerShell on Windows, and `bash` there may be WSL, so recipes run through Windows
 # PowerShell. Keep every recipe a single command with no shell-specific syntax, so it works under both shells.
-set windows-shell := ["powershell.exe", "-NoProfile", "-Command"]
+set windows-shell := ["powershell.exe", "-NoProfile", "-ExecutionPolicy", "RemoteSigned", "-Command"]
 
 # Someone is working on this computer while the checks run, so they leave cores free. Nextest starts a
 # process per test, and `tsugiki-core`'s tests take 62 seconds on four threads where two take 103 (#1099).
@@ -64,6 +64,10 @@ tree *tickets:
 # ticket's title, state, labels and body, and `--json` prints the same for an agent.
 waves *args:
     node scripts/print-waves.ts {{args}}
+
+# Replace a milestone's description with the contents of a file.
+milestone-description $milestone $description_file:
+    node scripts/milestone-description.ts
 
 # Run the app with hot reload
 dev:

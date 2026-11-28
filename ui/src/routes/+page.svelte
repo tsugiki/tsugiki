@@ -718,7 +718,7 @@
   />
 {/if}
 {#if hud.visible}
-  <PerformanceHud {hud} refreshing={status.syncActivity !== null} />
+  <PerformanceHud {hud} {statusBarHeight} refreshing={status.syncActivity !== null} />
 {/if}
 
 <style>

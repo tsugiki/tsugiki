@@ -5,13 +5,17 @@
   import { nextFrameLimit } from "$lib/state/frames";
   import {
     BUDGETS,
-    HUD_BOTTOM,
+    hudBottom,
     type HudState,
     type IssueOpening,
     type JumpTimes,
   } from "$lib/state/hud.svelte";
 
-  let { hud, refreshing }: { hud: HudState; refreshing: boolean } = $props();
+  let {
+    hud,
+    refreshing,
+    statusBarHeight = 0,
+  }: { hud: HudState; refreshing: boolean; statusBarHeight?: number } = $props();
 
   $effect(() => {
     hud.refreshing(refreshing);
@@ -136,7 +140,7 @@
 <aside
   class="mono"
   aria-label="Performance HUD"
-  style:bottom={`${String(HUD_BOTTOM)}px`}
+  style:bottom={`${String(hudBottom(statusBarHeight))}px`}
   bind:clientHeight={drawn}
 >
   <table>

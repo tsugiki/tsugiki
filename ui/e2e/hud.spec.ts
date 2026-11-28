@@ -1,6 +1,6 @@
 import { expect, type Page, test } from "@playwright/test";
 import type { IssueView_Serialize as IssueView } from "../src/lib/data/bindings.ts";
-import { done, listedIssue, ok, workbenchPage } from "../src/lib/testing/fixtures.ts";
+import { done, listedIssue, loadedSettings, ok, workbenchPage } from "../src/lib/testing/fixtures.ts";
 import { home, repository } from "./fixtures.ts";
 import { changeAnswer, type CoreAnswers, emitFromCore, mockCore } from "./mock-core.ts";
 
@@ -59,6 +59,31 @@ test("the palette shows and hides the performance HUD", async ({ page }) => {
   await page.keyboard.press("ControlOrMeta+Shift+P");
   await page.getByRole("option", { name: "Hide performance HUD" }).click();
   await expect(hud(page)).toHaveCount(0);
+});
+
+test("the HUD follows a status bar that wraps as the window narrows", async ({ page }) => {
+  const message =
+    "settings.toml, line 3: expected a value for the path of the directory that holds the local mirrors";
+  await page.setViewportSize({ width: 1000, height: 720 });
+  await mockCore(page, { ...core, settings: { ...loadedSettings(), problems: [message] } });
+  await page.goto("/");
+  const status = page.getByRole("status").filter({ hasText: message });
+  await expect(status).toBeVisible();
+  await page.keyboard.press("ControlOrMeta+Shift+H");
+  await expect(hud(page)).toBeVisible();
+  const singleLine = await status.evaluate((element) => element.getBoundingClientRect().height);
+
+  await page.setViewportSize({ width: 560, height: 720 });
+  await expect
+    .poll(() => status.evaluate((element) => element.getBoundingClientRect().height))
+    .toBeGreaterThan(singleLine + 10);
+  await expect
+    .poll(async () => {
+      const bar = await status.boundingBox();
+      const panel = await hud(page).boundingBox();
+      return bar && panel ? Math.abs(bar.y - panel.y - panel.height - 8) : Infinity;
+    })
+    .toBeLessThan(0.5);
 });
 
 test("a recording says the line it wrote to the log", async ({ page }) => {

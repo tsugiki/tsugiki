@@ -421,8 +421,7 @@
     const all = home.rows.map((row) => row.name);
     return [...switchRows(all, "Repository: "), addRow];
   };
-  /** The open Repository's state, which its Issue and PR views and the status bar say while it is Read-only
-   * (#398). Another Repository has its own, so a switch starts a new one and stops the last. */
+  /** The open Repository's state (#398), shared by its screen, its Home row and the status bar. */
   let repositoryState = $state<RepositoryStateView>();
   $effect(() => {
     if (openName === undefined) return;
@@ -560,6 +559,7 @@
     {#if home.page}
       <HomePage
         rows={home.rows}
+        openState={() => repositoryState?.state}
         {keysActive}
         onopen={openNamed}
         onback={leaveHome}

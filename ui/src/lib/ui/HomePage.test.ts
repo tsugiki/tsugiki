@@ -23,7 +23,7 @@ afterEach(() => {
 
 const shown = (keysActive = true) => {
   const props = { onopen: vi.fn(), onback: vi.fn(), onadd: vi.fn(), onsettings: vi.fn() };
-  const { rerender } = render(HomePage, { rows: ROWS, keysActive, ...props });
+  const { rerender } = render(HomePage, { rows: ROWS, openState: () => undefined, keysActive, ...props });
   return { ...props, rerender };
 };
 

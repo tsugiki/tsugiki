@@ -20,8 +20,10 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
   step away from the Repository switcher.
 - The Home page lists the Repositories in the Repository picker's order, most recently opened first, so the
   top row is the Repository the user came from, and the rows keep their order while the page shows. Each row's
-  first line holds `owner/name`, and on the right "opened 2 h ago", from `recent` in `machine.toml`, or
-  nothing for a Repository never opened on this machine. The age's tooltip gives its date and time.
+  first line holds `owner/name`, followed by "Read-only" while the user chose it or the token can't write
+  there. The label follows both reasons while Home shows. The right side says "opened 2 h ago", from
+  `recent` in `machine.toml`, or stays blank for a Repository never opened on this machine. The age's
+  tooltip gives its date and time.
   ↑ ↓ move the cursor, and Enter or a click opens the Repository on its Workbench. A switch that finds its
   Repository gone from the files drops its row, and the
   cursor stays where the row was. On the Home page the command palette offers Repository: …, Add repository…
